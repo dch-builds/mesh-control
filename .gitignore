@@ -4,7 +4,11 @@
 bin/
 obj/
 dist/
-installer/output/
+
+# ============================================================
+# Empaquetage (script Inno Setup et installeurs produits)
+# ============================================================
+installer/
 
 # ============================================================
 # Fichiers utilisateur Visual Studio

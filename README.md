@@ -61,9 +61,8 @@ Produit une application autonome, sans prérequis .NET sur les postes cibles :
 .\publish.ps1
 ```
 
-Le résultat est dans `dist/`. Un script
-[Inno Setup](https://jrsoftware.org/isinfo.php) est fourni pour construire un
-installeur : `installer/MeshControl.iss`.
+Le résultat est dans `dist/` : l'ensemble des fichiers peut être copié tel quel
+sur les postes, ou empaqueté dans un installeur.
 
 > Windows affiche un avertissement SmartScreen au premier lancement,
 > l'exécutable n'étant pas signé numériquement. Cliquer sur « Informations
