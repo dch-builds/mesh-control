@@ -479,6 +479,17 @@
                                       Content="Mémoriser les identifiants"/>
                             <TextBlock Style="{StaticResource FieldHint}" Margin="24,4,0,0"
                                        Text="Le mot de passe est chiffré pour votre session Windows."/>
+
+                            <Border Height="1" Background="{StaticResource SeparatorBrush}"
+                                    Margin="0,14,0,14"/>
+
+                            <Button x:Name="LogoutButton" Content="Se déconnecter"
+                                    Style="{StaticResource ToolButton}"
+                                    Click="Logout_Click" Padding="14,7"
+                                    HorizontalAlignment="Left"
+                                    Foreground="{StaticResource DangerBrush}"/>
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="Ferme la session et efface le mot de passe mémorisé."/>
                         </StackPanel>
                     </Border>
 

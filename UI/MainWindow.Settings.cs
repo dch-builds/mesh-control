@@ -259,6 +259,80 @@ public partial class MainWindow
         HotkeyWarning.Visibility = Visibility.Visible;
     }
 
+    // MARK: - Déconnexion
+
+    /// <summary>
+    /// Ferme la session : coupe la connexion, efface le mot de passe mémorisé et
+    /// revient à l'écran de connexion. Les fenêtres de session ouvertes sont
+    /// fermées, car elles deviendraient inutilisables sans connexion.
+    /// </summary>
+    private void Logout_Click(object sender, RoutedEventArgs e)
+    {
+        // Compter les sessions actives pour prévenir avant de les interrompre.
+        var openSessions = Application.Current.Windows.OfType<Window>()
+            .Count(w => w is Desktop.DesktopWindow or Ssh.TerminalWindow
+                          or Ssh.SshWindow or Files.FilesWindow);
+
+        var detail = openSessions > 0
+            ? $"{openSessions} session(s) en cours seront fermées.\n\n"
+              + "Le mot de passe mémorisé sera effacé : il faudra le ressaisir à la "
+              + "prochaine connexion."
+            : "Le mot de passe mémorisé sera effacé : il faudra le ressaisir à la "
+              + "prochaine connexion.";
+
+        if (MessageBox.Show(detail, "Se déconnecter ?",
+                MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+
+        Logout();
+    }
+
+    private void Logout()
+    {
+        Log.Info($"Déconnexion de {_settings.Username}", "Serveur");
+
+        // Fermer les fenêtres de session : sans connexion, elles ne peuvent plus
+        // rien faire et afficheraient des erreurs.
+        foreach (var window in Application.Current.Windows.OfType<Window>()
+                     .Where(w => w is Desktop.DesktopWindow or Ssh.TerminalWindow
+                                   or Ssh.SshWindow or Files.FilesWindow)
+                     .ToList())
+        {
+            try { window.Close(); } catch { /* déjà en cours de fermeture */ }
+        }
+
+        CloseSettings();
+
+        // Interrompre une éventuelle boucle de reconnexion automatique, sinon
+        // elle rétablirait la session que l'on vient de fermer.
+        StopReconnecting();
+
+        if (_connection is not null)
+        {
+            _connection.StateChanged -= OnStateChanged;
+            _connection.DevicesChanged -= OnDevicesChanged;
+            _connection.Disconnect();
+            _connection.Dispose();
+            _connection = null;
+        }
+
+        // Oublier les identifiants et l'inventaire du serveur.
+        _settings.ProtectedPassword = null;
+        _settings.RememberCredentials = false;
+        _settings.Save();
+
+        ClearDeviceInventory();
+
+        PassBox.Clear();
+        TokenBox.Clear();
+        RememberCheck.IsChecked = false;
+        SubtitleText.Text = _settings.Host;
+        UpdateTrayTooltip();
+
+        ShowLogin();
+        SetStatus("Vous êtes déconnecté.");
+    }
+
     // MARK: - Diagnostic
 
     private void OpenLogs_Click(object sender, RoutedEventArgs e)

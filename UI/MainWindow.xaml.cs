@@ -20,7 +20,10 @@ public partial class MainWindow : Window
     /// </summary>
     private readonly DispatcherTimer _refreshTimer = new()
     {
-        Interval = TimeSpan.FromMilliseconds(300)
+        // Sur un parc important, les événements de connexion arrivent en flux
+        // continu. Un délai plus large regroupe davantage de changements par
+        // mise à jour, sans que l'affichage paraisse en retard.
+        Interval = TimeSpan.FromMilliseconds(800)
     };
 
     /// <summary>Raccourci global qui ouvre la palette de recherche rapide.</summary>
@@ -340,6 +343,10 @@ public partial class MainWindow : Window
             _connection = null;
         }
 
+        // Repartir d'un inventaire vierge : les machines du serveur précédent
+        // ne doivent pas subsister dans la liste.
+        ClearDeviceInventory();
+
         var profile = new ServerProfile
         {
             Host = _settings.Host,
@@ -512,6 +519,28 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Interrompt la reconnexion automatique. Appelé à la déconnexion : sans
+    /// cela, la boucle rétablirait la session que l'on vient de fermer.
+    /// </summary>
+    private void StopReconnecting()
+    {
+        _reconnecting = false;
+        _sessionUser = null;
+        _sessionPassword = null;
+        _reconnectAttempt = 0;
+    }
+
+    /// <summary>Vide l'inventaire des machines (changement de serveur, déconnexion).</summary>
+    private void ClearDeviceInventory()
+    {
+        _rowsById.Clear();
+        _virtualRows.Clear();
+        _allRows = new List<DeviceRow>();
+        DeviceList.ItemsSource = null;
+        CountText.Text = "";
+    }
+
     /// <summary>Informe discrètement que la connexion est en cours de rétablissement.</summary>
     private void ShowReconnecting(int seconds)
     {
@@ -530,27 +559,102 @@ public partial class MainWindow : Window
         _refreshTimer.Start();
     });
 
-    /// <summary>Reconstruit effectivement la liste groupée (thread UI).</summary>
+    /// <summary>
+    /// Lignes existantes, indexées par identifiant de machine. Permet de mettre à
+    /// jour la liste en place plutôt que de la reconstruire : sans cela, chaque
+    /// événement serveur détruirait tous les éléments visuels, réinitialisant le
+    /// défilement, l'état des dossiers et la sélection.
+    /// </summary>
+    private readonly Dictionary<string, DeviceRow> _rowsById = new();
+
+    /// <summary>
+    /// Met à jour la liste depuis l'état du serveur. Ne reconstruit la vue que si
+    /// la composition a réellement changé (machine ajoutée, retirée, ou changement
+    /// d'état modifiant l'ordre d'affichage).
+    /// </summary>
     private void RebuildDeviceList()
     {
         if (_connection is null) return;
 
-        // Résolution du nom de dossier (groupe d'appareils) pour chaque machine.
         var groupNames = _connection.Meshes
             .GroupBy(m => m.Id)
             .ToDictionary(g => g.Key, g => g.First().Name);
 
-        _allRows = _connection.Nodes.Values
-            .Select(n => new DeviceRow(
-                n,
-                groupNames.TryGetValue(n.MeshId, out var g) ? g : "Sans dossier",
-                _settings.IsFavorite(n.Id)))
+        bool structureChanged = false;
+        var seen = new HashSet<string>();
+
+        foreach (var node in _connection.Nodes.Values)
+        {
+            seen.Add(node.Id);
+            var groupName = groupNames.TryGetValue(node.MeshId, out var g) ? g : "Sans dossier";
+
+            if (_rowsById.TryGetValue(node.Id, out var existing))
+            {
+                // Le tri dépend de l'état en ligne, du nom et du dossier : un
+                // changement sur ces valeurs impose de recomposer la vue.
+                // La comparaison porte sur l'état AFFICHÉ, car existing.Node est
+                // la même instance que node — déjà mise à jour par la connexion.
+                // L'ordre d'affichage ne dépend PAS de l'état en ligne (voir le
+                // tri plus bas) : un passage en ligne ne recompose donc pas la
+                // vue, seul le badge se met à jour. C'est ce qui évite que la
+                // liste bouge sous le curseur à chaque événement du serveur.
+                if (existing.NameChanged
+                    || !string.Equals(existing.RealGroupName, groupName, StringComparison.Ordinal))
+                {
+                    structureChanged = true;
+                }
+                // Rafraîchit badge, libellé et icône sans toucher à la vue.
+                existing.RefreshFromNode();
+            }
+            else
+            {
+                _rowsById[node.Id] = new DeviceRow(node, groupName, _settings.IsFavorite(node.Id));
+                structureChanged = true;
+            }
+        }
+
+        // Machines disparues de l'inventaire du serveur.
+        foreach (var goneId in _rowsById.Keys.Where(id => !seen.Contains(id)).ToList())
+        {
+            _rowsById.Remove(goneId);
+            structureChanged = true;
+        }
+
+        // Les copies affichées dans les sections Favoris/Récentes partagent le
+        // même nœud, mais ont leur propre état affiché : elles doivent être
+        // rafraîchies séparément.
+        foreach (var copy in _virtualRows) copy.RefreshFromNode();
+
+        if (!structureChanged)
+        {
+            // Seules des valeurs d'affichage ont changé : les liaisons de données
+            // s'en chargent, la vue reste intacte.
+            UpdateCounters();
+            return;
+        }
+
+        // Tri volontairement indépendant de l'état en ligne : sinon chaque
+        // machine qui se connecte changerait l'ordre, et la liste sauterait sous
+        // le curseur. Le badge et la pastille signalent l'état, c'est suffisant.
+        _allRows = _rowsById.Values
             .OrderBy(r => r.RealGroupName, StringComparer.OrdinalIgnoreCase)
-            .ThenByDescending(r => r.IsOnline)
             .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         ApplyFilter();
+    }
+
+    /// <summary>Met à jour les compteurs sans toucher à la liste.</summary>
+    private void UpdateCounters()
+    {
+        var displayed = (DeviceList.ItemsSource as System.Collections.IEnumerable)?
+            .Cast<object>().Count() ?? _allRows.Count;
+        var totalOnline = _allRows.Count(r => r.IsOnline);
+
+        CountText.Text = displayed >= _allRows.Count
+            ? $"{_allRows.Count} appareils · {totalOnline} en ligne"
+            : $"{displayed} affichés sur {_allRows.Count} · {totalOnline} en ligne";
+        UpdateTrayTooltip();
     }
 
     // MARK: - Recherche
@@ -574,9 +678,23 @@ public partial class MainWindow : Window
     private const string FavoritesGroup = "★  Favoris";
     private const string RecentGroup = "🕘  Récentes";
 
+    /// <summary>
+    /// Copies affichées dans les sections virtuelles. Conservées pour pouvoir les
+    /// rafraîchir : une même instance ne peut pas figurer dans deux groupes WPF,
+    /// il faut donc un doublon, mais il doit suivre l'état de l'original.
+    /// </summary>
+    private readonly List<DeviceRow> _virtualRows = new();
+
     /// <summary>Copie une ligne dans une section virtuelle (favoris / récentes).</summary>
-    private static DeviceRow Clone(DeviceRow row, string groupName)
-        => new(row.Node, row.RealGroupName, row.IsFavorite) { GroupName = groupName };
+    private DeviceRow Clone(DeviceRow row, string groupName)
+    {
+        var copy = new DeviceRow(row.Node, row.RealGroupName, row.IsFavorite)
+        {
+            GroupName = groupName,
+        };
+        _virtualRows.Add(copy);
+        return copy;
+    }
 
     /// <summary>
     /// Construit la vue groupée en gardant Favoris et Récentes en tête, puis les
@@ -602,9 +720,9 @@ public partial class MainWindow : Window
 
         // Mettre à jour les lignes existantes sans reconstruire toute la liste.
         var isFavorite = _settings.IsFavorite(node.Id);
-        foreach (var row in _allRows.Where(r => r.Node.Id == node.Id))
-            row.IsFavorite = isFavorite;
+        if (_rowsById.TryGetValue(node.Id, out var row)) row.IsFavorite = isFavorite;
 
+        // La composition change (section Favoris) : la vue doit être recomposée.
         ApplyFilter();
     }
 
@@ -748,13 +866,14 @@ public partial class MainWindow : Window
         // Sections virtuelles en tête : favoris puis machines récentes. Une même
         // machine peut apparaître deux fois (en favori et dans son dossier) ;
         // c'est voulu, comme un raccourci vers l'entrée réelle.
+        _virtualRows.Clear();
         var display = new List<DeviceRow>();
 
         if (string.IsNullOrEmpty(query))
         {
+            // Ordre stable, indépendant de l'état en ligne (voir RebuildDeviceList).
             var favorites = rows.Where(r => r.IsFavorite)
-                                .OrderByDescending(r => r.IsOnline)
-                                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+                                .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
                                 .Select(r => Clone(r, FavoritesGroup));
             display.AddRange(favorites);
 
