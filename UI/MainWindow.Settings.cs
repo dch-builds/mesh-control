@@ -1,0 +1,280 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media.Animation;
+using MeshControl.Core;
+
+namespace MeshControl.UI;
+
+/// <summary>
+/// Volet des réglages, coulissant depuis la droite. Séparé du reste de
+/// MainWindow pour garder chaque fichier lisible.
+/// </summary>
+public partial class MainWindow
+{
+    private const double PanelWidth = 420;
+
+    /// <summary>Valeurs au moment de l'ouverture, pour pouvoir annuler.</summary>
+    private string _settingsOriginalHost = "";
+    private bool _settingsOriginalSelfSigned;
+    private string _settingsOriginalHotkey = "";
+    private bool _settingsOriginalQuickSearch;
+
+    // MARK: - Ouverture / fermeture
+
+    private void OpenSettings()
+    {
+        LoadSettingsIntoPanel();
+
+        SettingsScrim.Visibility = Visibility.Visible;
+        SettingsPanel.Visibility = Visibility.Visible;
+        SettingsFeedback.Text = "";
+
+        // Glissement depuis la droite + fondu du voile : le volet vient
+        // « par-dessus » le contenu sans le remplacer.
+        var slide = new DoubleAnimation(PanelWidth, 0, TimeSpan.FromMilliseconds(220))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        };
+        SettingsTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, slide);
+
+        var fade = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220));
+        SettingsScrim.BeginAnimation(OpacityProperty, fade);
+    }
+
+    private void CloseSettings()
+    {
+        var slide = new DoubleAnimation(0, PanelWidth, TimeSpan.FromMilliseconds(180))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+        };
+        // Masquer seulement à la fin, sinon le volet disparaîtrait d'un coup.
+        slide.Completed += (_, _) =>
+        {
+            SettingsPanel.Visibility = Visibility.Collapsed;
+            SettingsScrim.Visibility = Visibility.Collapsed;
+        };
+        SettingsTransform.BeginAnimation(System.Windows.Media.TranslateTransform.XProperty, slide);
+
+        var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(180));
+        SettingsScrim.BeginAnimation(OpacityProperty, fade);
+    }
+
+    private bool IsSettingsOpen => SettingsPanel.Visibility == Visibility.Visible;
+
+    private void CloseSettings_Click(object sender, RoutedEventArgs e) => CloseSettings();
+    private void SettingsScrim_Click(object sender, MouseButtonEventArgs e) => CloseSettings();
+
+    // MARK: - Chargement
+
+    private void LoadSettingsIntoPanel()
+    {
+        _settingsOriginalHost = _settings.Host;
+        _settingsOriginalSelfSigned = _settings.AllowSelfSigned;
+        _settingsOriginalHotkey = _settings.QuickSearchHotkey;
+        _settingsOriginalQuickSearch = _settings.QuickSearchEnabled;
+
+        // Bureau à distance
+        DefaultQualityCombo.SelectedIndex = Math.Clamp(_settings.DefaultDesktopQuality, 0, 2);
+        SelectFrameRate(_settings.DefaultDesktopFrameRate);
+        DefaultFitCheck.IsChecked = _settings.DefaultDesktopFit;
+
+        // Recherche rapide
+        QuickSearchCheck.IsChecked = _settings.QuickSearchEnabled;
+        HotkeyBox.Text = _settings.QuickSearchHotkey;
+        HotkeyBox.IsEnabled = _settings.QuickSearchEnabled;
+        HotkeyWarning.Visibility = Visibility.Collapsed;
+
+        // Comportement
+        TrayCheck.IsChecked = _settings.MinimizeToTray;
+        StartMinimizedCheck.IsChecked = _settings.StartMinimized;
+        AutoStartCheck.IsChecked = StartupManager.IsEnabled();
+        StartupWarning.Visibility = Visibility.Collapsed;
+
+        // Serveur & compte
+        HostBox.Text = _settings.Host;
+        SelfSignedCheck.IsChecked = _settings.AllowSelfSigned;
+        RememberSettingCheck.IsChecked = _settings.RememberCredentials;
+        AccountText.Text = string.IsNullOrEmpty(_settings.Username)
+            ? "Aucun compte mémorisé."
+            : $"Connecté en tant que « {_settings.Username} »";
+
+        // Diagnostic
+        VerboseLogCheck.IsChecked = _settings.VerboseLogging;
+
+        SettingsSubtitle.Text = _settings.Host;
+        VersionText.Text = $"Mesh Control {App.Version}";
+    }
+
+    private void SelectFrameRate(int fps)
+    {
+        foreach (ComboBoxItem item in DefaultFrameRateCombo.Items)
+        {
+            if (item.Tag is string tag && int.TryParse(tag, out var value) && value == fps)
+            {
+                DefaultFrameRateCombo.SelectedItem = item;
+                return;
+            }
+        }
+        DefaultFrameRateCombo.SelectedIndex = 1;   // 10 img/s par défaut
+    }
+
+    // MARK: - Enregistrement
+
+    private void SaveSettings_Click(object sender, RoutedEventArgs e)
+    {
+        var host = HostBox.Text.Trim();
+        if (string.IsNullOrEmpty(host))
+        {
+            ShowSettingsFeedback("Renseignez l'adresse du serveur.", isError: true);
+            HostBox.Focus();
+            return;
+        }
+
+        // Le raccourci doit rester valide, sinon la recherche rapide serait
+        // silencieusement désactivée.
+        var hotkeyText = HotkeyBox.Text.Trim();
+        if (QuickSearchCheck.IsChecked == true && AppSettings.ParseHotkey(hotkeyText) is null)
+        {
+            ShowHotkeyWarning("Raccourci invalide. Pressez une combinaison avec au moins un modificateur.");
+            return;
+        }
+
+        // Bureau à distance
+        _settings.DefaultDesktopQuality = DefaultQualityCombo.SelectedIndex;
+        _settings.DefaultDesktopFrameRate = SelectedFrameRate();
+        _settings.DefaultDesktopFit = DefaultFitCheck.IsChecked == true;
+
+        // Recherche rapide
+        _settings.QuickSearchEnabled = QuickSearchCheck.IsChecked == true;
+        if (_settings.QuickSearchEnabled) _settings.QuickSearchHotkey = hotkeyText;
+
+        // Comportement
+        _settings.MinimizeToTray = TrayCheck.IsChecked == true;
+        _settings.StartMinimized = StartMinimizedCheck.IsChecked == true;
+
+        // Serveur & compte
+        _settings.Host = host;
+        _settings.AllowSelfSigned = SelfSignedCheck.IsChecked == true;
+        _settings.RememberCredentials = RememberSettingCheck.IsChecked == true;
+        if (!_settings.RememberCredentials) _settings.ProtectedPassword = null;
+
+        // Diagnostic
+        _settings.VerboseLogging = VerboseLogCheck.IsChecked == true;
+        Log.MinimumLevel = _settings.VerboseLogging ? LogLevel.Debug : LogLevel.Info;
+
+        // Démarrage automatique : n'écrire dans le registre que si l'état change.
+        bool wantAutoStart = AutoStartCheck.IsChecked == true;
+        if (wantAutoStart != StartupManager.IsEnabled()
+            && !StartupManager.SetEnabled(wantAutoStart))
+        {
+            StartupWarning.Text = "Impossible de modifier le démarrage automatique "
+                                + "(accès au registre refusé). Les autres réglages sont enregistrés.";
+            StartupWarning.Visibility = Visibility.Visible;
+        }
+
+        _settings.Save();
+        ApplySettingsToUi();
+
+        bool hotkeyChanged = _settings.QuickSearchHotkey != _settingsOriginalHotkey
+                             || _settings.QuickSearchEnabled != _settingsOriginalQuickSearch;
+        if (hotkeyChanged) SetupHotkey();
+
+        bool shouldReconnect = host != _settingsOriginalHost
+                               || _settings.AllowSelfSigned != _settingsOriginalSelfSigned;
+
+        CloseSettings();
+
+        if (shouldReconnect)
+        {
+            Log.Info($"Reconnexion suite au changement de serveur : {host}", "Réglages");
+            _connection?.Disconnect();
+            ShowLogin();
+            SetStatus("Le serveur a changé : reconnectez-vous.");
+        }
+    }
+
+    private int SelectedFrameRate()
+    {
+        if (DefaultFrameRateCombo.SelectedItem is ComboBoxItem { Tag: string tag }
+            && int.TryParse(tag, out var value))
+            return value;
+        return 10;
+    }
+
+    private void ShowSettingsFeedback(string message, bool isError = false)
+    {
+        SettingsFeedback.Text = message;
+        SettingsFeedback.Foreground = isError
+            ? (System.Windows.Media.Brush)FindResource("DangerBrush")
+            : (System.Windows.Media.Brush)FindResource("TextSecondaryBrush");
+    }
+
+    // MARK: - Raccourci clavier
+
+    private void QuickSearch_Changed(object sender, RoutedEventArgs e)
+    {
+        // Ce handler se déclenche aussi pendant le chargement du XAML.
+        if (HotkeyBox is null) return;
+        HotkeyBox.IsEnabled = QuickSearchCheck.IsChecked == true;
+    }
+
+    private void HotkeyBox_GotFocus(object sender, RoutedEventArgs e)
+        => HotkeyBox.Text = "Pressez la combinaison…";
+
+    private void HotkeyBox_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (AppSettings.ParseHotkey(HotkeyBox.Text) is null)
+            HotkeyBox.Text = _settings.QuickSearchHotkey;
+    }
+
+    private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        e.Handled = true;   // capturer la frappe sans la laisser agir
+
+        var key = e.Key;
+        if (key == Key.System) key = e.SystemKey;
+
+        // Ignorer l'appui d'un modificateur seul : on attend la touche finale.
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt
+                or Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin
+                or Key.System or Key.None)
+            return;
+
+        var mods = Keyboard.Modifiers;
+        if (mods == ModifierKeys.None)
+        {
+            ShowHotkeyWarning("Ajoutez au moins un modificateur (Ctrl, Alt, Maj ou Win) : "
+                            + "sans cela, la touche serait capturée dans toutes les applications.");
+            return;
+        }
+
+        HotkeyBox.Text = AppSettings.FormatHotkey(mods, key);
+        HotkeyWarning.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowHotkeyWarning(string message)
+    {
+        HotkeyWarning.Text = message;
+        HotkeyWarning.Visibility = Visibility.Visible;
+    }
+
+    // MARK: - Diagnostic
+
+    private void OpenLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Log.Folder,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Ouverture du dossier des journaux impossible", ex, "Réglages");
+            ShowSettingsFeedback($"Dossier : {Log.Folder}");
+        }
+    }
+}

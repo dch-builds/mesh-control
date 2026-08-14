@@ -1,0 +1,37 @@
+# ============================================================
+# Sorties de compilation
+# ============================================================
+bin/
+obj/
+dist/
+installer/output/
+
+# ============================================================
+# Fichiers utilisateur Visual Studio
+# ============================================================
+*.user
+*.suo
+*.userprefs
+.vs/
+
+# ============================================================
+# Outils et environnement local
+# ============================================================
+.claude/
+.scratch/
+
+# ============================================================
+# Systèmes de fichiers
+# ============================================================
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ============================================================
+# Ne jamais publier
+# Le fichier de réglages contient le mot de passe chiffré. Il vit
+# normalement dans %APPDATA%\Mesh Control, mais cette règle évite
+# toute copie accidentelle dans le dépôt.
+# ============================================================
+settings.json
+*.log

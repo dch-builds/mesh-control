@@ -1,0 +1,898 @@
+using System.Collections.Concurrent;
+using System.Text;
+using System.Text.Json;
+
+namespace MeshControl.Core;
+
+public enum ConnectionState { Disconnected, Connecting, Connected, Failed, Reconnecting }
+
+/// <summary>Erreurs de haut niveau, équivalent de MeshError.</summary>
+public sealed class MeshException(string message) : Exception(message);
+
+/// <summary>
+/// Le canal de contrôle MeshCentral : wss://server/control.ashx en trames JSON.
+/// Gère login, liste des appareils, événements temps réel, cookies relais et
+/// ouverture de tunnels.
+/// </summary>
+public sealed class MeshServerConnection : IDisposable
+{
+    public ServerProfile Profile { get; }
+
+    public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
+    public ServerInfo? ServerInfo { get; private set; }
+    public UserInfo? UserInfo { get; private set; }
+    public IReadOnlyList<Mesh> Meshes => _meshes;
+    public IReadOnlyDictionary<string, MeshNode> Nodes => _nodes;
+    public string? LastError { get; private set; }
+
+    // Événements pour l'UI (marshalés vers le thread UI par l'appelant).
+    public event Action? StateChanged;
+    public event Action? DevicesChanged;
+
+    private readonly List<Mesh> _meshes = new();
+    private readonly ConcurrentDictionary<string, MeshNode> _nodes = new();
+
+    private MeshWebSocket? _socket;
+    private CancellationTokenSource? _loopCts;
+    private Task? _receiveTask;
+    private Task? _heartbeatTask;
+    private Task? _cookieRefreshTask;
+
+    // Cookies relais générés par {action:'authcookie'}.
+    private string? _authCookie;
+    private string? _rCookie;
+
+    private static readonly JsonSerializerOptions JsonOpts = new();
+
+    public MeshServerConnection(ServerProfile profile) => Profile = profile;
+
+    private void SetState(ConnectionState s)
+    {
+        State = s;
+        StateChanged?.Invoke();
+    }
+
+    // MARK: - Connexion
+
+    public async Task ConnectAsync(string password, string? token = null)
+    {
+        if (State == ConnectionState.Connecting) return;
+        var url = Profile.WebSocketUri("control.ashx")
+                  ?? throw new MeshException("Adresse de serveur invalide.");
+        SetState(ConnectionState.Connecting);
+        LastError = null;
+
+        // En-tête x-meshauth : base64(user),base64(pass)[,base64(2fa)]
+        var authValue = $"{B64(Profile.Username)},{B64(password)}";
+        if (!string.IsNullOrEmpty(token))
+            authValue += $",{B64(token)}";
+
+        var socket = new MeshWebSocket(
+            url,
+            new Dictionary<string, string> { ["x-meshauth"] = authValue },
+            Profile.AllowSelfSigned);
+        _socket = socket;
+
+        try
+        {
+            await socket.ConnectAsync().ConfigureAwait(false);
+            await WaitForLoginAsync(socket).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _socket = null;
+            socket.Dispose();
+            LastError = FriendlyMessage(ex);
+            Log.Error($"Connexion à {Profile.Host} échouée : {LastError}", ex, "Serveur");
+            SetState(ConnectionState.Failed);
+            throw;
+        }
+
+        Log.Info($"Connecté à {Profile.Host} en tant que {UserInfo?.Name ?? Profile.Username}",
+                 "Serveur");
+        SetState(ConnectionState.Connected);
+
+        _loopCts = new CancellationTokenSource();
+        StartReceiveLoop(socket, _loopCts.Token);
+        StartHeartbeat(_loopCts.Token);
+        StartCookieRefresh(_loopCts.Token);
+
+        await SendJsonAsync(new { action = "meshes" }).ConfigureAwait(false);
+        await SendJsonAsync(new { action = "nodes" }).ConfigureAwait(false);
+        await SendJsonAsync(new { action = "authcookie" }).ConfigureAwait(false);
+    }
+
+    /// <summary>Lit les trames jusqu'à userinfo (login OK) ou un message de close.</summary>
+    private async Task WaitForLoginAsync(MeshWebSocket socket)
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        while (true)
+        {
+            var message = await socket.ReceiveAsync(watchdog.Token).ConfigureAwait(false);
+            if (message is not WsMessage.Text(var text)) continue;
+            if (!TryParse(text, out var json)) continue;
+
+            var action = GetString(json, "action");
+            switch (action)
+            {
+                case "serverinfo":
+                    if (json.TryGetProperty("serverinfo", out var si))
+                        ServerInfo = ServerInfo.From(si);
+                    break;
+                case "userinfo":
+                    if (json.TryGetProperty("userinfo", out var ui))
+                        UserInfo = UserInfo.From(ui);
+                    return;
+                case "close":
+                    throw CloseError(json);
+            }
+        }
+    }
+
+    private static MeshException CloseError(JsonElement json)
+    {
+        var cause = GetString(json, "cause") ?? "";
+        var msg = GetString(json, "msg") ?? "";
+        return (cause, msg) switch
+        {
+            (_, "tokenrequired") => new MeshException("Ce compte requiert un code à deux facteurs."),
+            ("noauth", "nokey") => new MeshException("Ce serveur requiert une clé d'accès URL. Ajoutez-la dans les paramètres du serveur."),
+            ("banned", _) => new MeshException("Trop de tentatives — cette IP est temporairement bannie par le serveur."),
+            ("notools", _) => new MeshException("Ce compte n'est pas autorisé à utiliser des clients API."),
+            ("emailvalidation", _) => new MeshException("Vérifiez l'adresse e-mail du compte avant de vous connecter."),
+            _ => new MeshException("Nom d'utilisateur ou mot de passe invalide."),
+        };
+    }
+
+    private static string FriendlyMessage(Exception ex) => ex switch
+    {
+        MeshException me => me.Message,
+        System.Net.WebSockets.WebSocketException => "Impossible de joindre le serveur. Vérifiez l'adresse et, si le serveur utilise un certificat auto-signé, activez l'option correspondante.",
+        OperationCanceledException => "Délai de connexion dépassé.",
+        _ => ex.Message,
+    };
+
+    public void Disconnect()
+    {
+        Cleanup();
+        SetState(ConnectionState.Disconnected);
+    }
+
+    private void Cleanup()
+    {
+        try { _loopCts?.Cancel(); } catch { }
+        _loopCts?.Dispose();
+        _loopCts = null;
+        InvalidateCookies();
+        _socket?.Close();
+        _socket?.Dispose();
+        _socket = null;
+    }
+
+    private void InvalidateCookies()
+    {
+        _authCookie = null;
+        _rCookie = null;
+    }
+
+    private void MarkConnectionLost()
+    {
+        if (State != ConnectionState.Connected) return;
+        Log.Warning($"Connexion perdue avec {Profile.Host}", "Serveur");
+        Cleanup();
+        LastError = "La connexion au serveur a été perdue.";
+        SetState(ConnectionState.Failed);
+    }
+
+    // MARK: - Boucle de réception
+
+    private void StartReceiveLoop(MeshWebSocket socket, CancellationToken ct)
+    {
+        _receiveTask = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                WsMessage message;
+                try
+                {
+                    message = await socket.ReceiveAsync(ct).ConfigureAwait(false);
+                }
+                catch
+                {
+                    MarkConnectionLost();
+                    return;
+                }
+                if (message is WsMessage.Text(var text) && TryParse(text, out var json))
+                    Handle(json);
+            }
+        }, ct);
+    }
+
+    private void Handle(JsonElement json)
+    {
+        var action = GetString(json, "action");
+        if (action is null) return;
+
+        // Réponse à une requête identifiée (partages…) : le serveur renvoie la
+        // commande complétée, on la livre à l'appelant qui l'attend.
+        if (GetString(json, "responseid") is { } responseId
+            && _pendingResponses.TryRemove(responseId, out var pending))
+        {
+            pending.TrySetResult(json);
+            return;
+        }
+
+        switch (action)
+        {
+            case "ping":
+                _ = SendJsonAsync(new { action = "pong" });
+                break;
+            case "meshes":
+                if (json.TryGetProperty("meshes", out var meshesEl) && meshesEl.ValueKind == JsonValueKind.Array)
+                {
+                    _meshes.Clear();
+                    foreach (var m in meshesEl.EnumerateArray())
+                        if (Mesh.From(m) is { } mesh) _meshes.Add(mesh);
+                    _meshes.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                    DevicesChanged?.Invoke();
+                }
+                break;
+            case "nodes":
+                if (json.TryGetProperty("nodes", out var grouped) && grouped.ValueKind == JsonValueKind.Object)
+                {
+                    _nodes.Clear();
+                    foreach (var group in grouped.EnumerateObject())
+                        if (group.Value.ValueKind == JsonValueKind.Array)
+                            foreach (var item in group.Value.EnumerateArray())
+                                if (MeshNode.From(item, group.Name) is { } node)
+                                    _nodes[node.Id] = node;
+                    DevicesChanged?.Invoke();
+                }
+                break;
+            case "authcookie":
+                _authCookie = GetString(json, "cookie");
+                _rCookie = GetString(json, "rcookie");
+                break;
+            case "event":
+                if (json.TryGetProperty("event", out var ev))
+                    HandleEvent(ev);
+                break;
+            case "msg":
+                // Journalisé au niveau Debug : permet d'identifier le format exact
+                // renvoyé par l'agent si le presse-papiers ne fonctionne pas.
+                Log.Debug($"Message d'agent reçu : {json.GetRawText()}", "Serveur");
+                HandleDeviceMessage(json);
+                break;
+            case "close":
+                LastError = CloseError(json).Message;
+                SetState(ConnectionState.Failed);
+                break;
+            default:
+                // Trace des actions non gérées : indispensable pour diagnostiquer
+                // une réponse d'agent au format inattendu.
+                if (_consoleWaiter is not null || _processListWaiter is not null)
+                {
+                    var raw = json.GetRawText();
+                    Log.Debug($"Action non gérée « {action} » (attente en cours) : "
+                            + (raw.Length > 400 ? raw[..400] + "…" : raw), "Serveur");
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Messages relayés depuis un agent. On n'y traite que la réponse au
+    /// presse-papiers ; les autres types passent par leurs tunnels dédiés.
+    /// </summary>
+    private void HandleDeviceMessage(JsonElement json)
+    {
+        // L'agent répond avec « sessionid » (et non « nodeid ») : on ne peut donc
+        // pas apparier par machine. La demande en cours est la seule attendue.
+        switch (GetString(json, "type"))
+        {
+            case "getclip":
+            {
+                var waiter = _clipboardWaiter;
+                if (waiter is null) return;
+                _clipboardWaiter = null;
+                waiter.TrySetResult(GetString(json, "data") ?? "");
+                break;
+            }
+
+            case "ps":
+            {
+                var waiter = _processListWaiter;
+                if (waiter is null) return;
+                _processListWaiter = null;
+                // « value » contient du JSON sérialisé sous forme de chaîne.
+                waiter.TrySetResult(GetString(json, "value") ?? "");
+                break;
+            }
+
+            case "console":
+            {
+                // Sortie d'une commande console. L'agent peut en émettre
+                // spontanément (messages d'état) : on ne la retient que si une
+                // demande est en cours.
+                var waiter = _consoleWaiter;
+                if (waiter is null) return;
+                _consoleWaiter = null;
+                waiter.TrySetResult(GetString(json, "value")
+                                    ?? GetString(json, "msg") ?? "");
+                break;
+            }
+        }
+    }
+
+    private void HandleEvent(JsonElement ev)
+    {
+        var action = GetString(ev, "action");
+        switch (action)
+        {
+            case "nodeconnect":
+                if (GetString(ev, "nodeid") is { } nid && _nodes.TryGetValue(nid, out var node))
+                {
+                    node.Conn = ev.TryGetProperty("conn", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 0;
+                    node.Pwr = ev.TryGetProperty("pwr", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : 0;
+                    DevicesChanged?.Invoke();
+                }
+                break;
+            case "changenode":
+                if (ev.TryGetProperty("node", out var nodeJson) && GetString(nodeJson, "_id") is { } cid
+                    && _nodes.TryGetValue(cid, out var existing))
+                {
+                    existing.Merge(nodeJson);
+                    DevicesChanged?.Invoke();
+                }
+                break;
+            case "addnode":
+                if (ev.TryGetProperty("node", out var addJson))
+                {
+                    var meshId = GetString(ev, "meshid") ?? GetString(addJson, "meshid");
+                    if (meshId is not null && MeshNode.From(addJson, meshId) is { } added)
+                    {
+                        _nodes[added.Id] = added;
+                        DevicesChanged?.Invoke();
+                    }
+                }
+                break;
+            case "removenode":
+                if (GetString(ev, "nodeid") is { } rid && _nodes.TryRemove(rid, out _))
+                    DevicesChanged?.Invoke();
+                break;
+            case "nodemeshchange":
+            case "meshchange":
+            case "createmesh":
+            case "deletemesh":
+                _ = RefreshDeviceListAsync();
+                break;
+        }
+    }
+
+    // MARK: - Requêtes
+
+    public async Task SendJsonAsync(object obj)
+    {
+        var socket = _socket ?? throw new MeshException("Non connecté au serveur.");
+        var text = JsonSerializer.Serialize(obj, JsonOpts);
+        await socket.SendAsync(text).ConfigureAwait(false);
+    }
+
+    public async Task RefreshDeviceListAsync()
+    {
+        await SendJsonAsync(new { action = "meshes" }).ConfigureAwait(false);
+        await SendJsonAsync(new { action = "nodes" }).ConfigureAwait(false);
+    }
+
+    /// <summary>Appareil sans agent dans un groupe local/relais (mesh mtype 3).</summary>
+    public bool IsLocalDevice(MeshNode node) =>
+        _meshes.FirstOrDefault(m => m.Id == node.MeshId)?.MType == 3;
+
+    public Task WakeAsync(string nodeId) =>
+        SendJsonAsync(new { action = "wakedevices", nodeids = new[] { nodeId } });
+
+    public Task PowerActionAsync(string nodeId, PowerActionType action) =>
+        SendJsonAsync(new { action = "poweraction", nodeids = new[] { nodeId }, actiontype = (int)action });
+
+    // MARK: - Cookies relais & tunnels
+
+    private void StartCookieRefresh(CancellationToken ct)
+    {
+        _cookieRefreshTask = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(TimeSpan.FromMinutes(20), ct).ConfigureAwait(false); }
+                catch { return; }
+                try { await SendJsonAsync(new { action = "authcookie" }).ConfigureAwait(false); } catch { }
+            }
+        }, ct);
+    }
+
+    private void StartHeartbeat(CancellationToken ct)
+    {
+        _heartbeatTask = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(TimeSpan.FromSeconds(45), ct).ConfigureAwait(false); }
+                catch { return; }
+                try { await SendJsonAsync(new { action = "ping" }).ConfigureAwait(false); }
+                catch { MarkConnectionLost(); return; }
+            }
+        }, ct);
+    }
+
+    /// <summary>Garantit des cookies relais frais, en les demandant au besoin.</summary>
+    public async Task<(string auth, string rauth)> RelayCookiesAsync()
+    {
+        if (_authCookie is { } a0 && _rCookie is { } r0) return (a0, r0);
+
+        await SendJsonAsync(new { action = "authcookie" }).ConfigureAwait(false);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (_authCookie is { } a && _rCookie is { } r) return (a, r);
+            await Task.Delay(100).ConfigureAwait(false);
+        }
+        throw new MeshException("Délai dépassé pour l'obtention des identifiants d'appareil.");
+    }
+
+    /// <summary>Ouvre un tunnel relais vers un appareil (bureau à distance ou fichiers).</summary>
+    public async Task<MeshWebSocket> OpenTunnelAsync(string nodeId, RelayProtocol relayProtocol)
+    {
+        try { return await OpenTunnelOnceAsync(nodeId, relayProtocol).ConfigureAwait(false); }
+        catch (MeshException)
+        {
+            InvalidateCookies();
+            return await OpenTunnelOnceAsync(nodeId, relayProtocol).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<MeshWebSocket> OpenTunnelOnceAsync(string nodeId, RelayProtocol relayProtocol)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+        var (auth, rauth) = await RelayCookiesAsync().ConfigureAwait(false);
+        var tunnelId = RandomHex(12);
+        var p = (int)relayProtocol;
+
+        // Côté agent (via le canal de contrôle). Valeur relative au serveur ('*').
+        var agentUrl = $"*/meshrelay.ashx?p={p}&nodeid={nodeId}&id={tunnelId}&rauth={rauth}";
+        await SendJsonAsync(new
+        {
+            action = "msg",
+            type = "tunnel",
+            nodeid = nodeId,
+            value = agentUrl,
+            usage = p
+        }).ConfigureAwait(false);
+
+        // Notre côté.
+        var url = Profile.WebSocketUri("meshrelay.ashx", new Dictionary<string, string>
+        {
+            ["browser"] = "1",
+            ["p"] = p.ToString(),
+            ["nodeid"] = nodeId,
+            ["id"] = tunnelId,
+            ["auth"] = auth,
+        }) ?? throw new MeshException("Adresse de serveur invalide.");
+
+        var relay = new MeshWebSocket(url, null, Profile.AllowSelfSigned);
+        await relay.ConnectAsync().ConfigureAwait(false);
+
+        // Attendre 'c' ou 'cr' (l'agent peut mettre quelques secondes à composer).
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        try
+        {
+            while (true)
+            {
+                var message = await relay.ReceiveAsync(watchdog.Token).ConfigureAwait(false);
+                if (message is WsMessage.Text(var t) && (t == "c" || t == "cr")) break;
+            }
+        }
+        catch
+        {
+            relay.Close();
+            relay.Dispose();
+            throw new MeshException("Délai dépassé en attendant la connexion de l'appareil.");
+        }
+        await relay.SendAsync(p.ToString()).ConfigureAwait(false);
+        return relay;
+    }
+
+    /// <summary>Ouvre le relais terminal SSH (endpoint distinct de meshrelay).</summary>
+    public async Task<MeshWebSocket> OpenSshTunnelAsync(string nodeId)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+        var (auth, _) = await RelayCookiesAsync().ConfigureAwait(false);
+        var url = Profile.WebSocketUri("sshterminalrelay.ashx", new Dictionary<string, string>
+        {
+            ["browser"] = "1",
+            ["p"] = "11",
+            ["nodeid"] = nodeId,
+            ["id"] = RandomHex(12),
+            ["auth"] = auth,
+        }) ?? throw new MeshException("Adresse de serveur invalide.");
+
+        var relay = new MeshWebSocket(url, null, Profile.AllowSelfSigned);
+        try { await relay.ConnectAsync().ConfigureAwait(false); }
+        catch
+        {
+            relay.Dispose();
+            throw new MeshException("Impossible d'ouvrir une session SSH. Vérifiez que SSH est activé sur le serveur (\"ssh\": true dans la config du domaine).");
+        }
+        return relay;
+    }
+
+    // MARK: - Presse-papiers de la machine distante
+
+    /// <summary>
+    /// Demande de presse-papiers en cours. L'agent répond avec « sessionid » et
+    /// non « nodeid » : on ne peut donc pas apparier la réponse à une machine
+    /// précise. Une seule demande à la fois suffit largement à l'usage.
+    /// </summary>
+    private TaskCompletionSource<string>? _clipboardWaiter;
+
+    /// <summary>
+    /// Récupère le texte du presse-papiers de la machine distante.
+    ///
+    /// Ces messages transitent par le canal de contrôle du serveur (et non par le
+    /// tunnel KVM), qui les route vers l'agent. Le serveur peut les refuser si
+    /// « clipboardget » est désactivé dans sa configuration.
+    /// </summary>
+    public async Task<string> GetRemoteClipboardAsync(string nodeId, CancellationToken ct = default)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _clipboardWaiter = tcs;
+
+        try
+        {
+            // « tag » nous revient tel quel dans la réponse de l'agent. La valeur 3
+            // évite d'inscrire une ligne dans le journal du serveur à chaque lecture.
+            await SendJsonAsync(new
+            {
+                action = "msg",
+                type = "getclip",
+                nodeid = nodeId,
+                tag = 3,
+            }).ConfigureAwait(false);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+            using var registration = linked.Token.Register(() => tcs.TrySetException(
+                new MeshException(
+                    "La machine n'a pas renvoyé son presse-papiers.\n\n"
+                  + "Causes possibles : le presse-papiers distant est vide (l'agent ne "
+                  + "répond alors pas), la fonction est désactivée sur le serveur "
+                  + "(clipboardget), ou l'agent est trop ancien.")));
+
+            return await tcs.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ReferenceEquals(_clipboardWaiter, tcs)) _clipboardWaiter = null;
+        }
+    }
+
+    /// <summary>Écrit du texte dans le presse-papiers de la machine distante.</summary>
+    public Task SetRemoteClipboardAsync(string nodeId, string text)
+        => SendJsonAsync(new
+        {
+            action = "msg",
+            type = "setclip",
+            nodeid = nodeId,
+            data = text,
+        });
+
+    // MARK: - Commandes console de l'agent
+
+    /// <summary>Réponse en attente à une demande de liste de processus.</summary>
+    private TaskCompletionSource<string>? _processListWaiter;
+
+    /// <summary>
+    /// Envoie une commande console à l'agent (openurl, kill, lock, toast…).
+    ///
+    /// L'agent exige les droits « Remote Control » (8) ET « Console » (16) sur la
+    /// machine : sans eux la commande est ignorée silencieusement.
+    /// </summary>
+    public Task SendConsoleCommandAsync(string nodeId, string command)
+        => SendJsonAsync(new
+        {
+            action = "msg",
+            type = "console",
+            nodeid = nodeId,
+            value = command,
+        });
+
+    /// <summary>Ouvre une URL dans le navigateur de la machine distante.</summary>
+    public Task OpenUrlAsync(string nodeId, string url)
+    {
+        // L'URL est concaténée dans une ligne de commande côté agent : on refuse
+        // tout ce qui n'est pas une adresse web simple, et les espaces qui
+        // permettraient d'injecter un argument supplémentaire.
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+            || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+            throw new MeshException("Adresse invalide : seules les URL http:// et https:// sont acceptées.");
+        if (url.Any(char.IsWhiteSpace))
+            throw new MeshException("L'adresse ne doit pas contenir d'espace.");
+
+        return SendConsoleCommandAsync(nodeId, $"openurl {parsed.AbsoluteUri}");
+    }
+
+    /// <summary>
+    /// Récupère la liste des processus de la machine distante. L'agent répond par
+    /// un message « ps » dont la valeur est un objet JSON { pid: { ... } }.
+    /// </summary>
+    public async Task<string> GetProcessListAsync(string nodeId, CancellationToken ct = default)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _processListWaiter = tcs;
+
+        try
+        {
+            await SendJsonAsync(new
+            {
+                action = "msg",
+                type = "ps",
+                nodeid = nodeId,
+            }).ConfigureAwait(false);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+            using var registration = linked.Token.Register(() => tcs.TrySetException(
+                new MeshException(
+                    "La machine n'a pas renvoyé la liste des processus.\n\n"
+                  + "Vérifiez que votre compte dispose du droit « Console » sur ce groupe "
+                  + "d'appareils, et que l'agent est à jour.")));
+
+            return await tcs.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ReferenceEquals(_processListWaiter, tcs)) _processListWaiter = null;
+        }
+    }
+
+    /// <summary>Arrête un processus distant par son identifiant.</summary>
+    public Task KillProcessAsync(string nodeId, int pid)
+        => SendConsoleCommandAsync(nodeId, $"kill {pid}");
+
+    /// <summary>Réponses console en attente (sysinfo, netinfo…).</summary>
+    private TaskCompletionSource<string>? _consoleWaiter;
+
+    /// <summary>
+    /// Exécute une commande console et attend sa réponse textuelle.
+    ///
+    /// C'est la voie fiable pour interroger l'agent : l'action « sysinfo » directe
+    /// répond avec un « sessionid » issu d'un contexte de rappel, souvent
+    /// indéfini, si bien que le serveur ne sait pas vers qui router la réponse.
+    /// La commande console, elle, renvoie un simple texte sur le canal habituel.
+    /// </summary>
+    public async Task<string> RunConsoleCommandAsync(string nodeId, string command,
+                                                     int timeoutSeconds = 25,
+                                                     CancellationToken ct = default)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _consoleWaiter = tcs;
+
+        try
+        {
+            await SendConsoleCommandAsync(nodeId, command).ConfigureAwait(false);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+            using var registration = linked.Token.Register(() => tcs.TrySetException(
+                new MeshException(
+                    "La machine n'a pas répondu.\n\n"
+                  + "Vérifiez que votre compte dispose du droit « Console » sur ce "
+                  + "groupe d'appareils et que l'agent est à jour.")));
+
+            return await tcs.Task.ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ReferenceEquals(_consoleWaiter, tcs)) _consoleWaiter = null;
+        }
+    }
+
+    /// <summary>Informations système, sous forme de texte renvoyé par l'agent.</summary>
+    public Task<string> GetSystemInfoTextAsync(string nodeId, CancellationToken ct = default)
+        => RunConsoleCommandAsync(nodeId, "sysinfo", timeoutSeconds: 30, ct: ct);
+
+    // MARK: - Partage d'appareil (liens publics)
+
+    /// <summary>
+    /// Réponses en attente, indexées par responseid : le serveur renvoie la
+    /// commande complétée plutôt qu'un message dédié.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingResponses = new();
+
+    /// <summary>
+    /// Crée un lien de partage public vers un appareil.
+    /// </summary>
+    /// <param name="nodeId">Appareil à partager.</param>
+    /// <param name="guestName">Nom de l'invité (affiché côté serveur et dans les journaux).</param>
+    /// <param name="protocols">
+    /// Masque de bits — attention, ces valeurs diffèrent de celles des tunnels :
+    /// 1 = terminal, 2 = bureau, 4 = fichiers, 8 = HTTP, 16 = HTTPS.
+    /// </param>
+    /// <param name="durationMinutes">Durée de validité en minutes.</param>
+    /// <param name="consent">
+    /// Drapeaux de consentement côté machine (0 = aucun ; sinon combinaison
+    /// définie par MeshCentral, p. ex. invite + notification).
+    /// </param>
+    /// <param name="viewOnly">
+    /// Lecture seule : le destinataire voit l'écran mais ne peut ni cliquer ni
+    /// taper. Ce réglage est porté par le cookie du lien, il se fixe donc à la
+    /// création et ne peut pas être changé ensuite via l'URL.
+    /// </param>
+    public async Task<DeviceShare> CreateShareLinkAsync(
+        string nodeId, string guestName, int protocols, int durationMinutes, int consent,
+        bool viewOnly = false)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+
+        var responseId = RandomHex(10);
+        var tcs = new TaskCompletionSource<JsonElement>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingResponses[responseId] = tcs;
+
+        try
+        {
+            // start + expire : le serveur exige soit (start, end), soit
+            // (start, expire) — expire étant une durée en minutes.
+            var startSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            await SendJsonAsync(new
+            {
+                action = "createDeviceShareLink",
+                nodeid = nodeId,
+                guestname = guestName,
+                p = protocols,
+                consent,
+                start = startSeconds,
+                expire = durationMinutes,
+                viewOnly,
+                responseid = responseId,
+            }).ConfigureAwait(false);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var registration = timeout.Token.Register(
+                () => tcs.TrySetException(new MeshException("Le serveur n'a pas répondu à la demande de partage.")));
+
+            var response = await tcs.Task.ConfigureAwait(false);
+
+            var result = GetString(response, "result");
+            if (result is not null && result != "OK")
+                throw new MeshException($"Partage refusé par le serveur : {result}");
+
+            var url = GetString(response, "url")
+                      ?? throw new MeshException("Le serveur n'a pas renvoyé de lien.");
+
+            return new DeviceShare
+            {
+                PublicId = GetString(response, "publicid") ?? "",
+                Url = NormalizeShareUrl(url),
+                GuestName = guestName,
+                Protocols = protocols,
+            };
+        }
+        finally
+        {
+            _pendingResponses.TryRemove(responseId, out _);
+        }
+    }
+
+    /// <summary>
+    /// Le serveur renvoie parfois un chemin relatif (quand son nom d'hôte n'est
+    /// pas qualifié) : on le complète avec l'adresse du profil.
+    /// </summary>
+    private string NormalizeShareUrl(string url)
+    {
+        if (url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return url;
+        var baseUri = Profile.BaseUri;
+        if (baseUri is null) return url;
+        return $"{baseUri.Scheme}://{baseUri.Authority}{(url.StartsWith('/') ? "" : "/")}{url}";
+    }
+
+    /// <summary>Liste les partages actifs d'un appareil.</summary>
+    public async Task<List<DeviceShare>> ListSharesAsync(string nodeId)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+
+        var responseId = RandomHex(10);
+        var tcs = new TaskCompletionSource<JsonElement>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingResponses[responseId] = tcs;
+
+        try
+        {
+            await SendJsonAsync(new
+            {
+                action = "deviceShares",
+                nodeid = nodeId,
+                responseid = responseId,
+            }).ConfigureAwait(false);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var registration = timeout.Token.Register(
+                () => tcs.TrySetException(new MeshException("Le serveur n'a pas répondu.")));
+
+            var response = await tcs.Task.ConfigureAwait(false);
+            var shares = new List<DeviceShare>();
+
+            if (response.TryGetProperty("deviceShares", out var list)
+                && list.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in list.EnumerateArray())
+                {
+                    var url = GetString(item, "url");
+                    shares.Add(new DeviceShare
+                    {
+                        PublicId = GetString(item, "publicid") ?? "",
+                        Url = url is null ? "" : NormalizeShareUrl(url),
+                        GuestName = GetString(item, "guestName") ?? "",
+                        Protocols = item.TryGetProperty("p", out var p)
+                                    && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : 0,
+                        ExpireTime = item.TryGetProperty("expireTime", out var e)
+                                     && e.ValueKind == JsonValueKind.Number
+                                     ? DateTimeOffset.FromUnixTimeSeconds(e.GetInt64()).LocalDateTime
+                                     : null,
+                    });
+                }
+            }
+            return shares;
+        }
+        finally
+        {
+            _pendingResponses.TryRemove(responseId, out _);
+        }
+    }
+
+    /// <summary>Révoque un partage : le lien cesse immédiatement de fonctionner.</summary>
+    public Task RemoveShareAsync(string nodeId, string publicId)
+        => SendJsonAsync(new
+        {
+            action = "removeDeviceShare",
+            nodeid = nodeId,
+            publicid = publicId,
+        });
+
+    // MARK: - Utilitaires
+
+    private static string B64(string s) => Convert.ToBase64String(Encoding.UTF8.GetBytes(s));
+
+    private static readonly char[] HexChars = "0123456789abcdef".ToCharArray();
+    public static string RandomHex(int length)
+    {
+        var chars = new char[length];
+        var rnd = Random.Shared;
+        for (int i = 0; i < length; i++) chars[i] = HexChars[rnd.Next(16)];
+        return new string(chars);
+    }
+
+    private static bool TryParse(string text, out JsonElement element)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(text);
+            element = doc.RootElement.Clone();
+            return element.ValueKind == JsonValueKind.Object;
+        }
+        catch
+        {
+            element = default;
+            return false;
+        }
+    }
+
+    private static string? GetString(JsonElement o, string key) =>
+        o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    public void Dispose() => Cleanup();
+}

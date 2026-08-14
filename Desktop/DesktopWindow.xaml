@@ -1,0 +1,133 @@
+<Window x:Class="MeshControl.Desktop.DesktopWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Bureau à distance — Mesh Control" Height="760" Width="1180"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource WindowBackgroundBrush}"
+        Focusable="True">
+    <DockPanel>
+        <!-- Barre d'outils claire -->
+        <Border DockPanel.Dock="Top" Background="White" Padding="14,10">
+            <Border.Effect>
+                <DropShadowEffect Color="#18000000" BlurRadius="8" ShadowDepth="1"
+                                  Direction="270" Opacity="0.6"/>
+            </Border.Effect>
+            <Grid>
+                <!-- Identité de la machine -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left"
+                            VerticalAlignment="Center">
+                    <Ellipse x:Name="StatusDot" Width="9" Height="9"
+                             Fill="{StaticResource OnlineBrush}"
+                             VerticalAlignment="Center" Margin="0,0,9,0"/>
+                    <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ResolutionText" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center" Margin="10,1,0,0"/>
+                </StackPanel>
+
+                <!-- Contrôles -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="Qualité" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center" Margin="0,0,7,0"/>
+                    <ComboBox x:Name="QualityCombo" Width="104" FontSize="12"
+                              VerticalContentAlignment="Center"
+                              SelectionChanged="QualityCombo_SelectionChanged">
+                        <ComboBoxItem Content="Basse"/>
+                        <ComboBoxItem Content="Équilibrée" IsSelected="True"/>
+                        <ComboBoxItem Content="Haute"/>
+                    </ComboBox>
+
+                    <TextBlock Text="Fluidité" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center" Margin="12,0,7,0"/>
+                    <ComboBox x:Name="FrameRateCombo" Width="104" FontSize="12"
+                              VerticalContentAlignment="Center"
+                              ToolTip="Taux de rafraîchissement de l'écran distant"
+                              SelectionChanged="FrameRateCombo_SelectionChanged">
+                        <ComboBoxItem Content="5 img/s"/>
+                        <ComboBoxItem Content="10 img/s" IsSelected="True"/>
+                        <ComboBoxItem Content="20 img/s"/>
+                        <ComboBoxItem Content="30 img/s"/>
+                        <ComboBoxItem Content="45 img/s"/>
+                        <ComboBoxItem Content="60 img/s"/>
+                    </ComboBox>
+
+                    <Border Width="1" Background="{StaticResource SeparatorBrush}"
+                            Margin="14,2,14,2"/>
+
+                    <CheckBox x:Name="FitCheck" Content="Ajuster" FontSize="12"
+                              Foreground="{StaticResource TextPrimaryBrush}"
+                              VerticalAlignment="Center" IsChecked="True"
+                              Checked="Fit_Changed" Unchecked="Fit_Changed"
+                              Margin="0,0,12,0"/>
+
+                    <Button Content="Rafraîchir" Style="{StaticResource ToolButton}"
+                            Click="Refresh_Click" Margin="0,0,6,0"/>
+
+                    <!-- Menu de raccourcis clavier envoyés à la machine distante -->
+                    <Button x:Name="ShortcutsButton" Content="Raccourcis ▾"
+                            Style="{StaticResource ToolButton}"
+                            Click="Shortcuts_Click" Margin="0,0,6,0">
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="ShortcutsMenu" Placement="Bottom"/>
+                        </Button.ContextMenu>
+                    </Button>
+
+                    <!-- Colle le presse-papiers local en le tapant sur la machine distante -->
+                    <Button x:Name="PasteButton" Content="Coller"
+                            Style="{StaticResource ToolButton}"
+                            Click="Paste_Click" Margin="0,0,6,0"
+                            ToolTip="Saisir le texte du presse-papiers sur la machine distante (Ctrl+Maj+V)"/>
+
+                    <!-- Récupère le presse-papiers de la machine distante -->
+                    <Button x:Name="CopyFromRemoteButton" Content="Copier depuis"
+                            Style="{StaticResource ToolButton}"
+                            Click="CopyFromRemote_Click" Margin="0,0,6,0"
+                            ToolTip="Récupérer le presse-papiers de la machine distante (Ctrl+Maj+C)"/>
+
+                    <!-- Secours : débloque un modificateur resté enfoncé côté distant -->
+                    <Button Content="⌨" Style="{StaticResource ToolButton}"
+                            Click="ReleaseModifiers_Click" Padding="9,5"
+                            ToolTip="Débloquer le clavier distant (relâche Ctrl, Alt, Maj, Win)"/>
+
+                    <TextBlock x:Name="StatsText" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center" Margin="14,0,0,0"
+                               MinWidth="70" TextAlignment="Right"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Zone d'affichage du bureau distant (fond sombre : met l'écran en valeur) -->
+        <!-- Deux conteneurs exclusifs :
+             - FitHost (Grid)      : mode « Ajuster » — WPF met l'image à l'échelle
+                                     automatiquement et suit la fenêtre nativement.
+             - Scroller (ScrollViewer) : mode 1:1 — taille native + défilement. -->
+        <Grid Background="#1B1D21">
+            <Grid x:Name="FitHost">
+                <Image x:Name="ScreenImage" Focusable="False"
+                       RenderOptions.BitmapScalingMode="LowQuality"
+                       Stretch="Uniform" StretchDirection="DownOnly"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       MouseMove="Screen_MouseMove"
+                       MouseDown="Screen_MouseDown"
+                       MouseUp="Screen_MouseUp"
+                       MouseWheel="Screen_MouseWheel"/>
+            </Grid>
+
+            <ScrollViewer x:Name="Scroller" Visibility="Collapsed"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto"
+                          Focusable="False" Padding="0">
+                <Image x:Name="ScreenImageNative" Focusable="False"
+                       RenderOptions.BitmapScalingMode="NearestNeighbor"
+                       Stretch="None"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       MouseMove="Screen_MouseMove"
+                       MouseDown="Screen_MouseDown"
+                       MouseUp="Screen_MouseUp"
+                       MouseWheel="Screen_MouseWheel"/>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</Window>

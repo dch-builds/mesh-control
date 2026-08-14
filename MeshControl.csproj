@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- WinForms uniquement pour NotifyIcon : WPF n'offre pas d'équivalent natif
+         pour la zone de notification. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>Mesh Control</AssemblyName>
+    <RootNamespace>MeshControl</RootNamespace>
+    <ApplicationTitle>Mesh Control</ApplicationTitle>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+
+    <!-- Métadonnées visibles dans les propriétés du fichier .exe -->
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Company>Mesh Control</Company>
+    <Product>Mesh Control</Product>
+    <Description>Contrôle à distance des postes via MeshCentral</Description>
+    <Copyright>© Mesh Control</Copyright>
+
+    <!-- Publication en FICHIERS SÉPARÉS, destinée à un installeur (Inno Setup).
+         On évite volontairement PublishSingleFile : celui-ci réextrait tout le
+         contenu dans un dossier temporaire à chaque lancement, ce qui ralentit le
+         démarrage sans apporter d'intérêt une fois l'application installée.
+         Autonome (SelfContained) pour ne dépendre d'aucun runtime .NET sur les postes. -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- La troncature est incompatible avec WPF (résolution de types par réflexion
+         dans le XAML) : elle provoquerait des plantages à l'exécution. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <DebugType>none</DebugType>
+    <!-- Fichiers de langue des messages du framework : inutiles ici, ils
+         représentent une part notable du volume. -->
+    <SatelliteResourceLanguages>fr;en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
+  </ItemGroup>
+
+</Project>
