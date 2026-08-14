@@ -260,11 +260,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        // Owner volontairement non défini : la fenêtre de bureau vit sa vie même
-        // si la fenêtre principale reste minimisée.
-        var window = new Desktop.DesktopWindow(_connection, node, _settings);
-        window.Show();
-        window.Activate();
+        RememberRecent(node);
+        OpenSession(new Desktop.DesktopWindow(_connection, node, _settings), node.Name, "🖥");
     }
 
     private void RestoreMainWindow()
@@ -928,7 +925,26 @@ public partial class MainWindow : Window
         }
 
         RememberRecent(node);
-        new Desktop.DesktopWindow(_connection, node, _settings) { Owner = this }.Show();
+        OpenSession(new Desktop.DesktopWindow(_connection, node, _settings), node.Name, "🖥");
+    }
+
+    /// <summary>
+    /// Présente une session selon la préférence : dans un onglet de la fenêtre
+    /// commune, ou dans sa propre fenêtre.
+    /// </summary>
+    private void OpenSession(Window session, string title, string glyph)
+    {
+        if (_settings.UseTabbedSessions)
+        {
+            SessionsWindow.AddSession(session, title, glyph);
+        }
+        else
+        {
+            // Owner volontairement non défini : la session survit à une
+            // réduction de la fenêtre principale dans la zone de notification.
+            session.Show();
+            session.Activate();
+        }
     }
 
     // MARK: - Actions : clic droit = menu contextuel
@@ -986,19 +1002,22 @@ public partial class MainWindow : Window
     private void MenuTerminal_Click(object sender, RoutedEventArgs e)
     {
         if (_connection is null || SelectedNode is not { } node) return;
-        new Ssh.TerminalWindow(_connection, node) { Owner = this }.Show();
+        RememberRecent(node);
+        OpenSession(new Ssh.TerminalWindow(_connection, node), node.Name, "▶");
     }
 
     private void MenuFiles_Click(object sender, RoutedEventArgs e)
     {
         if (_connection is null || SelectedNode is not { } node) return;
-        new Files.FilesWindow(_connection, node) { Owner = this }.Show();
+        RememberRecent(node);
+        OpenSession(new Files.FilesWindow(_connection, node), node.Name, "📁");
     }
 
     private void MenuSsh_Click(object sender, RoutedEventArgs e)
     {
         if (_connection is null || SelectedNode is not { } node) return;
-        new Ssh.SshWindow(_connection, node) { Owner = this }.Show();
+        RememberRecent(node);
+        OpenSession(new Ssh.SshWindow(_connection, node), node.Name, "▶");
     }
 
     private async void MenuWake_Click(object sender, RoutedEventArgs e)

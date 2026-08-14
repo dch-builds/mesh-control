@@ -7,8 +7,34 @@ using MeshControl.UI;
 
 namespace MeshControl.Files;
 
-public partial class FilesWindow : Window
+public partial class FilesWindow : Window, MeshControl.UI.ISessionWindow
 {
+    /// <summary>Empêche un double démarrage (Loaded et hôte d'onglet).</summary>
+    private bool _sessionStarted;
+
+    /// <summary>
+    /// Fenêtre à utiliser comme propriétaire des boîtes de dialogue. En mode
+    /// onglets, cette fenêtre n'est jamais affichée : WPF refuserait alors de
+    /// l'accepter comme propriétaire. On remonte donc à la fenêtre hôte.
+    /// </summary>
+    private Window DialogOwner
+    {
+        get
+        {
+            if (IsLoaded && IsVisible) return this;
+            var host = RootPanel is null ? null : Window.GetWindow(RootPanel);
+            return host ?? Application.Current.MainWindow ?? this;
+        }
+    }
+
+    /// <summary>Démarre la session ; sans effet si elle l'est déjà.</summary>
+    public async Task StartSessionAsync()
+    {
+        if (_sessionStarted) return;
+        _sessionStarted = true;
+        await _session.StartAsync();
+    }
+
     private readonly FilesSession _session;
     private readonly MeshNode _node;
 
@@ -26,7 +52,9 @@ public partial class FilesWindow : Window
         _session.EntriesChanged += OnEntriesChanged;
         _session.TransferChanged += OnTransferChanged;
 
-        Loaded += async (_, _) => await _session.StartAsync();
+        // En mode onglets, la fenêtre n'est jamais affichée : Loaded ne se
+        // déclenche pas, l'hôte appelle StartSessionAsync() explicitement.
+        Loaded += async (_, _) => await StartSessionAsync();
         Closed += (_, _) => _session.Stop();
     }
 
@@ -149,7 +177,7 @@ public partial class FilesWindow : Window
             FileName = row.Name,
             Title = "Enregistrer le fichier",
         };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(DialogOwner) != true) return;
 
         try
         {
@@ -178,7 +206,7 @@ public partial class FilesWindow : Window
         }
 
         var dialog = new OpenFileDialog { Title = "Choisir un fichier à envoyer" };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(DialogOwner) != true) return;
 
         try
         {
@@ -204,7 +232,7 @@ public partial class FilesWindow : Window
     private async void NewFolder_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new TextPromptDialog("Nouveau dossier",
-            "Nom du nouveau dossier :", "Nouveau dossier", "Créer") { Owner = this };
+            "Nom du nouveau dossier :", "Nouveau dossier", "Créer") { Owner = DialogOwner };
         if (dialog.ShowDialog() != true || dialog.Value is null) return;
 
         await _session.CreateFolderAsync(dialog.Value);
@@ -218,7 +246,7 @@ public partial class FilesWindow : Window
         if (SelectedRow is not { } row) return;
 
         var dialog = new TextPromptDialog("Renommer",
-            $"Nouveau nom de « {row.Name} » :", row.Name, "Renommer") { Owner = this };
+            $"Nouveau nom de « {row.Name} » :", row.Name, "Renommer") { Owner = DialogOwner };
         if (dialog.ShowDialog() != true || dialog.Value is null) return;
         if (dialog.Value == row.Name) return;
 

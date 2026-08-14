@@ -1,12 +1,42 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using MeshControl.Core;
 
 namespace MeshControl.Desktop;
 
-public partial class DesktopWindow : Window
+public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
 {
+    /// <summary>Empêche un double démarrage (Loaded et hôte d'onglet).</summary>
+    private bool _sessionStarted;
+
+    /// <summary>
+    /// Fenêtre à utiliser comme propriétaire des boîtes de dialogue. En mode
+    /// onglets, cette fenêtre n'est jamais affichée : WPF refuserait alors de
+    /// l'accepter comme propriétaire. On remonte donc à la fenêtre qui héberge
+    /// réellement le contenu.
+    /// </summary>
+    private Window DialogOwner
+    {
+        get
+        {
+            if (IsLoaded && IsVisible) return this;
+            // Le contenu a migré dans un onglet : retrouver sa fenêtre hôte.
+            var host = RootPanel is null ? null : Window.GetWindow(RootPanel);
+            return host ?? Application.Current.MainWindow ?? this;
+        }
+    }
+
+    /// <summary>Démarre la session ; sans effet si elle l'est déjà.</summary>
+    public async Task StartSessionAsync()
+    {
+        if (_sessionStarted) return;
+        _sessionStarted = true;
+        await _session.StartAsync();
+    }
+
     private readonly DesktopSession _session;
     private readonly string _deviceName;
     private readonly MeshNode _node;
@@ -42,13 +72,23 @@ public partial class DesktopWindow : Window
         _session.ScreenSizeChanged += OnScreenSizeChanged;
         _session.StateChanged += OnStateChanged;
 
-        Loaded += async (_, _) => await _session.StartAsync();
+        // En mode onglets, cette fenêtre n'est jamais affichée : Loaded ne se
+        // déclencherait pas et la session ne démarrerait jamais. StartSession()
+        // est donc appelé explicitement par l'hôte (voir SessionsWindow).
+        Loaded += async (_, _) => await StartSessionAsync();
         Closed += (_, _) => _session.Stop();
 
         // À la perte de focus, les KeyUp des touches encore enfoncées ne nous
         // parviennent plus : sans ce nettoyage, un modificateur resterait bloqué
         // côté distant et le clavier semblerait « cassé » au retour.
+        // Attaché au panneau : en mode onglets, la fenêtre n'est jamais activée,
+        // donc son événement Deactivated ne se déclencherait pas.
         Deactivated += (_, _) => _session.ReleaseModifiers();
+        RootPanel.LostKeyboardFocus += (_, _) => _session.ReleaseModifiers();
+
+        // Prendre le focus dès que le panneau est prêt, pour que le clavier
+        // fonctionne sans clic préalable.
+        RootPanel.Loaded += (_, _) => RootPanel.Focus();
     }
 
     /// <summary>
@@ -179,7 +219,9 @@ public partial class DesktopWindow : Window
 
     private void Screen_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        Focus(); // récupérer le clavier
+        // Donner le focus au panneau racine (et non à la fenêtre) : c'est lui qui
+        // porte les gestionnaires clavier, y compris en mode onglets.
+        RootPanel.Focus();
         if (!TryMapToRemote(e.GetPosition((IInputElement)sender), out int x, out int y)) return;
         var button = MapButton(e.ChangedButton);
         if (button is null) return;
@@ -210,17 +252,20 @@ public partial class DesktopWindow : Window
 
     // MARK: - Clavier
 
-    protected override void OnKeyDown(KeyEventArgs e)
+    /// <summary>
+    /// Traitement d'une frappe. Attaché au CONTENU et non à la fenêtre : en mode
+    /// onglets, la fenêtre porteuse n'est jamais affichée et ne recevrait aucun
+    /// événement clavier.
+    /// </summary>
+    private void Content_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        base.OnKeyDown(e);
-
         // Ctrl+Maj+V est intercepté LOCALEMENT (collage du presse-papiers) et ne
         // doit surtout pas partir vers la machine distante. Ctrl+Maj+V plutôt que
         // Ctrl+V, pour laisser Ctrl+V disponible côté distant.
         var ctrlShift = Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
                         && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
-        if (ctrlShift && e.Key is Key.V or Key.C)
+        if (ctrlShift && e.Key is Key.V or Key.C or Key.S)
         {
             e.Handled = true;
             // Ctrl et Maj ont déjà été transmis « enfoncés » par leurs propres
@@ -229,16 +274,16 @@ public partial class DesktopWindow : Window
             _session.ReleaseModifiers();
 
             if (e.Key == Key.V) Paste_Click(this, new RoutedEventArgs());
-            else CopyFromRemote_Click(this, new RoutedEventArgs());
+            else if (e.Key == Key.C) CopyFromRemote_Click(this, new RoutedEventArgs());
+            else Screenshot_Click(this, new RoutedEventArgs());
             return;
         }
 
         if (SendVirtualKey(e.Key, down: true)) e.Handled = true;
     }
 
-    protected override void OnKeyUp(KeyEventArgs e)
+    private void Content_PreviewKeyUp(object sender, KeyEventArgs e)
     {
-        base.OnKeyUp(e);
         if (SendVirtualKey(e.Key, down: false)) e.Handled = true;
     }
 
@@ -388,6 +433,60 @@ public partial class DesktopWindow : Window
         if (sender is not MenuItem { Tag: RemoteShortcut shortcut }) return;
         _session.SendChord(shortcut.Modifiers, shortcut.Key, shortcut.Extended);
         StatsText.Text = $"Envoyé : {shortcut.Label}";
+    }
+
+    // MARK: - Capture d'écran
+
+    /// <summary>
+    /// Enregistre l'écran distant en PNG et le place dans le presse-papiers.
+    /// L'image provient du framebuffer déjà décodé : aucune requête au serveur.
+    /// </summary>
+    private void Screenshot_Click(object sender, RoutedEventArgs e)
+    {
+        var bitmap = _session.Framebuffer.Bitmap;
+        if (bitmap is null)
+        {
+            StatsText.Text = "Aucune image à capturer.";
+            return;
+        }
+
+        // Nom par défaut : machine + horodatage, pour retrouver la capture plus tard.
+        var safeName = string.Join("_", _deviceName.Split(Path.GetInvalidFileNameChars()));
+        var dialog = new SaveFileDialog
+        {
+            Title = "Enregistrer la capture",
+            FileName = $"{safeName}_{DateTime.Now:yyyy-MM-dd_HHmmss}.png",
+            Filter = "Image PNG (*.png)|*.png",
+            DefaultExt = ".png",
+        };
+        if (dialog.ShowDialog(DialogOwner) != true) return;
+
+        try
+        {
+            // Figer l'image : le framebuffer continue d'être écrit par la session.
+            var frozen = bitmap.Clone();
+            frozen.Freeze();
+
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(BitmapFrame.Create(frozen));
+            using (var stream = File.Create(dialog.FileName))
+            {
+                encoder.Save(stream);
+            }
+
+            // Également dans le presse-papiers : souvent collée directement
+            // dans un ticket ou un message.
+            try { Clipboard.SetImage(frozen); } catch { /* presse-papiers occupé */ }
+
+            StatsText.Text = "Capture enregistrée.";
+            Log.Info($"Capture de {_deviceName} enregistrée : {dialog.FileName}", "Bureau");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Enregistrement de la capture impossible", ex, "Bureau");
+            MessageBox.Show($"Échec de l'enregistrement : {ex.Message}", "Mesh Control",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     /// <summary>Secours si le clavier distant semble bloqué en Ctrl/Alt/Maj.</summary>

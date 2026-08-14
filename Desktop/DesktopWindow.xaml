@@ -5,7 +5,11 @@
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBackgroundBrush}"
         Focusable="True">
-    <DockPanel>
+    <!-- Focusable : en mode onglets, c'est ce conteneur (et non la fenêtre) qui
+         reçoit les frappes clavier. -->
+    <DockPanel x:Name="RootPanel" Focusable="True"
+               PreviewKeyDown="Content_PreviewKeyDown"
+               PreviewKeyUp="Content_PreviewKeyUp">
         <!-- Barre d'outils claire -->
         <Border DockPanel.Dock="Top" Background="White" Padding="14,10">
             <Border.Effect>
@@ -85,6 +89,12 @@
                             Style="{StaticResource ToolButton}"
                             Click="CopyFromRemote_Click" Margin="0,0,6,0"
                             ToolTip="Récupérer le presse-papiers de la machine distante (Ctrl+Maj+C)"/>
+
+                    <!-- Capture de l'écran distant -->
+                    <Button x:Name="ScreenshotButton" Content="📷"
+                            Style="{StaticResource ToolButton}"
+                            Click="Screenshot_Click" Padding="9,5" Margin="0,0,6,0"
+                            ToolTip="Capturer l'écran distant (Ctrl+Maj+S)"/>
 
                     <!-- Secours : débloque un modificateur resté enfoncé côté distant -->
                     <Button Content="⌨" Style="{StaticResource ToolButton}"

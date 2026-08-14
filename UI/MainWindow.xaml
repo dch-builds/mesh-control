@@ -410,6 +410,14 @@
 
                             <CheckBox x:Name="DefaultFitCheck"
                                       Content="Ajuster l'écran à la fenêtre"/>
+
+                            <Border Height="1" Background="{StaticResource SeparatorBrush}"
+                                    Margin="0,14,0,14"/>
+
+                            <CheckBox x:Name="TabbedSessionsCheck"
+                                      Content="Regrouper les sessions en onglets"/>
+                            <TextBlock Style="{StaticResource FieldHint}" Margin="24,4,0,0"
+                                       Text="Décochez pour ouvrir chaque session dans sa propre fenêtre. S'applique aux nouvelles sessions."/>
                         </StackPanel>
                     </Border>
 

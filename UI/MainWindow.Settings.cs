@@ -78,6 +78,7 @@ public partial class MainWindow
         DefaultQualityCombo.SelectedIndex = Math.Clamp(_settings.DefaultDesktopQuality, 0, 2);
         SelectFrameRate(_settings.DefaultDesktopFrameRate);
         DefaultFitCheck.IsChecked = _settings.DefaultDesktopFit;
+        TabbedSessionsCheck.IsChecked = _settings.UseTabbedSessions;
 
         // Recherche rapide
         QuickSearchCheck.IsChecked = _settings.QuickSearchEnabled;
@@ -144,6 +145,7 @@ public partial class MainWindow
         _settings.DefaultDesktopQuality = DefaultQualityCombo.SelectedIndex;
         _settings.DefaultDesktopFrameRate = SelectedFrameRate();
         _settings.DefaultDesktopFit = DefaultFitCheck.IsChecked == true;
+        _settings.UseTabbedSessions = TabbedSessionsCheck.IsChecked == true;
 
         // Recherche rapide
         _settings.QuickSearchEnabled = QuickSearchCheck.IsChecked == true;

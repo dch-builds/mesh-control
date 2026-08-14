@@ -48,6 +48,12 @@ public sealed class AppSettings
     /// <summary>Ouvrir le bureau à distance ajusté à la fenêtre.</summary>
     public bool DefaultDesktopFit { get; set; } = true;
 
+    /// <summary>
+    /// Regrouper les sessions dans une fenêtre à onglets. Sinon, chaque session
+    /// ouvre sa propre fenêtre (comportement historique).
+    /// </summary>
+    public bool UseTabbedSessions { get; set; } = true;
+
     /// <summary>Identifiants des machines épinglées en favoris.</summary>
     public List<string> FavoriteNodeIds { get; set; } = new();
 

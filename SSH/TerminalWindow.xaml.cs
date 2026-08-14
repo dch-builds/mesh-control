@@ -11,7 +11,7 @@ namespace MeshControl.Ssh;
 /// configuration serveur n'est nécessaire — c'est l'équivalent de l'onglet
 /// « Terminal » de l'interface web, avec le choix du shell.
 /// </summary>
-public partial class TerminalWindow : Window
+public partial class TerminalWindow : Window, MeshControl.UI.ISessionWindow
 {
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;
@@ -33,21 +33,24 @@ public partial class TerminalWindow : Window
         _terminal.GridSizeChanged += (cols, rows) => _session?.Resize(cols, rows);
         TerminalHost.Child = _terminal;
 
-        // Les frappes sont interceptées au niveau de la FENÊTRE, et non du seul
-        // contrôle terminal : sinon, dès que le focus part ailleurs (sélecteur de
-        // shell, bouton…), plus rien n'est saisissable. La barre d'outils reste
-        // utilisable car on ignore les frappes quand un champ y a le focus.
-        PreviewKeyDown += Terminal_PreviewKeyDown;
-        PreviewTextInput += Terminal_PreviewTextInput;
+        // Les frappes sont interceptées sur le CONTENU (et non la fenêtre) :
+        // en mode onglets, la fenêtre porteuse n'est jamais affichée et ne
+        // recevrait aucun événement clavier. Le contenu, lui, migre dans
+        // l'onglet. La barre d'outils reste utilisable car on ignore les frappes
+        // quand un de ses champs a le focus.
+        RootPanel.PreviewKeyDown += Terminal_PreviewKeyDown;
+        RootPanel.PreviewTextInput += Terminal_PreviewTextInput;
 
         // Les shells disponibles dépendent du système de la machine.
         PopulateShellChoices();
         _uiReady = true;
 
+        // En mode onglets, la fenêtre n'est jamais affichée : Loaded ne se
+        // déclenche pas, l'hôte appelle l'interface explicitement.
         Loaded += async (_, _) =>
         {
             _terminal.Focus();
-            await StartSessionAsync();
+            await ((MeshControl.UI.ISessionWindow)this).StartSessionAsync();
         };
         Closed += (_, _) => _session?.Stop();
     }
@@ -112,6 +115,21 @@ public partial class TerminalWindow : Window
         (ShellCombo.SelectedItem as ComboBoxItem)?.Tag as ShellKind? ?? ShellKind.Default;
 
     // MARK: - Session
+
+    /// <summary>Empêche un double démarrage (Loaded et hôte d'onglet).</summary>
+    private bool _sessionStarted;
+
+    /// <summary>
+    /// Démarrage initial demandé par l'hôte d'onglet. Distinct de
+    /// StartSessionAsync, qui relance délibérément la session lors d'un
+    /// changement de shell ou d'une reconnexion.
+    /// </summary>
+    async Task MeshControl.UI.ISessionWindow.StartSessionAsync()
+    {
+        if (_sessionStarted) return;
+        _sessionStarted = true;
+        await StartSessionAsync();
+    }
 
     private async Task StartSessionAsync()
     {

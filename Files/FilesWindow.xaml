@@ -4,7 +4,7 @@
         Title="Fichiers — Mesh Control" Height="640" Width="880"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBackgroundBrush}">
-    <DockPanel>
+    <DockPanel x:Name="RootPanel">
         <!-- Barre d'outils -->
         <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}"
                 BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1"

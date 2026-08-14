@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Terminal — Mesh Control" Height="620" Width="920"
         WindowStartupLocation="CenterScreen" Background="#1B1B1F">
-    <DockPanel>
+    <DockPanel x:Name="RootPanel">
         <!-- Barre d'outils -->
         <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}"
                 BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1"

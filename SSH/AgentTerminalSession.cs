@@ -56,12 +56,14 @@ public sealed class AgentTerminalSession : IDisposable
     private bool _stopped;
 
     /// <summary>
-    /// File d'envoi. Sur un tunnel meshrelay, les données applicatives circulent
-    /// en trames BINAIRES (c'est aussi le cas du module Fichiers, et du bureau à
-    /// distance) : envoyer du texte laisse l'agent ignorer la saisie.
+    /// File d'envoi. Sur un tunnel meshrelay, la saisie clavier circule en trames
+    /// BINAIRES, mais les messages du canal de contrôle (redimensionnement, pong)
+    /// doivent partir en TEXTE : envoyés en binaire, l'agent les prendrait pour
+    /// des frappes et les écrirait dans le shell.
     /// </summary>
-    private readonly Channel<byte[]> _sendQueue =
-        Channel.CreateUnbounded<byte[]>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly record struct Outbound(byte[] Data, bool IsText);
+    private readonly Channel<Outbound> _sendQueue =
+        Channel.CreateUnbounded<Outbound>(new UnboundedChannelOptions { SingleReader = true });
 
     public AgentTerminalSession(MeshServerConnection connection, MeshNode node,
                                 ShellKind shell, Dispatcher ui)
@@ -135,7 +137,8 @@ public sealed class AgentTerminalSession : IDisposable
     public void SendInput(string text)
     {
         if (State != SshSessionState.Connected || string.IsNullOrEmpty(text)) return;
-        _sendQueue.Writer.TryWrite(Encoding.UTF8.GetBytes(text));
+        // Saisie clavier : trame binaire.
+        _sendQueue.Writer.TryWrite(new Outbound(Encoding.UTF8.GetBytes(text), IsText: false));
     }
 
     public void Resize(int cols, int rows)
@@ -159,7 +162,8 @@ public sealed class AgentTerminalSession : IDisposable
             cols,
             rows,
         });
-        _sendQueue.Writer.TryWrite(Encoding.UTF8.GetBytes(json));
+        // Message de contrôle : trame TEXTE, sinon l'agent l'écrirait dans le shell.
+        _sendQueue.Writer.TryWrite(new Outbound(Encoding.UTF8.GetBytes(json), IsText: true));
     }
 
     private void StartSenderLoop(MeshWebSocket socket, CancellationToken ct)
@@ -168,9 +172,16 @@ public sealed class AgentTerminalSession : IDisposable
         {
             try
             {
-                await foreach (var data in _sendQueue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+                await foreach (var item in _sendQueue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
                 {
-                    try { await socket.SendAsync(data, ct).ConfigureAwait(false); }
+                    try
+                    {
+                        if (item.IsText)
+                            await socket.SendAsync(Encoding.UTF8.GetString(item.Data), ct)
+                                        .ConfigureAwait(false);
+                        else
+                            await socket.SendAsync(item.Data, ct).ConfigureAwait(false);
+                    }
                     catch { break; }
                 }
             }
@@ -228,7 +239,9 @@ public sealed class AgentTerminalSession : IDisposable
                 {
                     var pong = JsonSerializer.Serialize(
                         new { ctrlChannel = "102938", type = "pong" });
-                    _sendQueue.Writer.TryWrite(Encoding.UTF8.GetBytes(pong));
+                    // Contrôle : trame texte (voir SendResize).
+                    _sendQueue.Writer.TryWrite(
+                        new Outbound(Encoding.UTF8.GetBytes(pong), IsText: true));
                 }
                 return;
             }

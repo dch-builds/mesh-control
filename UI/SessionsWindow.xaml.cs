@@ -1,0 +1,193 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using MeshControl.Core;
+
+namespace MeshControl.UI;
+
+/// <summary>
+/// Fenêtre unique regroupant les sessions en onglets.
+///
+/// Principe : chaque session reste une fenêtre à part entière (avec toute sa
+/// logique), mais son contenu visuel est détaché et placé dans un onglet. La
+/// fenêtre d'origine n'est jamais affichée ; elle sert de porteuse pour la
+/// session et ses gestionnaires d'événements. Cela évite de dupliquer le code
+/// des bureaux, terminaux et navigateurs de fichiers.
+/// </summary>
+public partial class SessionsWindow : Window
+{
+    /// <summary>Instance unique : toutes les sessions se regroupent ici.</summary>
+    private static SessionsWindow? _instance;
+
+    /// <summary>Fenêtre porteuse associée à chaque onglet, pour la fermer proprement.</summary>
+    private readonly Dictionary<TabItem, Window> _hosts = new();
+
+    private SessionsWindow()
+    {
+        InitializeComponent();
+        Closed += (_, _) =>
+        {
+            // Fermer les sessions sous-jacentes, sinon elles resteraient actives
+            // sans interface pour les piloter.
+            foreach (var host in _hosts.Values.ToList())
+            {
+                try { host.Close(); } catch { /* déjà fermée */ }
+            }
+            _hosts.Clear();
+            _instance = null;
+        };
+    }
+
+    /// <summary>
+    /// Ajoute une session dans un onglet. La fenêtre passée n'est jamais
+    /// affichée : seul son contenu est repris.
+    /// </summary>
+    public static void AddSession(Window sessionWindow, string title, string glyph)
+    {
+        _instance ??= new SessionsWindow();
+
+        // Détacher le contenu visuel de sa fenêtre d'origine : un élément WPF ne
+        // peut avoir qu'un seul parent.
+        var content = sessionWindow.Content as UIElement;
+        sessionWindow.Content = null;
+
+        var tab = new TabItem
+        {
+            Header = title,
+            Content = content,
+            ToolTip = title,
+            Tag = glyph,     // affiché devant le titre par le modèle d'onglet
+        };
+
+        _instance._hosts[tab] = sessionWindow;
+        _instance.Tabs.Items.Add(tab);
+        _instance.Tabs.SelectedItem = tab;
+
+        // Quand la session se termine d'elle-même (connexion perdue, fermeture
+        // demandée par le code), l'onglet doit disparaître aussi.
+        sessionWindow.Closed += (_, _) => _instance?.RemoveTab(tab);
+
+        _instance.Show();
+        _instance.Activate();
+        _instance.UpdateTitle();
+
+        // Rendre le focus au contenu : sans cela, les frappes clavier de la
+        // session n'arriveraient pas.
+        _instance.FocusCurrentContent();
+
+        // La fenêtre porteuse n'étant jamais affichée, son événement Loaded ne
+        // se déclenche pas : c'est à nous de lancer la session.
+        if (sessionWindow is ISessionWindow session)
+        {
+            _ = _instance.Dispatcher.BeginInvoke(async () =>
+            {
+                try { await session.StartSessionAsync(); }
+                catch (Exception ex)
+                {
+                    Log.Error($"Démarrage de la session « {title} » impossible", ex, "Sessions");
+                }
+            });
+        }
+    }
+
+    // MARK: - Fermeture d'onglet
+
+    private void CloseTab_Click(object sender, RoutedEventArgs e)
+    {
+        // Le bouton vit dans le modèle de l'onglet : on remonte l'arbre visuel
+        // pour retrouver le TabItem auquel il appartient.
+        if (sender is DependencyObject start && FindParent<TabItem>(start) is { } tab)
+            CloseTab(tab);
+        e.Handled = true;   // ne pas sélectionner l'onglet qu'on ferme
+    }
+
+    private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
+    {
+        var current = System.Windows.Media.VisualTreeHelper.GetParent(child);
+        while (current is not null and not T)
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+        return current as T;
+    }
+
+    private void CloseTab(TabItem tab)
+    {
+        if (_hosts.TryGetValue(tab, out var host))
+        {
+            _hosts.Remove(tab);
+            // Fermer la fenêtre porteuse arrête la session (son handler Closed
+            // libère le tunnel).
+            try { host.Close(); } catch { }
+        }
+        Tabs.Items.Remove(tab);
+        UpdateTitle();
+
+        // Plus aucune session : la fenêtre n'a plus de raison d'être.
+        if (Tabs.Items.Count == 0) Close();
+    }
+
+    /// <summary>Retire un onglet dont la session s'est terminée d'elle-même.</summary>
+    private void RemoveTab(TabItem tab)
+    {
+        if (!_hosts.ContainsKey(tab)) return;   // déjà retiré par CloseTab
+        _hosts.Remove(tab);
+        Dispatcher.BeginInvoke(() =>
+        {
+            Tabs.Items.Remove(tab);
+            UpdateTitle();
+            if (Tabs.Items.Count == 0) Close();
+        });
+    }
+
+    private void Tabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, Tabs)) return;
+        UpdateTitle();
+        FocusCurrentContent();
+    }
+
+    /// <summary>
+    /// Donne le focus clavier au contenu de l'onglet actif. Sans cela, les
+    /// frappes n'atteindraient pas la session : ce sont les panneaux racines qui
+    /// portent les gestionnaires, pas la fenêtre.
+    /// </summary>
+    private void FocusCurrentContent()
+    {
+        // Différé : au moment du changement d'onglet, WPF n'a pas encore
+        // rattaché le contenu à l'arbre visuel, et Focus() échouerait.
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (Tabs.SelectedContent is not UIElement content) return;
+            content.Focus();
+            Keyboard.Focus(content);
+        }), System.Windows.Threading.DispatcherPriority.Input);
+    }
+
+    private void UpdateTitle()
+    {
+        var current = (Tabs.SelectedItem as TabItem)?.Header as string;
+        Title = string.IsNullOrEmpty(current)
+            ? "Sessions — Mesh Control"
+            : $"{current} — Mesh Control";
+
+        UpdateTabStripVisibility();
+    }
+
+    /// <summary>
+    /// Masque le bandeau d'onglets quand une seule session est ouverte : un
+    /// onglet unique n'apporte rien et grignoterait de la hauteur utile.
+    /// </summary>
+    private void UpdateTabStripVisibility()
+    {
+        // Le bandeau vit dans le modèle du TabControl : il faut attendre que
+        // celui-ci soit appliqué pour le retrouver.
+        if (Tabs.Template?.FindName("TabStrip", Tabs) is not UIElement strip)
+        {
+            // Modèle pas encore appliqué : réessayer après la passe de rendu.
+            Dispatcher.BeginInvoke(new Action(UpdateTabStripVisibility),
+                System.Windows.Threading.DispatcherPriority.Loaded);
+            return;
+        }
+
+        strip.Visibility = Tabs.Items.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+    }
+}

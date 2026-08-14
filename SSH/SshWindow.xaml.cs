@@ -6,8 +6,19 @@ using MeshControl.Core;
 
 namespace MeshControl.Ssh;
 
-public partial class SshWindow : Window
+public partial class SshWindow : Window, MeshControl.UI.ISessionWindow
 {
+    /// <summary>Empêche un double démarrage (Loaded et hôte d'onglet).</summary>
+    private bool _sessionStarted;
+
+    /// <summary>Démarre la session ; sans effet si elle l'est déjà.</summary>
+    public async Task StartSessionAsync()
+    {
+        if (_sessionStarted) return;
+        _sessionStarted = true;
+        await _session.StartAsync();
+    }
+
     private readonly SshSession _session;
     private readonly TerminalControl _terminal;
     private readonly string _deviceName;
@@ -29,19 +40,22 @@ public partial class SshWindow : Window
         _terminal.GridSizeChanged += (cols, rows) => _session.Resize(cols, rows);
         TerminalHost.Child = _terminal;
 
-        // Frappes interceptées au niveau de la FENÊTRE : attachées au seul
-        // contrôle terminal, elles seraient perdues dès que le focus part
-        // ailleurs. Les champs d'authentification restent prioritaires.
-        PreviewKeyDown += Terminal_PreviewKeyDown;
-        PreviewTextInput += Terminal_PreviewTextInput;
+        // Frappes interceptées sur le CONTENU (et non la fenêtre) : en mode
+        // onglets, la fenêtre porteuse n'est jamais affichée et ne recevrait
+        // aucun événement clavier. Les champs d'authentification restent
+        // prioritaires (voir InputFieldHasFocus).
+        RootPanel.PreviewKeyDown += Terminal_PreviewKeyDown;
+        RootPanel.PreviewTextInput += Terminal_PreviewTextInput;
 
         _session.Output += OnOutput;
         _session.StateChanged += OnStateChanged;
 
+        // En mode onglets, la fenêtre n'est jamais affichée : Loaded ne se
+        // déclenche pas, l'hôte appelle StartSessionAsync() explicitement.
         Loaded += async (_, _) =>
         {
             _terminal.Focus();
-            await _session.StartAsync();
+            await StartSessionAsync();
         };
         Closed += (_, _) => _session.Stop();
     }
