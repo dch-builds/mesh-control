@@ -1,0 +1,52 @@
+# ============================================================
+# Fins de ligne
+#
+# Git normalise en LF dans le dépôt et restitue en CRLF sur Windows.
+# Sans cette règle, un poste configuré différemment produirait des
+# différences portant sur des fichiers entiers, alors que seules les
+# fins de ligne ont changé.
+# ============================================================
+* text=auto
+
+# Code source : normalisé dans le dépôt, CRLF dans la copie de travail
+*.cs        text diff=csharp
+*.xaml      text
+*.csproj    text
+*.sln       text eol=crlf
+*.config    text
+*.json      text
+*.md        text
+*.txt       text
+
+# Scripts Windows : CRLF obligatoire.
+# PowerShell et Inno Setup peuvent échouer sur des fins de ligne LF.
+*.ps1       text eol=crlf
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+*.iss       text eol=crlf
+
+# ============================================================
+# Fichiers binaires
+#
+# Marqués explicitement pour que Git ne tente ni conversion de fins
+# de ligne ni comparaison textuelle — ce qui les corromprait.
+# ============================================================
+*.ico       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.pdf       binary
+*.zip       binary
+*.exe       binary
+*.dll       binary
+*.snk       binary
+*.pfx       binary
+
+# ============================================================
+# Statistiques de langage (GitHub)
+#
+# Les fichiers XAML sont surtout du balisage : les exclure du calcul
+# évite qu'ils masquent la part réelle de C# dans le projet.
+# ============================================================
+*.xaml      linguist-detectable=false
