@@ -25,6 +25,25 @@ internal static class Kvm
     public const ushort Alert = 65;
     public const ushort UnicodeKey = 85;
     public const ushort InputLock = 87;
+    public const ushort DisplayGeometry = 82;
+}
+
+/// <summary>
+/// Un écran de la machine distante. La géométrie (commande 82) n'est pas
+/// toujours envoyée par l'agent : x/y/w/h valent alors 0 et seul l'identifiant
+/// est exploitable.
+/// </summary>
+public sealed record RemoteDisplay(int Id, int X, int Y, int Width, int Height)
+{
+    /// <summary>Identifiant conventionnel de la vue « tous les écrans ».</summary>
+    public const int AllDisplays = 65535;
+
+    public bool HasGeometry => Width > 0 && Height > 0;
+
+    /// <summary>Libellé court : « Écran 1 » ou « Écran 1 — 1920×1080 ».</summary>
+    public string Label => HasGeometry
+        ? $"Écran {Id} — {Width}×{Height}"
+        : $"Écran {Id}";
 }
 
 public enum MouseButton { Left, Right, Middle }
@@ -46,6 +65,15 @@ public sealed class DesktopSession : IDisposable
     public int ScreenHeight { get; private set; }
     public IReadOnlyList<int> Displays => _displays;
     public int SelectedDisplay { get; private set; }
+
+    /// <summary>
+    /// Écrans détectés, avec leur géométrie quand l'agent la fournit. Vide tant
+    /// que la réponse à GetDisplays n'est pas arrivée.
+    /// </summary>
+    public IReadOnlyList<RemoteDisplay> DisplayList => _displayList;
+
+    /// <summary>Vrai si la machine expose plus d'un écran.</summary>
+    public bool HasMultipleDisplays => _displays.Count > 1;
     public string? RemoteMessage { get; private set; }
     public long TilesReceived { get; private set; }
     public string? CloseReason { get; private set; }
@@ -80,6 +108,12 @@ public sealed class DesktopSession : IDisposable
     public event Action? ScreenSizeChanged;
     public event Action? StateChanged;
 
+    /// <summary>
+    /// La liste des écrans a changé : arrivée de la réponse GetDisplays, ou de
+    /// leur géométrie (envoyée séparément par l'agent, souvent après).
+    /// </summary>
+    public event Action? DisplaysChanged;
+
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;
     private readonly Dispatcher _uiDispatcher;
@@ -89,6 +123,12 @@ public sealed class DesktopSession : IDisposable
     private Task? _rttTask;
     private Task? _senderTask;
     private readonly List<int> _displays = new();
+
+    /// <summary>
+    /// Écrans avec géométrie. Reconstruite depuis _displays à chaque réponse
+    /// GetDisplays, puis enrichie quand la commande 82 arrive.
+    /// </summary>
+    private List<RemoteDisplay> _displayList = new();
 
     // File d'envoi ordonnée : les événements d'entrée doivent rester dans l'ordre.
     // On distingue trames binaires (commandes KVM) et texte (contrôle JSON) :
@@ -362,9 +402,19 @@ public sealed class DesktopSession : IDisposable
     public void SendCtrlAltDel() => SendCommand(Kvm.CtrlAltDel);
     public void RequestRefresh() => SendCommand(Kvm.Refresh);
 
+    /// <summary>
+    /// Horodatage du dernier choix d'écran fait par l'utilisateur. Changer
+    /// d'écran modifie la résolution, ce qui relance un GetDisplays dont la
+    /// réponse peut encore porter l'ancien « selected » ; sans cette garde, le
+    /// sélecteur reculerait alors que l'image affiche déjà le bon écran.
+    /// </summary>
+    private DateTime _displayChosenAt = DateTime.MinValue;
+
     public void SelectDisplay(int display)
     {
         SelectedDisplay = display;
+        _displayChosenAt = DateTime.UtcNow;
+
         var payload = new List<byte>();
         payload.AppendBE((ushort)display);
         SendCommand(Kvm.SetDisplay, payload.ToArray());
@@ -535,7 +585,51 @@ public sealed class DesktopSession : IDisposable
                 _displays.Clear();
                 for (int i = 0; i < count.Value; i++)
                     if (body.BeUInt16(6 + i * 2) is { } id) _displays.Add(id);
-                if (body.BeUInt16(6 + count.Value * 2) is { } sel) SelectedDisplay = sel;
+                // Le choix récent de l'utilisateur l'emporte : la réponse peut
+                // avoir été émise avant que l'agent ne traite notre SetDisplay.
+                if (body.BeUInt16(6 + count.Value * 2) is { } sel
+                    && (DateTime.UtcNow - _displayChosenAt).TotalSeconds > 3)
+                    SelectedDisplay = sel;
+
+                // La géométrie arrive séparément (commande 82) et parfois jamais :
+                // on publie d'abord les écrans sans dimensions, pour que l'UI soit
+                // utilisable même si l'agent ne l'envoie pas.
+                var known = _displayList.ToDictionary(d => d.Id);
+                _displayList = _displays
+                    .Select(id => known.TryGetValue(id, out var prev)
+                        ? prev
+                        : new RemoteDisplay(id, 0, 0, 0, 0))
+                    .ToList();
+
+                _uiDispatcher.Invoke(() => DisplaysChanged?.Invoke());
+                break;
+            }
+            case Kvm.DisplayGeometry:
+            {
+                // Enregistrements de 10 octets : id, x, y, w, h (u16 chacun).
+                var records = (body.Length - 4) / 10;
+                if (records <= 0) return;
+
+                var geometry = new List<RemoteDisplay>(records);
+                for (int i = 0; i < records; i++)
+                {
+                    int off = 4 + i * 10;
+                    if (body.BeUInt16(off) is not { } id
+                        || body.BeUInt16(off + 2) is not { } x
+                        || body.BeUInt16(off + 4) is not { } y
+                        || body.BeUInt16(off + 6) is not { } w
+                        || body.BeUInt16(off + 8) is not { } h) continue;
+                    geometry.Add(new RemoteDisplay(id, x, y, w, h));
+                }
+                if (geometry.Count == 0) return;
+
+                // La géométrie peut précéder la réponse GetDisplays : dans ce cas
+                // elle fait autorité et fournit à elle seule la liste des écrans.
+                _displayList = geometry;
+                if (_displays.Count == 0)
+                    _displays.AddRange(geometry.Select(d => d.Id));
+
+                _uiDispatcher.Invoke(() => DisplaysChanged?.Invoke());
                 break;
             }
             case Kvm.Message:

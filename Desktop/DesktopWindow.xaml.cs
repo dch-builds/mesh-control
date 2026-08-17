@@ -71,6 +71,7 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         _session.FrameUpdated += OnFrameUpdated;
         _session.ScreenSizeChanged += OnScreenSizeChanged;
         _session.StateChanged += OnStateChanged;
+        _session.DisplaysChanged += OnDisplaysChanged;
 
         // En mode onglets, cette fenêtre n'est jamais affichée : Loaded ne se
         // déclencherait pas et la session ne démarrerait jamais. StartSession()
@@ -265,7 +266,18 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         var ctrlShift = Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
                         && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
-        if (ctrlShift && e.Key is Key.V or Key.C or Key.S)
+        // Bascule d'écran : uniquement quand la machine en a plusieurs, sinon
+        // Ctrl+Maj+flèches doit rester disponible côté distant (sélection de
+        // texte par mot, par exemple).
+        if (ctrlShift && e.Key is Key.Left or Key.Right && _displayChoices.Count > 0)
+        {
+            e.Handled = true;
+            _session.ReleaseModifiers();
+            CycleDisplay(e.Key == Key.Right ? +1 : -1);
+            return;
+        }
+
+        if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.W)
         {
             e.Handled = true;
             // Ctrl et Maj ont déjà été transmis « enfoncés » par leurs propres
@@ -273,9 +285,15 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
             // jamais côté distant et la machine resterait bloquée en Ctrl+Maj.
             _session.ReleaseModifiers();
 
-            if (e.Key == Key.V) Paste_Click(this, new RoutedEventArgs());
-            else if (e.Key == Key.C) CopyFromRemote_Click(this, new RoutedEventArgs());
-            else Screenshot_Click(this, new RoutedEventArgs());
+            switch (e.Key)
+            {
+                case Key.V: Paste_Click(this, new RoutedEventArgs()); break;
+                case Key.C: CopyFromRemote_Click(this, new RoutedEventArgs()); break;
+                case Key.S: Screenshot_Click(this, new RoutedEventArgs()); break;
+                case Key.T: OpenTerminal_Click(this, new RoutedEventArgs()); break;
+                case Key.E: OpenFiles_Click(this, new RoutedEventArgs()); break;
+                case Key.W: OpenWebPage_Click(this, new RoutedEventArgs()); break;
+            }
             return;
         }
 
@@ -433,6 +451,193 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         if (sender is not MenuItem { Tag: RemoteShortcut shortcut }) return;
         _session.SendChord(shortcut.Modifiers, shortcut.Key, shortcut.Extended);
         StatsText.Text = $"Envoyé : {shortcut.Label}";
+    }
+
+    // MARK: - Écrans multiples
+
+    /// <summary>
+    /// Écrans proposés dans le menu, vue combinée comprise. Sert aussi au cycle
+    /// clavier Ctrl+Maj+← / →.
+    /// </summary>
+    private List<RemoteDisplay> _displayChoices = new();
+
+    /// <summary>
+    /// La machine a annoncé ses écrans. Le bouton n'apparaît qu'à partir de
+    /// deux : sur un poste ordinaire, il resterait un contrôle inutile.
+    /// </summary>
+    private void OnDisplaysChanged()
+    {
+        // Les écrans réels, hors vue combinée : selon l'agent, celle-ci figure
+        // déjà dans la liste annoncée. On l'écarte ici pour la rajouter une fois
+        // et une seule, en dernière position.
+        var real = _session.DisplayList
+            .Where(d => d.Id != RemoteDisplay.AllDisplays)
+            .ToList();
+
+        if (real.Count <= 1)
+        {
+            DisplayButton.Visibility = Visibility.Collapsed;
+            _displayChoices = new List<RemoteDisplay>();
+            return;
+        }
+
+        _displayChoices = new List<RemoteDisplay>(real)
+        {
+            // Vue combinée : l'agent compose lui-même les écrans en une image
+            // unique. C'est lui qui fait le travail, pas nous.
+            new RemoteDisplay(RemoteDisplay.AllDisplays, 0, 0, 0, 0),
+        };
+
+        DisplayButton.Visibility = Visibility.Visible;
+        UpdateDisplayButton();
+    }
+
+    /// <summary>
+    /// Le bouton porte le numéro de l'écran courant : réduit à une icône, il
+    /// doit malgré tout indiquer où l'on se trouve.
+    /// </summary>
+    private void UpdateDisplayButton()
+    {
+        var current = _displayChoices.FirstOrDefault(d => d.Id == _session.SelectedDisplay);
+        DisplayButton.Content = current is null || current.Id == RemoteDisplay.AllDisplays
+            ? "🖵 ⁘"                       // vue combinée
+            : $"🖵 {current.Id}";
+    }
+
+    private void Display_Click(object sender, RoutedEventArgs e)
+    {
+        // Menu reconstruit à chaque ouverture : les écrans peuvent avoir été
+        // branchés ou débranchés depuis la dernière fois.
+        DisplayMenu.Items.Clear();
+
+        foreach (var display in _displayChoices)
+        {
+            var item = new MenuItem
+            {
+                Header = display.Id == RemoteDisplay.AllDisplays
+                    ? "Tous les écrans"
+                    : display.Label,
+                Tag = display,
+                IsCheckable = true,
+                IsChecked = display.Id == _session.SelectedDisplay,
+            };
+            item.Click += DisplayItem_Click;
+
+            // La vue combinée ferme la liste : un trait la détache des écrans.
+            if (display.Id == RemoteDisplay.AllDisplays)
+                DisplayMenu.Items.Add(new Separator());
+            DisplayMenu.Items.Add(item);
+        }
+
+        DisplayMenu.PlacementTarget = DisplayButton;
+        DisplayMenu.IsOpen = true;
+    }
+
+    private void DisplayItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: RemoteDisplay display }) return;
+        SelectDisplay(display);
+    }
+
+    private void SelectDisplay(RemoteDisplay display)
+    {
+        if (display.Id == _session.SelectedDisplay)
+        {
+            UpdateDisplayButton();   // rétablit la coche si on reclique le même
+            return;
+        }
+
+        _session.SelectDisplay(display.Id);
+        UpdateDisplayButton();
+        StatsText.Text = display.Id == RemoteDisplay.AllDisplays
+            ? "Tous les écrans."
+            : $"Écran {display.Id}.";
+    }
+
+    /// <summary>
+    /// Passe à l'écran suivant ou précédent, en bouclant. La vue « tous les
+    /// écrans » fait partie du cycle : elle en est la dernière étape.
+    /// </summary>
+    private void CycleDisplay(int delta)
+    {
+        if (_displayChoices.Count == 0) return;
+
+        int current = _displayChoices.FindIndex(d => d.Id == _session.SelectedDisplay);
+        if (current < 0) current = 0;
+
+        int index = (current + delta + _displayChoices.Count) % _displayChoices.Count;
+        SelectDisplay(_displayChoices[index]);
+    }
+
+    // MARK: - Autres outils de la machine
+
+    private void More_Click(object sender, RoutedEventArgs e)
+    {
+        MoreMenu.PlacementTarget = MoreButton;
+        MoreMenu.IsOpen = true;
+    }
+
+    /// <summary>
+    /// Ouvre le terminal sur la même machine, sans repasser par la liste.
+    /// </summary>
+    private void OpenTerminal_Click(object sender, RoutedEventArgs e)
+        => OpenCompanionSession(new Ssh.TerminalWindow(_connection, _node), "▶", "Terminal");
+
+    private void OpenFiles_Click(object sender, RoutedEventArgs e)
+        => OpenCompanionSession(new Files.FilesWindow(_connection, _node), "📁", "Fichiers");
+
+    private void OpenSystemInfo_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new UI.SystemInfoWindow(_connection, _node);
+        // Owner nul accepté : en mode onglets, cette fenêtre n'est pas affichée
+        // et WPF refuserait une fenêtre invisible comme propriétaire.
+        if (DialogOwner is { IsVisible: true } owner) window.Owner = owner;
+        window.Show();
+    }
+
+    /// <summary>
+    /// Ouvre la fiche MeshCentral de la machine dans le navigateur par défaut.
+    /// </summary>
+    private void OpenWebPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (_connection.Profile.DeviceWebUrl(_node.Id) is not { } url)
+        {
+            StatsText.Text = "Adresse du serveur indisponible.";
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            StatsText.Text = "Page web ouverte.";
+        }
+        catch (Exception ex)
+        {
+            // Pas de navigateur associé : on laisse au moins l'adresse sous la main.
+            try { Clipboard.SetText(url); } catch { }
+            MessageBox.Show($"Impossible d'ouvrir le navigateur : {ex.Message}\n\n"
+                          + "L'adresse a été copiée dans le presse-papiers.",
+                "Mesh Control", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Présente une session ouverte depuis le bureau à distance, en respectant la
+    /// préférence « sessions en onglets » comme le ferait la fenêtre principale.
+    /// </summary>
+    private void OpenCompanionSession(Window session, string glyph, string kind)
+    {
+        if (_settings.UseTabbedSessions)
+        {
+            UI.SessionsWindow.AddSession(session, _node.Name, glyph);
+        }
+        else
+        {
+            session.Show();
+            session.Activate();
+        }
+        StatsText.Text = $"{kind} ouvert.";
     }
 
     // MARK: - Capture d'écran
