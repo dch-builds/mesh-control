@@ -15,9 +15,9 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
 
     <!-- Métadonnées visibles dans les propriétés du fichier .exe -->
-    <Version>1.1.2</Version>
-    <FileVersion>1.1.2.0</FileVersion>
-    <AssemblyVersion>1.1.2.0</AssemblyVersion>
+    <Version>1.1.3</Version>
+    <FileVersion>1.1.3.0</FileVersion>
+    <AssemblyVersion>1.1.3.0</AssemblyVersion>
     <Company>Mesh Control</Company>
     <Product>Mesh Control</Product>
     <Description>Contrôle à distance des postes via MeshCentral</Description>
