@@ -202,6 +202,9 @@
                                 <MenuItem x:Name="MenuInfo" Header="Informations système…"
                                           Click="MenuInfo_Click"
                                           ToolTip="Processeur, mémoire, disques, BIOS"/>
+                                <MenuItem x:Name="MenuWebPage" Header="Ouvrir la page web…"
+                                          Click="MenuWebPage_Click"
+                                          ToolTip="Voir cette machine dans MeshCentral"/>
                             </ContextMenu>
                         </ListBox.ContextMenu>
 

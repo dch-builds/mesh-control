@@ -30,6 +30,29 @@ public sealed class ServerProfile
         }
     }
 
+    /// <summary>
+    /// Page web MeshCentral d'une machine, telle que produite par l'interface du
+    /// serveur : https://host/?viewmode=11&amp;gotonode=&lt;hash&gt;
+    ///
+    /// Le paramètre gotonode n'attend pas le nodeid complet « node/domaine/hash »
+    /// mais son seul dernier segment. La valeur est en base64 « URL-safe » de
+    /// MeshCentral : elle contient des « $ » et des « @ » qu'il ne faut surtout
+    /// pas ré-encoder, sous peine d'obtenir un identifiant inconnu du serveur.
+    /// </summary>
+    public string? DeviceWebUrl(string nodeId)
+    {
+        var baseUri = BaseUri;
+        if (baseUri is null || string.IsNullOrWhiteSpace(nodeId)) return null;
+
+        var hash = nodeId.Split('/')[^1];
+        if (string.IsNullOrEmpty(hash)) return null;
+
+        var url = $"{baseUri.Scheme}://{baseUri.Authority}/?viewmode=11&gotonode={hash}";
+        if (!string.IsNullOrEmpty(UrlKey))
+            url += $"&key={Uri.EscapeDataString(UrlKey)}";
+        return url;
+    }
+
     /// <summary>Construit une URL wss:// vers un chemin donné, avec query optionnelle.</summary>
     public Uri? WebSocketUri(string path, IEnumerable<KeyValuePair<string, string>>? query = null)
     {

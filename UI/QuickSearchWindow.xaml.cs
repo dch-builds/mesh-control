@@ -9,11 +9,21 @@ namespace MeshControl.UI;
 /// Palette de recherche rapide, ouverte par le raccourci global. On tape un nom
 /// de machine, Entrée ouvre le bureau à distance — sans quitter l'application en
 /// cours d'utilisation.
+///
+/// Deux étapes : choix de la machine, puis choix de l'action (les mêmes que le
+/// clic droit dans la liste principale). Entrée sur une machine ouvre
+/// directement le bureau à distance, le cas courant ; Tab ou → déroule les
+/// autres actions.
 /// </summary>
 public partial class QuickSearchWindow : Window
 {
     private readonly List<DeviceRow> _rows;
-    private readonly Action<MeshNode> _onConnect;
+    private readonly Action<MeshNode, DeviceAction> _onAction;
+    private readonly Func<MeshNode, DeviceAction, bool> _isAvailable;
+    private readonly Func<MeshNode, bool> _isFavorite;
+
+    /// <summary>Machine choisie ; non nul quand la palette affiche ses actions.</summary>
+    private MeshNode? _target;
 
     /// <summary>
     /// Empêche une double fermeture : Close() retire le focus, ce qui relance
@@ -22,11 +32,16 @@ public partial class QuickSearchWindow : Window
     /// </summary>
     private bool _closing;
 
-    public QuickSearchWindow(IEnumerable<DeviceRow> rows, Action<MeshNode> onConnect)
+    public QuickSearchWindow(IEnumerable<DeviceRow> rows,
+                             Action<MeshNode, DeviceAction> onAction,
+                             Func<MeshNode, DeviceAction, bool> isAvailable,
+                             Func<MeshNode, bool> isFavorite)
     {
         InitializeComponent();
         _rows = rows.ToList();
-        _onConnect = onConnect;
+        _onAction = onAction;
+        _isAvailable = isAvailable;
+        _isFavorite = isFavorite;
 
         // Les machines joignables d'abord : ce sont celles auxquelles on veut se
         // connecter dans l'immédiat.
@@ -59,14 +74,18 @@ public partial class QuickSearchWindow : Window
     {
         Placeholder.Visibility = string.IsNullOrEmpty(QueryBox.Text)
             ? Visibility.Visible : Visibility.Collapsed;
-        UpdateResults(QueryBox.Text);
+
+        if (_target is null) UpdateResults(QueryBox.Text);
+        else UpdateActions(QueryBox.Text);
     }
+
+    // MARK: - Étape 1 : choix de la machine
 
     private void UpdateResults(string query)
     {
         query = query.Trim();
 
-        IEnumerable<DeviceRow> matches = _rows;
+        IEnumerable<DeviceRow> matches;
         if (!string.IsNullOrEmpty(query))
         {
             matches = _rows
@@ -90,17 +109,95 @@ public partial class QuickSearchWindow : Window
         HintText.Text = list.Count switch
         {
             0 => "Aucune machine ne correspond.",
-            1 => "1 résultat · Entrée pour se connecter",
-            _ => $"{list.Count} résultats · ↑↓ naviguer · Entrée se connecter · Échap fermer",
+            1 => "1 résultat · Entrée bureau à distance · Tab autres actions",
+            _ => $"{list.Count} résultats · ↑↓ naviguer · Entrée bureau · Tab actions · Échap fermer",
         };
     }
+
+    // MARK: - Étape 2 : choix de l'action
+
+    /// <summary>
+    /// Bascule vers la liste des actions applicables à la machine sélectionnée.
+    /// </summary>
+    private void ShowActionsFor(MeshNode node)
+    {
+        _target = node;
+        ContextLabel.Text = node.Name;
+        ContextPanel.Visibility = Visibility.Visible;
+        Placeholder.Text = "Rechercher une action…";
+
+        QueryBox.Clear();               // déclenche UpdateActions("") via TextChanged
+        Placeholder.Visibility = Visibility.Visible;
+        UpdateActions("");
+    }
+
+    /// <summary>Revient à la liste des machines.</summary>
+    private void BackToDevices()
+    {
+        _target = null;
+        ContextPanel.Visibility = Visibility.Collapsed;
+        Placeholder.Text = "Nom d'une machine…";
+
+        QueryBox.Clear();
+        Placeholder.Visibility = Visibility.Visible;
+        UpdateResults("");
+    }
+
+    private void UpdateActions(string query)
+    {
+        if (_target is not { } node) return;
+        query = query.Trim();
+
+        var items = DeviceActionInfo.All
+            .Select(info => new ActionRow(info, node, _isAvailable(node, info.Action), _isFavorite(node)));
+
+        if (!string.IsNullOrEmpty(query))
+        {
+            items = items
+                .Where(a => a.Label.Contains(query, StringComparison.OrdinalIgnoreCase)
+                            || Normalize(a.Info.Keywords).Contains(Normalize(query)))
+                .OrderByDescending(a => a.Label.StartsWith(query, StringComparison.OrdinalIgnoreCase));
+        }
+
+        // Les actions indisponibles restent visibles, en grisé : mieux vaut voir
+        // pourquoi une action manque que de la chercher dans une liste tronquée.
+        var list = items.ToList();
+        ResultList.ItemsSource = list;
+
+        var first = list.FindIndex(a => a.IsAvailable);
+        ResultList.SelectedIndex = first >= 0 ? first : (list.Count > 0 ? 0 : -1);
+
+        HintText.Text = list.Count == 0
+            ? "Aucune action ne correspond."
+            : $"{node.Name} · Entrée exécuter · Échap ou ← revenir aux machines";
+    }
+
+    /// <summary>
+    /// Comparaison insensible aux accents : « systeme » doit trouver « système ».
+    /// </summary>
+    private static string Normalize(string text)
+    {
+        var decomposed = text.Normalize(System.Text.NormalizationForm.FormD);
+        var builder = new System.Text.StringBuilder(decomposed.Length);
+        foreach (var c in decomposed)
+        {
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
+                != System.Globalization.UnicodeCategory.NonSpacingMark)
+                builder.Append(char.ToLowerInvariant(c));
+        }
+        return builder.ToString();
+    }
+
+    // MARK: - Clavier
 
     private void QueryBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         switch (e.Key)
         {
             case Key.Escape:
-                DismissSafely();
+                // Dans les actions, Échap revient d'abord aux machines.
+                if (_target is not null) BackToDevices();
+                else DismissSafely();
                 e.Handled = true;
                 break;
 
@@ -114,8 +211,28 @@ public partial class QuickSearchWindow : Window
                 e.Handled = true;
                 break;
 
+            case Key.Tab:
+            case Key.Right:
+                // → ne bascule que depuis la fin du texte, pour ne pas gêner le
+                // déplacement normal du curseur dans la saisie.
+                if (_target is null
+                    && (e.Key == Key.Tab || QueryBox.CaretIndex == QueryBox.Text.Length))
+                {
+                    if (ResultList.SelectedItem is DeviceRow row) ShowActionsFor(row.Node);
+                    e.Handled = true;
+                }
+                break;
+
+            case Key.Left:
+                if (_target is not null && QueryBox.CaretIndex == 0)
+                {
+                    BackToDevices();
+                    e.Handled = true;
+                }
+                break;
+
             case Key.Enter:
-                ConnectToSelection();
+                Activate(ResultList.SelectedItem);
                 e.Handled = true;
                 break;
         }
@@ -131,16 +248,65 @@ public partial class QuickSearchWindow : Window
     }
 
     private void ResultList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-        => ConnectToSelection();
+        => Activate(ResultList.SelectedItem);
 
-    private void ConnectToSelection()
+    /// <summary>
+    /// Valide l'élément sélectionné : une machine ouvre son bureau à distance,
+    /// une action l'exécute sur la machine choisie.
+    /// </summary>
+    private void Activate(object? selection)
     {
-        if (ResultList.SelectedItem is not DeviceRow row) return;
+        switch (selection)
+        {
+            case DeviceRow row:
+                Run(row.Node, DeviceAction.Desktop);
+                break;
 
-        // On ferme d'abord : la fenêtre de bureau à distance prend le relais et
-        // reçoit le focus proprement.
-        var node = row.Node;
+            case ActionRow action when _target is { } node:
+                if (!action.IsAvailable) return;    // entrée grisée : sans effet
+                Run(node, action.Info.Action);
+                break;
+        }
+    }
+
+    private void Run(MeshNode node, DeviceAction action)
+    {
+        // On ferme d'abord : la fenêtre de session prend le relais et reçoit le
+        // focus proprement.
         DismissSafely();
-        _onConnect(node);
+        _onAction(node, action);
+    }
+}
+
+/// <summary>Une action telle qu'affichée dans la palette.</summary>
+public sealed class ActionRow
+{
+    public DeviceActionInfo Info { get; }
+    public bool IsAvailable { get; }
+
+    public ActionRow(DeviceActionInfo info, MeshNode node, bool available, bool isFavorite)
+    {
+        Info = info;
+        IsAvailable = available;
+
+        Label = info.Action == DeviceAction.ToggleFavorite
+            ? (isFavorite ? "Retirer des favoris" : "Ajouter aux favoris")
+            : info.Label;
+
+        Detail = available ? info.Detail : UnavailableReason(node);
+    }
+
+    public string Label { get; }
+    public string Detail { get; }
+    public string Glyph => Info.Glyph;
+
+    /// <summary>Opacité de la ligne : les actions impossibles sont estompées.</summary>
+    public double RowOpacity => IsAvailable ? 1.0 : 0.4;
+
+    private static string UnavailableReason(MeshNode node)
+    {
+        if (!node.IsOnline) return "Machine hors ligne";
+        if (!node.HasAgent) return "Aucun agent installé";
+        return "Indisponible";
     }
 }

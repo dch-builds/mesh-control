@@ -1,6 +1,7 @@
 <Window x:Class="MeshControl.UI.QuickSearchWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:MeshControl.UI"
         Title="Recherche rapide" Width="620" SizeToContent="Height"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
         Background="Transparent" ShowInTaskbar="False" Topmost="True"
@@ -14,6 +15,22 @@
         </Border.Effect>
 
         <StackPanel>
+            <!-- Machine choisie : visible seulement à l'étape des actions -->
+            <Border x:Name="ContextPanel" Visibility="Collapsed"
+                    Background="{StaticResource AccentSoftBrush}"
+                    CornerRadius="14,14,0,0" Padding="18,9">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="🖥" FontSize="12" VerticalAlignment="Center"
+                               Margin="0,0,8,0" Opacity="0.7"/>
+                    <TextBlock x:Name="ContextLabel" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="· choisir une action" FontSize="12" Opacity="0.5"
+                               Margin="6,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
             <!-- Champ de saisie -->
             <Grid Margin="18,16,18,10">
                 <StackPanel Orientation="Horizontal">
@@ -63,8 +80,34 @@
                     </Style>
                 </ListBox.ItemContainerStyle>
 
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
+                <!-- Deux types de lignes : machines (étape 1), actions (étape 2).
+                     Le gabarit est choisi d'après le type de l'élément. -->
+                <ListBox.Resources>
+                    <DataTemplate DataType="{x:Type ui:ActionRow}">
+                        <Grid Opacity="{Binding RowOpacity}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Grid Grid.Column="0" Width="30" Height="30" Margin="0,0,12,0">
+                                <Border Background="#F0F0F5" CornerRadius="8"/>
+                                <TextBlock Text="{Binding Glyph}" FontSize="14"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding Label}" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Style="{StaticResource CaptionText}"
+                                           Text="{Binding Detail}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+
+                    <DataTemplate DataType="{x:Type ui:DeviceRow}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
@@ -101,7 +144,7 @@
                                        VerticalAlignment="Center" Margin="10,0,4,0"/>
                         </Grid>
                     </DataTemplate>
-                </ListBox.ItemTemplate>
+                </ListBox.Resources>
             </ListBox>
 
             <!-- Aide en pied -->

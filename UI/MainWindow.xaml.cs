@@ -228,7 +228,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        _quickSearch = new QuickSearchWindow(_allRows, OpenDesktopFromQuickSearch);
+        _quickSearch = new QuickSearchWindow(
+            _allRows,
+            RunActionFromQuickSearch,
+            IsActionAvailable,
+            node => _settings.IsFavorite(node.Id));
         _quickSearch.Closed += (_, _) => _quickSearch = null;
         _quickSearch.Show();
         _quickSearch.Activate();
@@ -243,14 +247,14 @@ public partial class MainWindow : Window
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     /// <summary>
-    /// Connexion depuis la palette : on n'affiche pas la fenêtre principale, le
-    /// but étant justement de rester dans son contexte de travail.
+    /// Action lancée depuis la palette : on n'affiche pas la fenêtre principale,
+    /// le but étant justement de rester dans son contexte de travail.
     /// </summary>
-    private void OpenDesktopFromQuickSearch(MeshNode node)
+    private void RunActionFromQuickSearch(MeshNode node, DeviceAction action)
     {
         if (_connection is null) return;
 
-        if (!node.IsOnline || !node.HasAgent)
+        if (!IsActionAvailable(node, action))
         {
             MessageBox.Show(
                 !node.IsOnline
@@ -260,8 +264,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        RememberRecent(node);
-        OpenSession(new Desktop.DesktopWindow(_connection, node, _settings), node.Name, "🖥");
+        RunAction(node, action);
     }
 
     private void RestoreMainWindow()
@@ -731,9 +734,7 @@ public partial class MainWindow : Window
     }
 
     private void MenuFavorite_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedNode is { } node) ToggleFavorite(node);
-    }
+        => RunSelected(DeviceAction.ToggleFavorite);
 
     /// <summary>Mémorise une machine comme récemment utilisée.</summary>
     private void RememberRecent(MeshNode node)
@@ -990,85 +991,174 @@ public partial class MainWindow : Window
         MenuShare.IsEnabled = node is not null;
         MenuCopyName.IsEnabled = node is not null;
         MenuInfo.IsEnabled = node is not null;
+        // La page web est servie par MeshCentral : elle s'ouvre même pour une
+        // machine hors ligne (journaux, notes, réglages du groupe).
+        MenuWebPage.IsEnabled = node is not null;
+    }
+
+    /// <summary>
+    /// Une action est-elle applicable à cette machine ? Règles communes au menu
+    /// contextuel et à la palette, pour éviter deux vérités divergentes.
+    /// </summary>
+    public bool IsActionAvailable(MeshNode node, DeviceAction action)
+    {
+        bool reachable = node is { IsOnline: true, HasAgent: true };
+
+        return action switch
+        {
+            // Ces quatre passent par l'agent installé sur la machine.
+            DeviceAction.Desktop or DeviceAction.Terminal
+                or DeviceAction.Files or DeviceAction.Processes
+                or DeviceAction.OpenUrl => reachable,
+
+            DeviceAction.Reboot or DeviceAction.Sleep
+                or DeviceAction.PowerOff => reachable,
+
+            // SSH passe par le serveur : l'agent n'est pas requis.
+            DeviceAction.Ssh => node.IsOnline || _connection?.IsLocalDevice(node) == true,
+
+            // Le reste est traité côté serveur ou localement.
+            _ => true,
+        };
     }
 
     private MeshNode? SelectedNode => (DeviceList.SelectedItem as DeviceRow)?.Node;
 
-    private void MenuDesktop_Click(object sender, RoutedEventArgs e)
+    // MARK: - Dispatcheur d'actions
+
+    /// <summary>
+    /// Point d'entrée unique de toutes les actions sur une machine. Le menu
+    /// contextuel et la palette de recherche rapide passent tous deux par ici :
+    /// les deux offrent ainsi rigoureusement les mêmes possibilités, et une
+    /// action ajoutée ici apparaît automatiquement des deux côtés.
+    /// </summary>
+    public async void RunAction(MeshNode node, DeviceAction action)
     {
-        if (SelectedNode is { } node) OpenDesktop(node);
+        if (_connection is null) return;
+
+        switch (action)
+        {
+            case DeviceAction.Desktop:
+                OpenDesktop(node);
+                break;
+
+            case DeviceAction.Terminal:
+                RememberRecent(node);
+                OpenSession(new Ssh.TerminalWindow(_connection, node), node.Name, "▶");
+                break;
+
+            case DeviceAction.Files:
+                RememberRecent(node);
+                OpenSession(new Files.FilesWindow(_connection, node), node.Name, "📁");
+                break;
+
+            case DeviceAction.Ssh:
+                RememberRecent(node);
+                OpenSession(new Ssh.SshWindow(_connection, node), node.Name, "▶");
+                break;
+
+            case DeviceAction.Wake:
+                // Le réveil n'est pas destructif : pas de confirmation.
+                await RunPowerAsync(() => _connection.WakeAsync(node.Id),
+                    $"Signal de réveil envoyé à « {node.Name} ».");
+                break;
+
+            case DeviceAction.Reboot:
+                if (!Confirm($"Redémarrer « {node.Name} » ?",
+                             "La machine va redémarrer. Les travaux non enregistrés seront perdus.")) return;
+                await RunPowerAsync(() => _connection.PowerActionAsync(node.Id, PowerActionType.Reboot),
+                    $"Ordre de redémarrage envoyé à « {node.Name} ».");
+                break;
+
+            case DeviceAction.Sleep:
+                if (!Confirm($"Mettre « {node.Name} » en veille ?",
+                             "La machine sera suspendue et ne répondra plus jusqu'à son réveil.")) return;
+                await RunPowerAsync(() => _connection.PowerActionAsync(node.Id, PowerActionType.Sleep),
+                    $"Ordre de mise en veille envoyé à « {node.Name} ».");
+                break;
+
+            case DeviceAction.PowerOff:
+                if (!Confirm($"Éteindre « {node.Name} » ?",
+                             "La machine sera arrêtée. Il faudra un réveil Wake-on-LAN ou une action physique pour la rallumer.")) return;
+                await RunPowerAsync(() => _connection.PowerActionAsync(node.Id, PowerActionType.PowerOff),
+                    $"Ordre d'extinction envoyé à « {node.Name} ».");
+                break;
+
+            case DeviceAction.Processes:
+                new ProcessWindow(_connection, node) { Owner = ActionOwner }.Show();
+                break;
+
+            case DeviceAction.OpenUrl:
+                await OpenRemoteUrlAsync(node);
+                break;
+
+            case DeviceAction.ToggleFavorite:
+                ToggleFavorite(node);
+                break;
+
+            case DeviceAction.Share:
+                new ShareWindow(_connection, node) { Owner = ActionOwner }.ShowDialog();
+                break;
+
+            case DeviceAction.CopyName:
+                try { Clipboard.SetText(node.Name); } catch { /* presse-papiers occupé */ }
+                break;
+
+            case DeviceAction.SystemInfo:
+                new SystemInfoWindow(_connection, node) { Owner = ActionOwner }.Show();
+                break;
+
+            case DeviceAction.WebPage:
+                OpenDeviceWebPage(node);
+                break;
+        }
     }
 
-    private void MenuTerminal_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Propriétaire des fenêtres ouvertes par une action. Quand l'action vient de
+    /// la palette, la fenêtre principale peut être masquée dans la zone de
+    /// notification : WPF refuse alors une fenêtre invisible comme propriétaire.
+    /// </summary>
+    private Window? ActionOwner => IsLoaded && IsVisible ? this : null;
+
+    /// <summary>
+    /// Ouvre la fiche de la machine dans MeshCentral, avec le navigateur par
+    /// défaut. Utile pour accéder aux fonctions du serveur que l'application
+    /// ne reprend pas (journaux, notes, réglages du groupe…).
+    /// </summary>
+    private void OpenDeviceWebPage(MeshNode node)
     {
-        if (_connection is null || SelectedNode is not { } node) return;
-        RememberRecent(node);
-        OpenSession(new Ssh.TerminalWindow(_connection, node), node.Name, "▶");
+        if (_connection?.Profile.DeviceWebUrl(node.Id) is not { } url)
+        {
+            MessageBox.Show("Adresse du serveur indisponible.", "Mesh Control",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            System.Diagnostics.Process.Start(
+                new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            Log.Info($"Page web ouverte pour {node.Name}", "Appareil");
+        }
+        catch (Exception ex)
+        {
+            // Pas de navigateur associé : on laisse au moins l'adresse sous la main.
+            try { Clipboard.SetText(url); } catch { }
+            MessageBox.Show($"Impossible d'ouvrir le navigateur : {ex.Message}\n\n"
+                          + "L'adresse a été copiée dans le presse-papiers.",
+                "Mesh Control", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
-    private void MenuFiles_Click(object sender, RoutedEventArgs e)
+    private async Task OpenRemoteUrlAsync(MeshNode node)
     {
-        if (_connection is null || SelectedNode is not { } node) return;
-        RememberRecent(node);
-        OpenSession(new Files.FilesWindow(_connection, node), node.Name, "📁");
-    }
-
-    private void MenuSsh_Click(object sender, RoutedEventArgs e)
-    {
-        if (_connection is null || SelectedNode is not { } node) return;
-        RememberRecent(node);
-        OpenSession(new Ssh.SshWindow(_connection, node), node.Name, "▶");
-    }
-
-    private async void MenuWake_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedNode is not { } node || _connection is null) return;
-        // Le réveil n'est pas destructif : pas de confirmation.
-        await RunPowerAsync(() => _connection.WakeAsync(node.Id),
-            $"Signal de réveil envoyé à « {node.Name} ».");
-    }
-
-    private async void MenuReboot_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedNode is not { } node || _connection is null) return;
-        if (!Confirm($"Redémarrer « {node.Name} » ?",
-                     "La machine va redémarrer. Les travaux non enregistrés seront perdus.")) return;
-        await RunPowerAsync(() => _connection.PowerActionAsync(node.Id, PowerActionType.Reboot),
-            $"Ordre de redémarrage envoyé à « {node.Name} ».");
-    }
-
-    private async void MenuSleep_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedNode is not { } node || _connection is null) return;
-        if (!Confirm($"Mettre « {node.Name} » en veille ?",
-                     "La machine sera suspendue et ne répondra plus jusqu'à son réveil.")) return;
-        await RunPowerAsync(() => _connection.PowerActionAsync(node.Id, PowerActionType.Sleep),
-            $"Ordre de mise en veille envoyé à « {node.Name} ».");
-    }
-
-    private async void MenuPowerOff_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedNode is not { } node || _connection is null) return;
-        if (!Confirm($"Éteindre « {node.Name} » ?",
-                     "La machine sera arrêtée. Il faudra un réveil Wake-on-LAN ou une action physique pour la rallumer.")) return;
-        await RunPowerAsync(() => _connection.PowerActionAsync(node.Id, PowerActionType.PowerOff),
-            $"Ordre d'extinction envoyé à « {node.Name} ».");
-    }
-
-    private void MenuProcesses_Click(object sender, RoutedEventArgs e)
-    {
-        if (_connection is null || SelectedNode is not { } node) return;
-        new ProcessWindow(_connection, node) { Owner = this }.Show();
-    }
-
-    private async void MenuOpenUrl_Click(object sender, RoutedEventArgs e)
-    {
-        if (_connection is null || SelectedNode is not { } node) return;
+        if (_connection is null) return;
 
         var dialog = new TextPromptDialog(
             "Ouvrir une URL",
             $"Adresse à ouvrir dans le navigateur de « {node.Name} » :",
-            "https://", "Ouvrir", allowAnyCharacter: true) { Owner = this };
+            "https://", "Ouvrir", allowAnyCharacter: true) { Owner = ActionOwner };
         if (dialog.ShowDialog() != true || dialog.Value is null) return;
 
         try
@@ -1084,26 +1174,26 @@ public partial class MainWindow : Window
         }
     }
 
-    private void MenuShare_Click(object sender, RoutedEventArgs e)
-    {
-        if (_connection is null || SelectedNode is not { } node) return;
-        new ShareWindow(_connection, node) { Owner = this }.ShowDialog();
-    }
+    // MARK: - Entrées du menu contextuel
 
-    private void MenuCopyName_Click(object sender, RoutedEventArgs e)
-    {
-        if (SelectedNode is { } node) Clipboard.SetText(node.Name);
-    }
+    private void MenuDesktop_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Desktop);
+    private void MenuTerminal_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Terminal);
+    private void MenuFiles_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Files);
+    private void MenuSsh_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Ssh);
+    private void MenuWake_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Wake);
+    private void MenuReboot_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Reboot);
+    private void MenuSleep_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Sleep);
+    private void MenuPowerOff_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.PowerOff);
+    private void MenuProcesses_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Processes);
+    private void MenuOpenUrl_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.OpenUrl);
+    private void MenuShare_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Share);
+    private void MenuCopyName_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.CopyName);
+    private void MenuInfo_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.SystemInfo);
+    private void MenuWebPage_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.WebPage);
 
-    /// <summary>
-    /// Ouvre la fiche système détaillée. Elle interroge l'agent (processeur,
-    /// mémoire, disques, BIOS…) et se replie sur les données du serveur si la
-    /// machine ne répond pas.
-    /// </summary>
-    private void MenuInfo_Click(object sender, RoutedEventArgs e)
+    private void RunSelected(DeviceAction action)
     {
-        if (_connection is null || SelectedNode is not { } node) return;
-        new SystemInfoWindow(_connection, node) { Owner = this }.Show();
+        if (SelectedNode is { } node) RunAction(node, action);
     }
 
     private static bool Confirm(string title, string detail) =>
