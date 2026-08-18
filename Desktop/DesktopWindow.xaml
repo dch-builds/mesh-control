@@ -161,9 +161,12 @@
              - Scroller (ScrollViewer) : mode 1:1 — taille native + défilement. -->
         <Grid Background="#1B1D21">
             <Grid x:Name="FitHost">
+                <!-- StretchDirection="Both" : agrandit aussi les petites
+                     résolutions, qui restaient sinon minuscules au centre d'une
+                     grande fenêtre. Uniform conserve le ratio dans les deux sens. -->
                 <Image x:Name="ScreenImage" Focusable="False"
-                       RenderOptions.BitmapScalingMode="LowQuality"
-                       Stretch="Uniform" StretchDirection="DownOnly"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       Stretch="Uniform" StretchDirection="Both"
                        HorizontalAlignment="Center" VerticalAlignment="Center"
                        MouseMove="Screen_MouseMove"
                        MouseDown="Screen_MouseDown"
