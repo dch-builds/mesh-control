@@ -419,6 +419,17 @@
                             <TextBlock Style="{StaticResource FieldHint}"
                                        Text="Au-delà de 30 img/s, l'agent et le réseau deviennent souvent le facteur limitant."/>
 
+                            <TextBlock Text="Échelle de l'image"
+                                       Style="{StaticResource CaptionText}" Margin="0,14,0,5"/>
+                            <ComboBox x:Name="DefaultScaleCombo">
+                                <ComboBoxItem Content="100 % — taille réelle" Tag="100" IsSelected="True"/>
+                                <ComboBoxItem Content="75 %" Tag="75"/>
+                                <ComboBoxItem Content="50 %" Tag="50"/>
+                                <ComboBoxItem Content="33 %" Tag="33"/>
+                            </ComboBox>
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="L'agent encode moins de pixels : c'est le réglage le plus efficace sur les liaisons lentes. Modifiable par session dans le menu « ⋯ »."/>
+
                             <Border Height="1" Background="{StaticResource SeparatorBrush}"
                                     Margin="0,14,0,14"/>
 

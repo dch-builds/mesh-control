@@ -122,8 +122,13 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
             ? $"Débit {kbps / 1024:0.0} Mo/s"
             : $"Débit {kbps:0} Ko/s";
 
+        // À échelle réduite, ces dimensions sont celles de l'image reçue, pas
+        // celles de l'écran distant : le préciser évite de croire à une
+        // mauvaise détection de résolution.
         StatusResolution.Text = _session.ScreenWidth > 0
-            ? $"{_session.ScreenWidth} × {_session.ScreenHeight}"
+            ? _session.ScalePercent == 100
+                ? $"{_session.ScreenWidth} × {_session.ScreenHeight}"
+                : $"{_session.ScreenWidth} × {_session.ScreenHeight} · {_session.ScalePercent} %"
             : "Résolution —";
 
         var total = _session.BytesReceived;
@@ -151,6 +156,10 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         };
 
         FitCheck.IsChecked = _settings.DefaultDesktopFit;
+
+        // Avant tout envoi : la valeur part avec les premiers réglages de
+        // compression, sans provoquer un second aller-retour.
+        _session.ScalePercent = _settings.DefaultDesktopScale;
     }
 
     // MARK: - Événements de session
@@ -652,8 +661,41 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
 
     private void More_Click(object sender, RoutedEventArgs e)
     {
+        UpdateScaleMenu();
         MoreMenu.PlacementTarget = MoreButton;
         MoreMenu.IsOpen = true;
+    }
+
+    /// <summary>Coche l'échelle active et rappelle sa valeur dans l'en-tête.</summary>
+    private void UpdateScaleMenu()
+    {
+        foreach (var item in ScaleMenu.Items.OfType<MenuItem>())
+        {
+            var value = int.TryParse(item.Tag as string, out var v) ? v : 100;
+            item.IsChecked = value == _session.ScalePercent;
+        }
+
+        ScaleMenu.Header = _session.ScalePercent == 100
+            ? "Échelle de l'image"
+            : $"Échelle de l'image  ({_session.ScalePercent} %)";
+    }
+
+    /// <summary>
+    /// Change l'échelle d'encodage. L'agent renvoie une nouvelle taille d'écran :
+    /// le framebuffer est recréé et les coordonnées souris suivent
+    /// automatiquement, puisqu'elles se calculent sur les dimensions reçues.
+    /// </summary>
+    private void Scale_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem item) return;
+        if (!int.TryParse(item.Tag as string, out var percent)) return;
+
+        _session.ScalePercent = percent;
+        UpdateScaleMenu();
+
+        StatsText.Text = percent == 100
+            ? "Échelle : taille réelle."
+            : $"Échelle : {percent} %.";
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
@@ -5,7 +6,13 @@ using System.Windows.Media.Imaging;
 
 namespace MeshControl.Desktop;
 
-/// <summary>Une tuile déjà décodée en pixels BGRA, prête à être copiée (rapide).</summary>
+/// <summary>
+/// Une tuile déjà décodée en pixels BGRA, prête à être copiée (rapide).
+///
+/// <c>Pixels</c> est un tableau LOUÉ au pool partagé : il est plus grand que
+/// nécessaire et doit être rendu après usage. <see cref="KVMFramebuffer.Apply"/>
+/// s'en charge — ne pas conserver de référence au tableau au-delà de cet appel.
+/// </summary>
 public readonly record struct DecodedTile(byte[] Pixels, int Stride, int Width, int Height, int X, int Y);
 
 /// <summary>
@@ -76,8 +83,23 @@ public sealed class KVMFramebuffer
             : new FormatConvertedBitmap(frame, PixelFormats.Bgra32, null, 0);
 
         int stride = tw * 4;
-        var buffer = new byte[stride * th];
-        bgra.CopyPixels(buffer, stride, 0);
+
+        // Tableau loué plutôt qu'alloué : sur un bureau actif, ce sont des
+        // milliers d'allocations par minute (une par tuile) qui déclenchaient des
+        // collections fréquentes, ressenties comme des micro-saccades. Le pool
+        // renvoie un tableau au moins aussi grand — jamais exactement de la
+        // taille demandée, d'où le champ Stride pour retrouver les lignes.
+        var buffer = ArrayPool<byte>.Shared.Rent(stride * th);
+        try
+        {
+            bgra.CopyPixels(buffer, stride, 0);
+        }
+        catch
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+            return null;
+        }
+
         // Freeze n'est pas nécessaire : on ne transporte que le tableau d'octets.
         return new DecodedTile(buffer, stride, tw, th, x, y);
     }
@@ -89,18 +111,28 @@ public sealed class KVMFramebuffer
     /// </summary>
     public void Apply(DecodedTile tile)
     {
-        if (Bitmap is null) return;
+        // try/finally : le tampon loué doit retourner au pool par tous les
+        // chemins de sortie, y compris les abandons anticipés ci-dessous.
+        // Sans cela le pool se viderait et on retomberait sur des allocations.
+        try
+        {
+            if (Bitmap is null) return;
 
-        int srcX = tile.X < 0 ? -tile.X : 0;
-        int srcY = tile.Y < 0 ? -tile.Y : 0;
-        int destX = Math.Max(0, tile.X);
-        int destY = Math.Max(0, tile.Y);
+            int srcX = tile.X < 0 ? -tile.X : 0;
+            int srcY = tile.Y < 0 ? -tile.Y : 0;
+            int destX = Math.Max(0, tile.X);
+            int destY = Math.Max(0, tile.Y);
 
-        int drawW = Math.Min(tile.Width - srcX, Width - destX);
-        int drawH = Math.Min(tile.Height - srcY, Height - destY);
-        if (drawW <= 0 || drawH <= 0) return;
+            int drawW = Math.Min(tile.Width - srcX, Width - destX);
+            int drawH = Math.Min(tile.Height - srcY, Height - destY);
+            if (drawW <= 0 || drawH <= 0) return;
 
-        var sourceRect = new Int32Rect(srcX, srcY, drawW, drawH);
-        Bitmap.WritePixels(sourceRect, tile.Pixels, tile.Stride, destX, destY);
+            var sourceRect = new Int32Rect(srcX, srcY, drawW, drawH);
+            Bitmap.WritePixels(sourceRect, tile.Pixels, tile.Stride, destX, destY);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(tile.Pixels);
+        }
     }
 }

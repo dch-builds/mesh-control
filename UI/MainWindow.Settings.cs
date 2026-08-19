@@ -77,6 +77,7 @@ public partial class MainWindow
         // Bureau à distance
         DefaultQualityCombo.SelectedIndex = Math.Clamp(_settings.DefaultDesktopQuality, 0, 2);
         SelectFrameRate(_settings.DefaultDesktopFrameRate);
+        SelectScale(_settings.DefaultDesktopScale);
         DefaultFitCheck.IsChecked = _settings.DefaultDesktopFit;
         TabbedSessionsCheck.IsChecked = _settings.UseTabbedSessions;
 
@@ -122,6 +123,19 @@ public partial class MainWindow
         DefaultFrameRateCombo.SelectedIndex = 1;   // 10 img/s par défaut
     }
 
+    private void SelectScale(int percent)
+    {
+        foreach (ComboBoxItem item in DefaultScaleCombo.Items)
+        {
+            if (item.Tag is string tag && int.TryParse(tag, out var value) && value == percent)
+            {
+                DefaultScaleCombo.SelectedItem = item;
+                return;
+            }
+        }
+        DefaultScaleCombo.SelectedIndex = 0;   // 100 % par défaut
+    }
+
     // MARK: - Enregistrement
 
     private void SaveSettings_Click(object sender, RoutedEventArgs e)
@@ -146,6 +160,7 @@ public partial class MainWindow
         // Bureau à distance
         _settings.DefaultDesktopQuality = DefaultQualityCombo.SelectedIndex;
         _settings.DefaultDesktopFrameRate = SelectedFrameRate();
+        _settings.DefaultDesktopScale = SelectedScale();
         _settings.DefaultDesktopFit = DefaultFitCheck.IsChecked == true;
         _settings.UseTabbedSessions = TabbedSessionsCheck.IsChecked == true;
 
@@ -199,6 +214,14 @@ public partial class MainWindow
             ShowLogin();
             SetStatus("Le serveur a changé : reconnectez-vous.");
         }
+    }
+
+    private int SelectedScale()
+    {
+        if (DefaultScaleCombo.SelectedItem is ComboBoxItem { Tag: string tag }
+            && int.TryParse(tag, out var value))
+            return value;
+        return 100;
     }
 
     private int SelectedFrameRate()

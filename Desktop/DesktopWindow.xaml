@@ -151,6 +151,19 @@
                                           Click="OpenWebPage_Click"/>
                                 <MenuItem Header="Informations système…"
                                           Click="OpenSystemInfo_Click"/>
+                                <Separator/>
+                                <!-- Sous-menu plutôt qu'un contrôle de plus dans
+                                     la barre, déjà dense. -->
+                                <MenuItem x:Name="ScaleMenu" Header="Échelle de l'image">
+                                    <MenuItem Header="100 % — taille réelle" Tag="100"
+                                              IsCheckable="True" Click="Scale_Click"/>
+                                    <MenuItem Header="75 %" Tag="75"
+                                              IsCheckable="True" Click="Scale_Click"/>
+                                    <MenuItem Header="50 % — deux fois moins de données" Tag="50"
+                                              IsCheckable="True" Click="Scale_Click"/>
+                                    <MenuItem Header="33 % — liaison lente" Tag="33"
+                                              IsCheckable="True" Click="Scale_Click"/>
+                                </MenuItem>
                             </ContextMenu>
                         </Button.ContextMenu>
                     </Button>

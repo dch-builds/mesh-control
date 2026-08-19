@@ -15,9 +15,9 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
 
     <!-- Métadonnées visibles dans les propriétés du fichier .exe -->
-    <Version>1.1.7</Version>
-    <FileVersion>1.1.7.0</FileVersion>
-    <AssemblyVersion>1.1.7.0</AssemblyVersion>
+    <Version>1.1.8</Version>
+    <FileVersion>1.1.8.0</FileVersion>
+    <AssemblyVersion>1.1.8.0</AssemblyVersion>
     <Company>Mesh Control</Company>
     <Product>Mesh Control</Product>
     <Description>Contrôle à distance des postes via MeshCentral</Description>
@@ -38,6 +38,14 @@
          représentent une part notable du volume. -->
     <SatelliteResourceLanguages>fr;en</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <!-- Le paquet Windows Terminal embarque les symboles de debogage de sa DLL
+       native : 81 Mo inutiles en production, a retirer de la publication. -->
+  <Target Name="RetirerSymbolesTerminal" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'Microsoft.Terminal.Control.pdb'" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />

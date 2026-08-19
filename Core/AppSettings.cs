@@ -61,6 +61,13 @@ public sealed class AppSettings
     /// <summary>Cadence par défaut du bureau à distance, en images par seconde.</summary>
     public int DefaultDesktopFrameRate { get; set; } = 10;
 
+    /// <summary>
+    /// Échelle d'encodage par défaut du bureau à distance, en pourcentage.
+    /// Réduire fait encoder moins de pixels à la source : c'est le levier le plus
+    /// efficace sur la bande passante, au prix de la netteté.
+    /// </summary>
+    public int DefaultDesktopScale { get; set; } = 100;
+
     /// <summary>Ouvrir le bureau à distance ajusté à la fenêtre.</summary>
     public bool DefaultDesktopFit { get; set; } = true;
 

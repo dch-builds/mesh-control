@@ -568,6 +568,32 @@ public sealed class DesktopSession : IDisposable
         SendCommand(Kvm.Refresh);
     }
 
+    /// <summary>
+    /// Échelle d'encodage envoyée à l'agent, en pourcentage (100 = taille réelle).
+    /// C'est le levier le plus efficace sur la bande passante : à 50 %, l'agent
+    /// encode quatre fois moins de pixels, à la source.
+    ///
+    /// L'agent réduit l'image ET le repère de coordonnées : les tuiles arrivent
+    /// aux dimensions réduites et la souris doit être exprimée dans ce même
+    /// repère. C'est ScreenWidth/Height qui suivent, la conversion se faisant
+    /// naturellement côté interface.
+    /// </summary>
+    private int _scalePercent = 100;
+    public int ScalePercent
+    {
+        get => _scalePercent;
+        set
+        {
+            var clamped = Math.Clamp(value, 25, 100);
+            if (clamped == _scalePercent) return;
+            _scalePercent = clamped;
+            SendCompressionSettings();
+            // L'agent renvoie un nouveau « screen size » à l'échelle demandée ;
+            // ce rafraîchissement force la reconstruction complète de l'image.
+            SendCommand(Kvm.Refresh);
+        }
+    }
+
     private void SendCompressionSettings()
     {
         // La qualité (compression JPEG) et le taux de rafraîchissement sont
@@ -579,11 +605,15 @@ public sealed class DesktopSession : IDisposable
             DesktopQuality.High => 80,
             _ => 50,
         };
-        // scaling reste à 1024 (100 %) : une réduction côté agent modifierait le
-        // repère de coordonnées et désynchroniserait la souris de l'image.
-        const ushort scaling = 1024;
 
-        var payload = new List<byte> { 1, quality }; // type image : 1 = JPEG
+        // 1024 = 100 %. L'agent attend cette unité, pas un pourcentage.
+        ushort scaling = (ushort)(1024 * _scalePercent / 100);
+
+        // Type 1 = JPEG. Le type 4 (WebP) existe côté protocole mais aucun agent
+        // MeshCentral ne l'implémente : Linux et macOS ignorent le champ, et
+        // Windows n'a pas de branche pour 4 et reste sur JPEG. L'envoyer serait
+        // sans effet.
+        var payload = new List<byte> { 1, quality };
         payload.AppendBE(scaling);
         payload.AppendBE(_frameTimerMs);
         SendCommand(Kvm.Compression, payload.ToArray());
@@ -734,7 +764,10 @@ public sealed class DesktopSession : IDisposable
                 var decoded = KVMFramebuffer.Decode(imageData, x.Value, y.Value);
                 if (decoded is null) break; // tuile illisible : la prochaine corrigera
 
-                _uiDispatcher.BeginInvoke(() =>
+                // Apply rend le tampon loué au pool. Si l'UI n'exécute jamais ce
+                // travail (arrêt du dispatcher à la fermeture), on le rend ici :
+                // sans ce filet, chaque tuile en vol à la fermeture fuirait.
+                var operation = _uiDispatcher.BeginInvoke(() =>
                 {
                     try
                     {
@@ -743,6 +776,8 @@ public sealed class DesktopSession : IDisposable
                     }
                     catch { /* tuile ignorée : la prochaine rafraîchira la zone */ }
                 });
+                operation.Aborted += (_, _) =>
+                    System.Buffers.ArrayPool<byte>.Shared.Return(decoded.Value.Pixels);
                 break;
             }
             case Kvm.Screen:
