@@ -91,6 +91,14 @@
                               Checked="Fit_Changed" Unchecked="Fit_Changed"
                               Margin="0,0,12,0"/>
 
+                    <!-- Visible seulement quand la reprise automatique a
+                         abandonné : sinon la session se rétablit toute seule. -->
+                    <Button x:Name="ReconnectButton" Content="Reconnecter"
+                            Style="{StaticResource ToolButton}"
+                            Click="Reconnect_Click" Margin="0,0,6,0"
+                            Visibility="Collapsed"
+                            ToolTip="Relancer la connexion à cette machine"/>
+
                     <Button Content="Rafraîchir" Style="{StaticResource ToolButton}"
                             Click="Refresh_Click" Margin="0,0,6,0"/>
 

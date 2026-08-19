@@ -102,6 +102,7 @@ public partial class MainWindow
 
         // Diagnostic
         VerboseLogCheck.IsChecked = _settings.VerboseLogging;
+        CheckUpdatesCheck.IsChecked = _settings.CheckForUpdates;
 
         SettingsSubtitle.Text = _settings.Host;
         VersionText.Text = $"Mesh Control {App.Version}";
@@ -163,6 +164,7 @@ public partial class MainWindow
 
         // Diagnostic
         _settings.VerboseLogging = VerboseLogCheck.IsChecked == true;
+        _settings.CheckForUpdates = CheckUpdatesCheck.IsChecked == true;
         Log.MinimumLevel = _settings.VerboseLogging ? LogLevel.Debug : LogLevel.Info;
 
         // Démarrage automatique : n'écrire dans le registre que si l'état change.
@@ -336,6 +338,22 @@ public partial class MainWindow
     }
 
     // MARK: - Diagnostic
+
+    /// <summary>
+    /// Recherche manuelle : on repropose même une version précédemment refusée,
+    /// et on confirme explicitement quand tout est à jour.
+    /// </summary>
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button)
+        {
+            button.IsEnabled = false;
+            try { await CheckForUpdatesAsync(manual: true); }
+            finally { button.IsEnabled = true; }
+            return;
+        }
+        await CheckForUpdatesAsync(manual: true);
+    }
 
     private void OpenLogs_Click(object sender, RoutedEventArgs e)
     {

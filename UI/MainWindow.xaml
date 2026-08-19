@@ -504,6 +504,20 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Mises à jour -->
+                    <TextBlock Text="Mises à jour" Style="{StaticResource PanelSectionTitle}"/>
+                    <Border Style="{StaticResource PanelSection}" Margin="0,8,0,14">
+                        <StackPanel>
+                            <CheckBox x:Name="CheckUpdatesCheck"
+                                      Content="Rechercher les mises à jour au démarrage"/>
+                            <TextBlock Style="{StaticResource FieldHint}" Margin="24,4,0,14"
+                                       Text="L'installation ferme puis relance l'application."/>
+                            <Button Content="Rechercher maintenant"
+                                    Style="{StaticResource ToolButton}" Click="CheckUpdates_Click"
+                                    Padding="12,7" HorizontalAlignment="Left"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Diagnostic -->
                     <TextBlock Text="Diagnostic" Style="{StaticResource PanelSectionTitle}"/>
                     <Border Style="{StaticResource PanelSection}" Margin="0,8,0,14">

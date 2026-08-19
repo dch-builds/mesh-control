@@ -153,6 +153,12 @@ public partial class MainWindow : Window
         {
             ShowLogin();
         }
+
+        // Après la connexion, pour ne pas retarder l'affichage de la liste.
+        // Volontairement non attendu : une recherche lente ou en échec ne doit
+        // jamais bloquer le démarrage.
+        if (_settings.CheckForUpdates)
+            _ = CheckForUpdatesAsync(manual: false);
     }
 
     private void ApplySettingsToUi()
@@ -265,6 +271,60 @@ public partial class MainWindow : Window
         }
 
         RunAction(node, action);
+    }
+
+    // MARK: - Mises à jour
+
+    /// <summary>
+    /// Cherche une version plus récente et la propose. Silencieux quand il n'y a
+    /// rien : au démarrage, on ne veut aucune boîte de dialogue inutile.
+    /// </summary>
+    /// <param name="manual">
+    /// Vrai pour une recherche demandée explicitement : on signale alors aussi
+    /// l'absence de mise à jour, et on ignore la version précédemment refusée.
+    /// </param>
+    private async Task CheckForUpdatesAsync(bool manual)
+    {
+        var update = await UpdateService.CheckAsync().ConfigureAwait(true);
+
+        if (update is null)
+        {
+            if (manual)
+            {
+                MessageBox.Show(
+                    UpdateSecrets.IsConfigured
+                        ? $"Mesh Control {UpdateService.CurrentVersion} est à jour."
+                        : "La recherche de mises à jour n'est pas configurée sur cette installation.",
+                    "Mesh Control", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            return;
+        }
+
+        // Version déjà refusée : on ne réinsiste pas à chaque démarrage.
+        if (!manual && _settings.SkippedUpdateVersion == update.Version.ToString())
+            return;
+
+        // Fenêtre principale masquée dans la zone de notification : l'afficher,
+        // sinon la boîte de dialogue surgirait sans contexte.
+        if (!IsVisible) RestoreMainWindow();
+
+        var dialog = new UpdateWindow(update) { Owner = this };
+        var accepted = dialog.ShowDialog() == true;
+
+        if (accepted && dialog.InstallerLaunched)
+        {
+            // L'installeur attend que l'application soit fermée pour remplacer
+            // les fichiers ; il la relancera ensuite lui-même.
+            _exiting = true;
+            Close();
+            return;
+        }
+
+        if (!accepted)
+        {
+            _settings.SkippedUpdateVersion = update.Version.ToString();
+            _settings.Save();
+        }
     }
 
     private void RestoreMainWindow()

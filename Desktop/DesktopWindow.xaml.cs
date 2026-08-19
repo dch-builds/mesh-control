@@ -132,13 +132,49 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
 
     private void OnStateChanged()
     {
-        if (_session.State == DesktopSessionState.Closed)
+        switch (_session.State)
         {
-            StatsText.Text = "Session fermée";
-            StatusDot.Fill = (System.Windows.Media.Brush)FindResource("OfflineBrush");
-            if (_session.CloseReason is { } reason)
-                ResolutionText.Text = reason;
+            case DesktopSessionState.Connected:
+                StatusDot.Fill = (System.Windows.Media.Brush)FindResource("OnlineBrush");
+                ReconnectButton.Visibility = Visibility.Collapsed;
+                // La résolution reprend sa place dès que l'image revient.
+                if (_session.ScreenWidth > 0)
+                    ResolutionText.Text = $"{_session.ScreenWidth} × {_session.ScreenHeight}";
+                break;
+
+            case DesktopSessionState.Reconnecting:
+                StatusDot.Fill = (System.Windows.Media.Brush)FindResource("OfflineBrush");
+                ResolutionText.Text = "Reconnexion… "
+                    + $"(tentative {_session.ReconnectAttempt}/{_session.ReconnectAttemptsMax})";
+                StatsText.Text = "Reconnexion…";
+                ReconnectButton.Visibility = Visibility.Collapsed;
+                break;
+
+            case DesktopSessionState.Closed:
+                StatsText.Text = "Session fermée";
+                StatusDot.Fill = (System.Windows.Media.Brush)FindResource("OfflineBrush");
+                if (_session.CloseReason is { } reason)
+                    ResolutionText.Text = reason;
+                // Reprise abandonnée : laisser la main à l'utilisateur.
+                ReconnectButton.Visibility = Visibility.Visible;
+                break;
         }
+    }
+
+    private async void Reconnect_Click(object sender, RoutedEventArgs e)
+    {
+        ReconnectButton.Visibility = Visibility.Collapsed;
+
+        // Session jamais démarrée (échec de la toute première connexion) :
+        // RetryNow ne relancerait rien, il faut repasser par le démarrage.
+        if (_session.State == DesktopSessionState.Closed && !_sessionStarted)
+        {
+            _sessionStarted = true;
+            await _session.StartAsync();
+            return;
+        }
+
+        _session.RetryNow();
     }
 
     // MARK: - Affichage / ajustement

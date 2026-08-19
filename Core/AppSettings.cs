@@ -39,6 +39,16 @@ public sealed class AppSettings
     /// <summary>Journal détaillé (inclut les événements de protocole).</summary>
     public bool VerboseLogging { get; set; }
 
+    /// <summary>Rechercher les mises à jour au démarrage.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>
+    /// Version dont l'utilisateur a refusé l'installation. On ne la repropose
+    /// plus au démarrage, sinon « Plus tard » réapparaîtrait à chaque lancement.
+    /// La recherche manuelle l'ignore.
+    /// </summary>
+    public string? SkippedUpdateVersion { get; set; }
+
     /// <summary>Qualité d'image par défaut du bureau à distance (0 basse, 1 équilibrée, 2 haute).</summary>
     public int DefaultDesktopQuality { get; set; } = 1;
 

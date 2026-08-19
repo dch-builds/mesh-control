@@ -11,9 +11,26 @@ public partial class App : Application
     public static string Version =>
         Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
 
+    /// <summary>
+    /// Mutex nomme, conservé pour toute la durée de vie du processus. L'installeur
+    /// Inno l'observe (directive AppMutex) pour savoir que l'application tourne et
+    /// attendre sa fermeture avant de remplacer les fichiers — indispensable à la
+    /// mise à jour silencieuse.
+    /// </summary>
+    private System.Threading.Mutex? _instanceMutex;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // createdNew inutilisé : on ne bloque pas un second lancement, le mutex
+        // ne sert qu'à signaler notre présence à l'installeur.
+        try
+        {
+            _instanceMutex = new System.Threading.Mutex(
+                initiallyOwned: false, name: "MeshControl.SingleInstance");
+        }
+        catch { /* nom déjà pris ou restriction : sans conséquence ici */ }
 
         // L'application vit dans la zone de notification : elle ne doit pas
         // s'arrêter quand la fenêtre principale est masquée, ni quand on ferme la
@@ -46,7 +63,12 @@ public partial class App : Application
             Log.Error("Exception de tâche non observée", args.Exception);
         };
 
-        Exit += (_, _) => Log.Info("Arrêt de l'application");
+        Exit += (_, _) =>
+        {
+            Log.Info("Arrêt de l'application");
+            // Libérer le mutex : l'installeur attend sa disparition pour agir.
+            try { _instanceMutex?.Dispose(); } catch { }
+        };
     }
 
     /// <summary>

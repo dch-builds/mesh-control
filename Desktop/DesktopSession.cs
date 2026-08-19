@@ -52,7 +52,7 @@ public enum KeyAction : byte { Down = 0, Up = 1, ExtendedUp = 3, ExtendedDown = 
 
 public enum DesktopQuality { Low, Balanced, High }
 
-public enum DesktopSessionState { Connecting, Connected, Closed }
+public enum DesktopSessionState { Connecting, Connected, Reconnecting, Closed }
 
 /// <summary>
 /// Une session de bureau à distance : détient le socket relais, décode le flux
@@ -134,7 +134,12 @@ public sealed class DesktopSession : IDisposable
     // On distingue trames binaires (commandes KVM) et texte (contrôle JSON) :
     // MeshCentral attend les trames de contrôle en TEXTE, pas en binaire.
     private readonly record struct Outbound(byte[] Data, bool IsText);
-    private readonly Channel<Outbound> _sendQueue =
+
+    // Recréée à chaque (re)connexion : Stop() complète définitivement le writer,
+    // une file complétée refuserait toute écriture après reconnexion.
+    private Channel<Outbound> _sendQueue = NewSendQueue();
+
+    private static Channel<Outbound> NewSendQueue() =>
         Channel.CreateUnbounded<Outbound>(new UnboundedChannelOptions { SingleReader = true });
 
     private bool _stopped;
@@ -172,14 +177,139 @@ public sealed class DesktopSession : IDisposable
         {
             if (_stopped) return;
             CloseReason = ex.Message;
-            SetState(DesktopSessionState.Closed);
+            // Première connexion : on tente aussi de reprendre. La machine peut
+            // être en cours de démarrage au moment de l'ouverture.
+            if (!TryBeginReconnect()) SetState(DesktopSessionState.Closed);
         }
+    }
+
+    // MARK: - Reconnexion automatique
+
+    /// <summary>
+    /// Nombre de tentatives déjà faites pour la coupure en cours. Remis à zéro
+    /// dès qu'une connexion aboutit.
+    /// </summary>
+    private int _reconnectAttempt;
+
+    /// <summary>Vrai pendant qu'une boucle de reconnexion est active.</summary>
+    private bool _reconnecting;
+
+    /// <summary>Désactive la reprise automatique (fermeture volontaire).</summary>
+    public bool AutoReconnect { get; set; } = true;
+
+    /// <summary>Tentatives maximum avant d'abandonner.</summary>
+    private const int MaxReconnectAttempts = 12;
+
+    /// <summary>Tentative courante, pour l'affichage (1 = premiere).</summary>
+    public int ReconnectAttempt => _reconnectAttempt;
+    public int ReconnectAttemptsMax => MaxReconnectAttempts;
+
+    /// <summary>
+    /// Lance la boucle de reprise si elle est permise. Renvoie false quand la
+    /// session doit rester fermée : arrêt volontaire, reprise désactivée, ou
+    /// tentatives épuisées.
+    /// </summary>
+    private bool TryBeginReconnect()
+    {
+        if (_stopped || !AutoReconnect) return false;
+        if (_reconnecting) return true;           // deja en cours
+        if (_reconnectAttempt >= MaxReconnectAttempts) return false;
+
+        _reconnecting = true;
+        _ = ReconnectLoopAsync();
+        return true;
+    }
+
+    /// <summary>
+    /// Retente la connexion avec un délai croissant. Un poste qui redémarre met
+    /// souvent une à deux minutes à revenir : l'attente monte jusqu'à 15 s pour
+    /// couvrir ce cas sans marteler le serveur.
+    /// </summary>
+    private async Task ReconnectLoopAsync()
+    {
+        try
+        {
+            while (!_stopped && AutoReconnect && _reconnectAttempt < MaxReconnectAttempts)
+            {
+                _reconnectAttempt++;
+                SetState(DesktopSessionState.Reconnecting);
+
+                // 2, 3, 5, 8, 12, puis 15 s.
+                int delay = _reconnectAttempt switch
+                {
+                    1 => 2000,
+                    2 => 3000,
+                    3 => 5000,
+                    4 => 8000,
+                    5 => 12000,
+                    _ => 15000,
+                };
+                await Task.Delay(delay).ConfigureAwait(false);
+                if (_stopped || !AutoReconnect) return;
+
+                try
+                {
+                    var socket = await _connection
+                        .OpenTunnelAsync(_node.Id, RelayProtocol.Desktop)
+                        .ConfigureAwait(false);
+
+                    if (_stopped) { socket.Close(); socket.Dispose(); return; }
+
+                    // Nouvelle file : celle de la session précédente a été
+                    // complétée, elle rejetterait toute écriture.
+                    _sendQueue = NewSendQueue();
+                    _socket = socket;
+                    _cts = new CancellationTokenSource();
+
+                    _reconnectAttempt = 0;
+                    CloseReason = null;
+                    SetState(DesktopSessionState.Connected);
+
+                    StartSenderLoop(socket, _cts.Token);
+                    StartReceiveLoop(socket, _cts.Token);
+                    StartRtt(_cts.Token);
+
+                    // La résolution a pu changer pendant la coupure ; les réglages
+                    // de compression ne survivent pas au nouveau tunnel.
+                    SendCompressionSettings();
+                    SendCommand(Kvm.Refresh);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    CloseReason = ex.Message;   // on repart pour un tour
+                }
+            }
+
+            // Tentatives épuisées : la session reste fermée.
+            if (!_stopped)
+            {
+                CloseReason = "Reconnexion impossible après "
+                            + $"{MaxReconnectAttempts} tentatives.";
+                SetState(DesktopSessionState.Closed);
+            }
+        }
+        finally
+        {
+            _reconnecting = false;
+        }
+    }
+
+    /// <summary>Relance immédiatement une tentative (bouton « Reconnecter »).</summary>
+    public void RetryNow()
+    {
+        if (_stopped) return;
+        _reconnectAttempt = 0;
+        AutoReconnect = true;
+        TryBeginReconnect();
     }
 
     public void Stop()
     {
         if (_stopped) return;
         _stopped = true;
+        // Fermeture volontaire : surtout ne pas relancer de reconnexion.
+        AutoReconnect = false;
         SendControl(new { ctrlChannel = "102938", type = "close" });
         try { _cts?.Cancel(); } catch { }
         _sendQueue.Writer.TryComplete();
@@ -458,7 +588,9 @@ public sealed class DesktopSession : IDisposable
                     if (State != DesktopSessionState.Closed)
                     {
                         CloseReason = "La session de bureau à distance s'est terminée.";
-                        SetState(DesktopSessionState.Closed);
+                        // Coupure non demandée (redémarrage du poste, réseau) :
+                        // on tente de reprendre plutôt que de rester fermé.
+                        if (!TryBeginReconnect()) SetState(DesktopSessionState.Closed);
                     }
                     return;
                 }
