@@ -99,6 +99,10 @@ public sealed class MeshServerConnection : IDisposable
 
         await SendJsonAsync(new { action = "meshes" }).ConfigureAwait(false);
         await SendJsonAsync(new { action = "nodes" }).ConfigureAwait(false);
+        // Les dates de dernière connexion vivent dans une collection séparée du
+        // serveur : elles n'arrivent pas avec « nodes » et demandent leur propre
+        // requête, comme le fait le client web officiel.
+        await SendJsonAsync(new { action = "lastconnects" }).ConfigureAwait(false);
         await SendJsonAsync(new { action = "authcookie" }).ConfigureAwait(false);
     }
 
@@ -249,6 +253,26 @@ public sealed class MeshServerConnection : IDisposable
                     DevicesChanged?.Invoke();
                 }
                 break;
+            case "lastconnects":
+                // { lastconnects: { "<nodeid>": <timestamp ms>, ... } }
+                if (json.TryGetProperty("lastconnects", out var lastSeen)
+                    && lastSeen.ValueKind == JsonValueKind.Object)
+                {
+                    int applied = 0;
+                    foreach (var entry in lastSeen.EnumerateObject())
+                    {
+                        if (entry.Value.ValueKind != JsonValueKind.Number) continue;
+                        if (!_nodes.TryGetValue(entry.Name, out var seenNode)) continue;
+
+                        // Timestamp Unix en millisecondes, converti en heure locale.
+                        seenNode.LastConnect = DateTimeOffset
+                            .FromUnixTimeMilliseconds(entry.Value.GetInt64())
+                            .LocalDateTime;
+                        applied++;
+                    }
+                    if (applied > 0) DevicesChanged?.Invoke();
+                }
+                break;
             case "authcookie":
                 _authCookie = GetString(json, "cookie");
                 _rCookie = GetString(json, "rcookie");
@@ -382,6 +406,9 @@ public sealed class MeshServerConnection : IDisposable
     {
         await SendJsonAsync(new { action = "meshes" }).ConfigureAwait(false);
         await SendJsonAsync(new { action = "nodes" }).ConfigureAwait(false);
+        // « nodes » reconstruit le dictionnaire : sans cette requête, les dates
+        // de dernière connexion seraient perdues au premier rafraîchissement.
+        await SendJsonAsync(new { action = "lastconnects" }).ConfigureAwait(false);
     }
 
     /// <summary>Appareil sans agent dans un groupe local/relais (mesh mtype 3).</summary>

@@ -162,6 +162,35 @@
             </Grid>
         </Border>
 
+        <!-- Barre d'état persistante : latence, débit, résolution. Remplace le
+             compteur de tuiles, qui relevait du débogage. -->
+        <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Background="#F7F7F9"
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,0"
+                Padding="14,5">
+            <Grid>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                    <TextBlock x:Name="StatusLatency" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center" MinWidth="86"
+                               ToolTip="Latence aller-retour avec la machine"/>
+                    <Border Width="1" Background="{StaticResource SeparatorBrush}"
+                            Margin="10,1,10,1"/>
+                    <TextBlock x:Name="StatusThroughput" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center" MinWidth="92"
+                               ToolTip="Débit reçu du flux d'image"/>
+                    <Border Width="1" Background="{StaticResource SeparatorBrush}"
+                            Margin="10,1,10,1"/>
+                    <TextBlock x:Name="StatusResolution" Style="{StaticResource CaptionText}"
+                               VerticalAlignment="Center"
+                               ToolTip="Résolution de l'écran distant"/>
+                </StackPanel>
+
+                <TextBlock x:Name="StatusTotal" Style="{StaticResource CaptionText}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           Opacity="0.7"
+                           ToolTip="Volume total reçu depuis le début de la session"/>
+            </Grid>
+        </Border>
+
         <!-- Zone d'affichage du bureau distant (fond sombre : met l'écran en valeur) -->
         <!-- Deux conteneurs exclusifs :
              - FitHost (Grid)      : mode « Ajuster » — WPF met l'image à l'échelle

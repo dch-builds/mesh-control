@@ -260,7 +260,9 @@
                                     </Grid.ColumnDefinitions>
 
                                     <!-- Pastille d'icône OS avec indicateur de statut -->
-                                    <Grid Grid.Column="0" Width="36" Height="36"
+                                    <Grid Grid.Column="0"
+                                          Width="{DynamicResource DeviceIconSize}"
+                                          Height="{DynamicResource DeviceIconSize}"
                                           Margin="0,0,12,0">
                                         <Border Background="#F0F0F5" CornerRadius="9"/>
                                         <TextBlock Text="{Binding OsGlyph}" FontSize="17"
@@ -277,7 +279,8 @@
 
                                     <!-- Nom + description -->
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}" FontSize="13"
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontSize="{DynamicResource DeviceNameSize}"
                                                    FontWeight="SemiBold"
                                                    Foreground="{StaticResource TextPrimaryBrush}"
                                                    TextTrimming="CharacterEllipsis"/>
@@ -290,6 +293,13 @@
                                     <!-- Badge de statut + étoile de favori -->
                                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                                 VerticalAlignment="Center">
+                                        <!-- Dernière présence : vide pour une machine
+                                             en ligne, le badge le dit déjà. -->
+                                        <TextBlock Text="{Binding LastSeenLabel}"
+                                                   Style="{StaticResource CaptionText}"
+                                                   VerticalAlignment="Center"
+                                                   Opacity="0.75" FontSize="10"
+                                                   ToolTip="Dernière connexion au serveur"/>
                                         <Border Background="{Binding BadgeBackground}"
                                                 CornerRadius="7" Padding="8,3" Margin="8,0,0,0"
                                                 VerticalAlignment="Center">
@@ -421,6 +431,20 @@
                                       Content="Regrouper les sessions en onglets"/>
                             <TextBlock Style="{StaticResource FieldHint}" Margin="24,4,0,0"
                                        Text="Décochez pour ouvrir chaque session dans sa propre fenêtre. S'applique aux nouvelles sessions."/>
+
+                            <Border Height="1" Background="{StaticResource SeparatorBrush}"
+                                    Margin="0,14,0,14"/>
+
+                            <TextBlock Text="Densité de la liste"
+                                       Style="{StaticResource CaptionText}" Margin="0,0,0,5"/>
+                            <ComboBox x:Name="DensityCombo"
+                                      SelectionChanged="DensityCombo_SelectionChanged">
+                                <ComboBoxItem Content="Compact"/>
+                                <ComboBoxItem Content="Normal" IsSelected="True"/>
+                                <ComboBoxItem Content="Confortable"/>
+                            </ComboBox>
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="Le mode compact affiche davantage de machines à l'écran."/>
                         </StackPanel>
                     </Border>
 

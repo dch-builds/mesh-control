@@ -62,6 +62,7 @@ public sealed class DeviceRow : INotifyPropertyChanged
     private bool _shownOnline;
     private string _shownName = "";
     private string? _shownOsDescription;
+    private DateTime? _shownLastConnect;
 
     /// <summary>Mémorise l'état courant comme étant celui affiché.</summary>
     public void CaptureState()
@@ -69,6 +70,7 @@ public sealed class DeviceRow : INotifyPropertyChanged
         _shownOnline = Node.IsOnline;
         _shownName = Node.Name;
         _shownOsDescription = Node.OsDescription;
+        _shownLastConnect = Node.LastConnect;
     }
 
     /// <summary>Vrai si l'état en ligne a changé depuis le dernier affichage.</summary>
@@ -91,7 +93,10 @@ public sealed class DeviceRow : INotifyPropertyChanged
             Notify(nameof(StatusLabel));
             Notify(nameof(BadgeBackground));
             Notify(nameof(BadgeForeground));
+            // Le libellé dépend aussi de l'état : « Connecté » quand en ligne.
+            Notify(nameof(LastSeenLabel));
         }
+        if (_shownLastConnect != Node.LastConnect) Notify(nameof(LastSeenLabel));
         if (NameChanged) Notify(nameof(Name));
         if (!string.Equals(_shownOsDescription, Node.OsDescription, StringComparison.Ordinal))
         {
@@ -137,6 +142,12 @@ public sealed class DeviceRow : INotifyPropertyChanged
 
     public string StatusBrush => IsOnline ? "#34C759" : "#C7C7CC";
     public string StatusLabel => IsOnline ? "En ligne" : "Hors ligne";
+
+    /// <summary>
+    /// Dernière présence, en durée relative. Vide pour une machine en ligne :
+    /// le badge « En ligne » le dit déjà, et le répéter alourdirait la ligne.
+    /// </summary>
+    public string LastSeenLabel => IsOnline ? "" : Node.LastSeenLabel;
     public string BadgeBackground => IsOnline ? "#E4F8E8" : "#EFEFF4";
     public string BadgeForeground => IsOnline ? "#248A3D" : "#8A8A8E";
 

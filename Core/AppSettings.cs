@@ -39,6 +39,12 @@ public sealed class AppSettings
     /// <summary>Journal détaillé (inclut les événements de protocole).</summary>
     public bool VerboseLogging { get; set; }
 
+    /// <summary>
+    /// Densité de la liste : 0 compact, 1 normal, 2 confortable. Sur un parc
+    /// important, le mode compact fait tenir davantage de machines à l'écran.
+    /// </summary>
+    public int ListDensity { get; set; } = 1;
+
     /// <summary>Rechercher les mises à jour au démarrage.</summary>
     public bool CheckForUpdates { get; set; } = true;
 

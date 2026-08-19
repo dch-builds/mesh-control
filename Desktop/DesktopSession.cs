@@ -76,6 +76,23 @@ public sealed class DesktopSession : IDisposable
     public bool HasMultipleDisplays => _displays.Count > 1;
     public string? RemoteMessage { get; private set; }
     public long TilesReceived { get; private set; }
+
+    /// <summary>
+    /// Latence aller-retour avec l'agent, en millisecondes. Null tant que la
+    /// première réponse « rtt » n'est pas revenue.
+    /// </summary>
+    public int? LatencyMs { get; private set; }
+
+    /// <summary>Octets reçus depuis le début de la session (flux d'images).</summary>
+    public long BytesReceived { get; private set; }
+
+    /// <summary>
+    /// Débit instantané en Ko/s, mesuré sur la dernière fenêtre d'une seconde.
+    /// </summary>
+    public double ThroughputKbps { get; private set; }
+
+    private long _windowBytes;
+    private DateTime _windowStart = DateTime.UtcNow;
     public string? CloseReason { get; private set; }
 
     public KVMFramebuffer Framebuffer { get; } = new();
@@ -605,6 +622,8 @@ public sealed class DesktopSession : IDisposable
                             HandleControl(text);
                             break;
                         case WsMessage.Binary(var data):
+                            BytesReceived += data.Length;
+                            AccumulateThroughput(data.Length);
                             buffer.AddRange(data);
                             DrainCommands(buffer);
                             break;
@@ -618,6 +637,22 @@ public sealed class DesktopSession : IDisposable
         }, ct);
     }
 
+    /// <summary>
+    /// Débit sur une fenêtre glissante d'une seconde. Un cumul depuis le début de
+    /// session donnerait une moyenne qui masquerait les ralentissements ponctuels.
+    /// </summary>
+    private void AccumulateThroughput(int bytes)
+    {
+        _windowBytes += bytes;
+        var span = (DateTime.UtcNow - _windowStart).TotalSeconds;
+        if (span >= 1.0)
+        {
+            ThroughputKbps = _windowBytes / span / 1024.0;
+            _windowBytes = 0;
+            _windowStart = DateTime.UtcNow;
+        }
+    }
+
     private void HandleControl(string text)
     {
         if (text.Length == 0 || text[0] != '{') return;
@@ -629,6 +664,14 @@ public sealed class DesktopSession : IDisposable
                 ? t.GetString() : null;
             if (type == "ping")
                 SendControl(new { ctrlChannel = "102938", type = "pong" });
+            else if (type == "rtt" && root.TryGetProperty("time", out var sent)
+                     && sent.ValueKind == JsonValueKind.Number)
+            {
+                // L'agent renvoie l'horodatage que nous avions émis : la
+                // différence donne l'aller-retour complet.
+                var elapsed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - sent.GetInt64();
+                if (elapsed >= 0 && elapsed < 60000) LatencyMs = (int)elapsed;
+            }
             else if (type == "console" && root.TryGetProperty("msg", out var m) && m.ValueKind == JsonValueKind.String)
             {
                 var msg = m.GetString();

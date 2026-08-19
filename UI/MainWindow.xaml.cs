@@ -131,6 +131,7 @@ public partial class MainWindow : Window
         _collapsedGroups = new HashSet<string>(_settings.CollapsedGroups,
                                                StringComparer.OrdinalIgnoreCase);
         ApplySettingsToUi();
+        ApplyListDensity();
         SetupHotkey();
         SetupTray();
 

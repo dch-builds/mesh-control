@@ -90,6 +90,46 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         // Prendre le focus dès que le panneau est prêt, pour que le clavier
         // fonctionne sans clic préalable.
         RootPanel.Loaded += (_, _) => RootPanel.Focus();
+
+        // La barre d'état se rafraîchit à intervalle fixe : la recalculer à
+        // chaque tuile reçue ferait travailler l'UI des dizaines de fois par
+        // seconde pour un affichage que l'œil ne suit pas.
+        _statusTimer.Tick += (_, _) => UpdateStatusBar();
+        _statusTimer.Start();
+        Closed += (_, _) => _statusTimer.Stop();
+    }
+
+    /// <summary>Cadence de rafraîchissement de la barre d'état.</summary>
+    private readonly System.Windows.Threading.DispatcherTimer _statusTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(1),
+    };
+
+    /// <summary>
+    /// Met à jour latence, débit, résolution et volume reçu. Les valeurs absentes
+    /// s'affichent en tiret plutôt que de laisser un vide inexpliqué.
+    /// </summary>
+    private void UpdateStatusBar()
+    {
+        if (!_uiReady) return;
+
+        StatusLatency.Text = _session.LatencyMs is { } ms
+            ? $"Latence {ms} ms"
+            : "Latence —";
+
+        var kbps = _session.ThroughputKbps;
+        StatusThroughput.Text = kbps >= 1024
+            ? $"Débit {kbps / 1024:0.0} Mo/s"
+            : $"Débit {kbps:0} Ko/s";
+
+        StatusResolution.Text = _session.ScreenWidth > 0
+            ? $"{_session.ScreenWidth} × {_session.ScreenHeight}"
+            : "Résolution —";
+
+        var total = _session.BytesReceived;
+        StatusTotal.Text = total >= 1024L * 1024
+            ? $"{total / 1024.0 / 1024.0:0.0} Mo reçus"
+            : $"{total / 1024} Ko reçus";
     }
 
     /// <summary>
@@ -121,13 +161,16 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         // Image pointent dessus (une seule fois) et on rafraîchit les stats.
         if (ScreenImage.Source is null && _session.Framebuffer.Bitmap is not null)
             ApplyFitMode();
-        StatsText.Text = $"{_session.TilesReceived} tuiles";
+        // Les compteurs vivent désormais dans la barre d'état ; StatsText est
+        // réservé aux messages ponctuels (« Copié », « Envoyé : … »).
     }
 
     private void OnScreenSizeChanged()
     {
         ApplyFitMode();
-        ResolutionText.Text = $"{_session.ScreenWidth} × {_session.ScreenHeight}";
+        // La résolution s'affiche dans la barre d'état ; ResolutionText ne porte
+        // plus que l'état de la connexion (reconnexion, session fermée).
+        UpdateStatusBar();
     }
 
     private void OnStateChanged()
@@ -137,9 +180,9 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
             case DesktopSessionState.Connected:
                 StatusDot.Fill = (System.Windows.Media.Brush)FindResource("OnlineBrush");
                 ReconnectButton.Visibility = Visibility.Collapsed;
-                // La résolution reprend sa place dès que l'image revient.
-                if (_session.ScreenWidth > 0)
-                    ResolutionText.Text = $"{_session.ScreenWidth} × {_session.ScreenHeight}";
+                // Effacer le message de coupure : la session est rétablie.
+                ResolutionText.Text = "";
+                UpdateStatusBar();
                 break;
 
             case DesktopSessionState.Reconnecting:

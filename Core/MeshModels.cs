@@ -118,6 +118,35 @@ public sealed class MeshNode
     public int? SshPort { get; set; }
     public int? RdpPort { get; set; }
 
+    /// <summary>
+    /// Date de dernière connexion. Absente de la réponse « nodes » : le serveur
+    /// la conserve dans une collection séparée, interrogée par l'action
+    /// « lastconnects » et fusionnée ici — comme le fait le client web.
+    /// Null pour une machine jamais vue depuis l'installation du serveur.
+    /// </summary>
+    public DateTime? LastConnect { get; set; }
+
+    /// <summary>
+    /// Libellé de dernière présence. Une machine en ligne l'est « maintenant » :
+    /// afficher une date passée dans ce cas serait trompeur.
+    /// </summary>
+    public string LastSeenLabel
+    {
+        get
+        {
+            if (IsOnline) return "Connecté";
+            if (LastConnect is not { } seen) return "—";
+
+            var span = DateTime.Now - seen;
+            if (span.TotalMinutes < 1) return "à l'instant";
+            if (span.TotalMinutes < 60) return $"il y a {(int)span.TotalMinutes} min";
+            if (span.TotalHours < 24) return $"il y a {(int)span.TotalHours} h";
+            if (span.TotalDays < 31) return $"il y a {(int)span.TotalDays} j";
+            if (span.TotalDays < 365) return $"il y a {(int)(span.TotalDays / 30)} mois";
+            return $"il y a {(int)(span.TotalDays / 365)} an(s)";
+        }
+    }
+
     public bool IsOnline => (Conn & 1) != 0 || (Conn & 8) != 0;
     public bool HasAgent => (Conn & 1) != 0;
 

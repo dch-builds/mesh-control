@@ -103,6 +103,7 @@ public partial class MainWindow
         // Diagnostic
         VerboseLogCheck.IsChecked = _settings.VerboseLogging;
         CheckUpdatesCheck.IsChecked = _settings.CheckForUpdates;
+        DensityCombo.SelectedIndex = Math.Clamp(_settings.ListDensity, 0, 2);
 
         SettingsSubtitle.Text = _settings.Host;
         VersionText.Text = $"Mesh Control {App.Version}";
@@ -165,6 +166,8 @@ public partial class MainWindow
         // Diagnostic
         _settings.VerboseLogging = VerboseLogCheck.IsChecked == true;
         _settings.CheckForUpdates = CheckUpdatesCheck.IsChecked == true;
+        _settings.ListDensity = Math.Clamp(DensityCombo.SelectedIndex, 0, 2);
+        ApplyListDensity();
         Log.MinimumLevel = _settings.VerboseLogging ? LogLevel.Debug : LogLevel.Info;
 
         // Démarrage automatique : n'écrire dans le registre que si l'état change.
@@ -338,6 +341,44 @@ public partial class MainWindow
     }
 
     // MARK: - Diagnostic
+
+    /// <summary>
+    /// Aperçu immédiat : on applique sans attendre l'enregistrement, pour que le
+    /// choix se juge à l'œil. La valeur est persistée par « Enregistrer ».
+    /// </summary>
+    private void DensityCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Déclenché pendant InitializeComponent (IsSelected="True" en XAML) :
+        // _settings existe déjà, mais l'aperçu n'a de sens qu'une fois chargé.
+        if (!IsLoaded) return;
+
+        var previous = _settings.ListDensity;
+        _settings.ListDensity = Math.Clamp(DensityCombo.SelectedIndex, 0, 2);
+        if (_settings.ListDensity != previous) ApplyListDensity();
+    }
+
+    // MARK: - Densité de la liste
+
+    /// <summary>
+    /// Applique la densité choisie en remplaçant les ressources de gabarit. Les
+    /// lignes s'y réfèrent en DynamicResource : le changement est immédiat, sans
+    /// reconstruction de la liste ni perte du défilement.
+    /// </summary>
+    private void ApplyListDensity()
+    {
+        // (padding de ligne, taille de pastille, taille du nom)
+        var (padding, icon, nameSize) = _settings.ListDensity switch
+        {
+            0 => (new Thickness(8, 4, 8, 4), 26.0, 12.0),   // compact
+            2 => (new Thickness(12, 13, 12, 13), 42.0, 14.0), // confortable
+            _ => (new Thickness(10, 9, 10, 9), 36.0, 13.0),   // normal
+        };
+
+        var resources = Application.Current.Resources;
+        resources["DeviceRowPadding"] = padding;
+        resources["DeviceIconSize"] = icon;
+        resources["DeviceNameSize"] = nameSize;
+    }
 
     /// <summary>
     /// Recherche manuelle : on repropose même une version précédemment refusée,
