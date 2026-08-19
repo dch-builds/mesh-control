@@ -824,18 +824,28 @@ public partial class MainWindow : Window
     /// <summary>Vrai quand le bouton global doit tout déplier plutôt que tout replier.</summary>
     private bool _allGroupsCollapsed;
 
-    /// <summary>Restaure l'état d'un dossier au moment où son Expander apparaît.</summary>
+    /// <summary>
+    /// Restaure l'état d'un dossier au moment où son Expander apparaît.
+    ///
+    /// Loaded peut se déclencher plusieurs fois pour un même Expander : la
+    /// virtualisation recycle les conteneurs quand on défile. On détache donc
+    /// systématiquement avant de rattacher, sinon les handlers s'accumuleraient
+    /// et chaque bascule serait comptée plusieurs fois — d'où des dossiers qui
+    /// se refermaient ou restaient ouverts sans logique apparente.
+    /// </summary>
     private void GroupExpander_Loaded(object sender, RoutedEventArgs e)
     {
         if (sender is not Expander expander) return;
         var name = GroupNameOf(expander);
         if (name is null) return;
 
-        // Sans détacher les handlers, l'affectation déclencherait Expanded/Collapsed
-        // et réécrirait l'état qu'on est justement en train de restaurer.
+        // Détacher avant l'affectation : sinon elle déclencherait Expanded ou
+        // Collapsed et réécrirait l'état qu'on est justement en train de lire.
         expander.Expanded -= GroupExpander_Toggled;
         expander.Collapsed -= GroupExpander_Toggled;
+
         expander.IsExpanded = !_collapsedGroups.Contains(name);
+
         expander.Expanded += GroupExpander_Toggled;
         expander.Collapsed += GroupExpander_Toggled;
     }
@@ -856,15 +866,35 @@ public partial class MainWindow : Window
     private static string? GroupNameOf(Expander expander)
         => (expander.DataContext as CollectionViewGroup)?.Name as string;
 
+    /// <summary>
+    /// Tous les noms de groupes réellement affichés, sections virtuelles
+    /// comprises. _allRows ne porte que les dossiers réels : les copies placées
+    /// dans Favoris et Récentes vivent dans _virtualRows, et étaient donc
+    /// ignorées par le bouton « tout replier ».
+    /// </summary>
+    private IEnumerable<string> AllDisplayedGroupNames()
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Les sections virtuelles n'existent que si elles contiennent quelque
+        // chose : les ajouter à l'aveugle mémoriserait des groupes fantômes.
+        foreach (var row in _virtualRows) names.Add(row.GroupName);
+        foreach (var row in _allRows) names.Add(row.GroupName);
+
+        return names;
+    }
+
     private void ToggleGroups_Click(object sender, RoutedEventArgs e)
     {
         _allGroupsCollapsed = !_allGroupsCollapsed;
 
-        _collapsedGroups.Clear();
-        if (_allGroupsCollapsed)
+        // N'agir que sur les dossiers réellement affichés : un filtre de
+        // recherche peut en masquer, et un Clear() global oublierait leur état.
+        var displayed = AllDisplayedGroupNames().ToList();
+        foreach (var name in displayed)
         {
-            foreach (var name in _allRows.Select(r => r.GroupName).Distinct())
-                _collapsedGroups.Add(name);
+            if (_allGroupsCollapsed) _collapsedGroups.Add(name);
+            else _collapsedGroups.Remove(name);
         }
 
         ApplyGroupStatesToVisibleExpanders();
@@ -872,14 +902,29 @@ public partial class MainWindow : Window
         SaveCollapsedGroups();
     }
 
-    /// <summary>Applique l'état mémorisé aux Expander déjà affichés.</summary>
+    /// <summary>
+    /// Applique l'état mémorisé aux Expander déjà affichés. Ceux qui ne le sont
+    /// pas encore (virtualisation) seront traités par GroupExpander_Loaded quand
+    /// ils entreront à l'écran, à partir du même HashSet.
+    /// </summary>
     private void ApplyGroupStatesToVisibleExpanders()
     {
         foreach (var expander in FindVisualChildren<Expander>(DeviceList))
         {
             var name = GroupNameOf(expander);
             if (name is null) continue;
-            expander.IsExpanded = !_collapsedGroups.Contains(name);
+
+            bool expanded = !_collapsedGroups.Contains(name);
+            if (expander.IsExpanded == expanded) continue;   // rien à changer
+
+            // Même précaution que dans Loaded : l'affectation déclencherait le
+            // handler de bascule, qui réécrirait _collapsedGroups pendant qu'on
+            // est en train de l'appliquer.
+            expander.Expanded -= GroupExpander_Toggled;
+            expander.Collapsed -= GroupExpander_Toggled;
+            expander.IsExpanded = expanded;
+            expander.Expanded += GroupExpander_Toggled;
+            expander.Collapsed += GroupExpander_Toggled;
         }
     }
 
@@ -946,6 +991,16 @@ public partial class MainWindow : Window
         }
 
         display.AddRange(rows);
+
+        // « Tout replier » actif : un dossier apparu depuis (nouvelle machine,
+        // section Favoris qui vient de se créer) doit l'être aussi, sinon il
+        // s'ouvrirait seul au milieu d'une liste repliée.
+        if (_allGroupsCollapsed)
+        {
+            foreach (var name in display.Select(r => r.GroupName).Distinct())
+                _collapsedGroups.Add(name);
+        }
+
         DeviceList.ItemsSource = BuildGroupedView(display);
 
         var totalOnline = _allRows.Count(r => r.IsOnline);
@@ -955,6 +1010,13 @@ public partial class MainWindow : Window
         // Le bouton de repli n'a de sens qu'avec plusieurs dossiers affichés.
         ToggleGroupsButton.Visibility = rows.Select(r => r.GroupName).Distinct().Skip(1).Any()
             ? Visibility.Visible : Visibility.Collapsed;
+
+        // Déduire le sens du bouton de l'état réel plutôt que de le mémoriser :
+        // au lancement, les dossiers repliés sont restaurés depuis les réglages
+        // et le bouton aurait sinon proposé « replier » alors que tout l'est.
+        var shown = display.Select(r => r.GroupName).Distinct().ToList();
+        _allGroupsCollapsed = shown.Count > 0 && shown.All(_collapsedGroups.Contains);
+        UpdateToggleGroupsButton();
         UpdateTrayTooltip();
 
         if (selectedId is not null)

@@ -220,16 +220,17 @@
                                                          la liste étant reconstruite à chaque
                                                          événement serveur, un IsExpanded figé
                                                          rouvrirait les groupes en permanence. -->
+                                                    <!-- Expanded/Collapsed sont attachés par code
+                                                         dans GroupExpander_Loaded : câblés ici, ils
+                                                         s'accumuleraient au recyclage des
+                                                         conteneurs par la virtualisation. -->
                                                     <Expander Background="Transparent"
                                                               BorderThickness="0" Margin="0,2,0,6"
-                                                              Loaded="GroupExpander_Loaded"
-                                                              Expanded="GroupExpander_Toggled"
-                                                              Collapsed="GroupExpander_Toggled">
+                                                              Loaded="GroupExpander_Loaded">
                                                         <Expander.Header>
                                                             <StackPanel Orientation="Horizontal">
-                                                                <TextBlock Text="📁" FontSize="13"
-                                                                           Margin="0,0,7,0"
-                                                                           VerticalAlignment="Center"/>
+                                                                <!-- Favoris et Récentes portent déjà
+                                                                     leur symbole dans leur nom. -->
                                                                 <TextBlock Text="{Binding Name}"
                                                                            FontSize="12" FontWeight="SemiBold"
                                                                            Foreground="{StaticResource TextSecondaryBrush}"
