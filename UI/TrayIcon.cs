@@ -46,15 +46,20 @@ public sealed class TrayIcon : IDisposable
 
     public TrayIcon()
     {
-        // Fenêtre invisible, sans parent : elle n'existe que pour recevoir les
-        // messages du shell. HwndSource est le moyen natif de posséder un HWND
-        // depuis WPF, sans dépendre de WinForms.
+        // Fenêtre invisible dédiée aux messages du shell. HwndSource est le moyen
+        // natif de posséder un HWND depuis WPF, sans dépendre de WinForms.
+        //
+        // Volontairement PAS une fenêtre « message-only » (HWND_MESSAGE) : celles-ci
+        // ne reçoivent pas les messages DIFFUSÉS, or c'est ainsi que l'Explorateur
+        // annonce « TaskbarCreated » après un redémarrage. On crée donc une vraie
+        // fenêtre de niveau supérieur, de taille nulle et jamais affichée, marquée
+        // ToolWindow pour n'apparaître ni dans la barre des tâches ni au Alt+Tab.
         var parameters = new HwndSourceParameters("Mesh Control — zone de notification")
         {
             Width = 0,
             Height = 0,
             WindowStyle = unchecked((int)NativeMethods.WS_POPUP),
-            ParentWindow = NativeMethods.HWND_MESSAGE,
+            ExtendedWindowStyle = NativeMethods.WS_EX_TOOLWINDOW,
         };
         _window = new HwndSource(parameters);
         _window.AddHook(WndProc);
@@ -117,7 +122,11 @@ public sealed class TrayIcon : IDisposable
 
         if (msg != WM_TRAYICON) return IntPtr.Zero;
 
-        switch ((int)lParam)
+        // Avec NOTIFYICON_VERSION_4, lParam n'est pas le message brut : le shell y
+        // place l'événement dans le mot de poids faible et l'identifiant de
+        // l'icône dans le mot de poids fort. Comparer lParam entier ne
+        // correspondrait donc jamais — il faut isoler le mot faible.
+        switch ((int)(lParam.ToInt64() & 0xFFFF))
         {
             case NativeMethods.WM_LBUTTONDBLCLK:
                 OpenRequested?.Invoke();
@@ -255,7 +264,8 @@ internal static class NativeMethods
     public const int WM_CONTEXTMENU = 0x007B;
 
     public const uint WS_POPUP = 0x80000000;
-    public static readonly IntPtr HWND_MESSAGE = new(-3);
+    /// <summary>Fenêtre outil : absente de la barre des tâches et du Alt+Tab.</summary>
+    public const int WS_EX_TOOLWINDOW = 0x00000080;
 
     public const int NIM_ADD = 0x00;
     public const int NIM_MODIFY = 0x01;
