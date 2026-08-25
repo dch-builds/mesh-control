@@ -47,6 +47,11 @@ public partial class MainWindow : Window
             _refreshTimer.Stop();
             RebuildDeviceList();
         };
+        _searchTimer.Tick += (_, _) =>
+        {
+            _searchTimer.Stop();
+            ApplyFilter();
+        };
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
 
@@ -62,6 +67,8 @@ public partial class MainWindow : Window
         };
         Closed += (_, _) =>
         {
+            _refreshTimer.Stop();
+            _searchTimer.Stop();
             _hotkey?.Dispose();
             _tray?.Dispose();
             _connection?.Disconnect();
@@ -458,7 +465,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnStateChanged() => Dispatcher.Invoke(() =>
+    // BeginInvoke : appelé depuis le fil de réception du serveur, qui ne doit pas
+    // attendre l'interface pour continuer à lire les trames suivantes.
+    private void OnStateChanged() => Dispatcher.BeginInvoke(() =>
     {
         if (_connection is null) return;
         if (_connection.State != ConnectionState.Failed) return;
@@ -720,18 +729,39 @@ public partial class MainWindow : Window
 
     // MARK: - Recherche
 
+    /// <summary>
+    /// Filtrage différé pendant la frappe.
+    ///
+    /// Filtrer à chaque caractère refiltrait l'ensemble des machines, recomposait
+    /// les sections virtuelles et reconstruisait la vue groupée — donc WPF
+    /// régénérait tous ses conteneurs. Sur un parc important, la saisie devenait
+    /// saccadée. Le délai est court : il regroupe les frappes d'une même rafale
+    /// sans que l'attente soit perceptible entre deux mots.
+    /// </summary>
+    private readonly DispatcherTimer _searchTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(150)
+    };
+
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        // Le repère visuel du champ reste immédiat : seul le filtrage attend.
         var empty = string.IsNullOrEmpty(SearchBox.Text);
         SearchPlaceholder.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         ClearSearchButton.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
-        ApplyFilter();
+
+        _searchTimer.Stop();
+        _searchTimer.Start();
     }
 
     private void ClearSearch_Click(object sender, RoutedEventArgs e)
     {
         SearchBox.Clear();
         SearchBox.Focus();
+
+        // Effacement explicite : on rétablit la liste complète sans attendre.
+        _searchTimer.Stop();
+        ApplyFilter();
     }
 
     // MARK: - Favoris et machines récentes

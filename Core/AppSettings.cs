@@ -142,13 +142,79 @@ public sealed class AppSettings
         }
     }
 
+    /// <summary>
+    /// Options de sérialisation, créées une seule fois.
+    ///
+    /// System.Text.Json met en cache les métadonnées d'un type PAR instance
+    /// d'options : en créer une à chaque enregistrement annulait ce cache et
+    /// refaisait l'analyse du type à chaque appel. Or Save() est appelé souvent —
+    /// repli d'un dossier, ajout d'un favori, ouverture d'une machine.
+    /// </summary>
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        WriteIndented = true,
+    };
+
+    // Écriture différée : le contenu à écrire, et le minuteur qui déclenche
+    // l'écriture réelle. Un seul fichier, donc un seul état partagé.
+    private static readonly object WriteLock = new();
+    private static string? _pendingJson;
+    private static System.Threading.Timer? _writeTimer;
+
+    /// <summary>Délai de regroupement des écritures.</summary>
+    private const int WriteDelayMs = 500;
+
+    /// <summary>
+    /// Enregistre les réglages, en différant l'écriture disque.
+    ///
+    /// La sérialisation reste sur le fil appelant : elle est rapide, et surtout
+    /// elle lit l'objet pendant que son propriétaire ne le modifie pas. La
+    /// sérialiser en tâche de fond exposerait les collections (favoris, dossiers
+    /// repliés) à une modification concurrente. Seule l'écriture disque, elle
+    /// vraiment lente, part en arrière-plan — et les appels rapprochés sont
+    /// regroupés en une seule écriture.
+    /// </summary>
     public void Save()
     {
-        try
+        string json;
+        try { json = JsonSerializer.Serialize(this, SerializerOptions); }
+        catch { return; }
+
+        lock (WriteLock)
         {
-            var json = JsonSerializer.Serialize(this, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(SettingsPath, json);
+            _pendingJson = json;   // le dernier état l'emporte
+            _writeTimer ??= new System.Threading.Timer(_ => FlushToDisk(), null,
+                                                       System.Threading.Timeout.Infinite,
+                                                       System.Threading.Timeout.Infinite);
+            _writeTimer.Change(WriteDelayMs, System.Threading.Timeout.Infinite);
         }
+    }
+
+    /// <summary>
+    /// Écrit sans attendre. À utiliser à l'arrêt de l'application et pour les
+    /// opérations sensibles (effacement des identifiants), qui ne doivent pas
+    /// dépendre d'un minuteur susceptible de ne jamais se déclencher.
+    /// </summary>
+    public void SaveNow()
+    {
+        Save();
+        FlushToDisk();
+    }
+
+    /// <summary>Écrit le contenu en attente, s'il y en a un.</summary>
+    public static void FlushToDisk()
+    {
+        string? json;
+        lock (WriteLock)
+        {
+            json = _pendingJson;
+            _pendingJson = null;
+            _writeTimer?.Change(System.Threading.Timeout.Infinite,
+                                System.Threading.Timeout.Infinite);
+        }
+
+        if (json is null) return;
+        try { File.WriteAllText(SettingsPath, json); }
         catch { /* échec d'écriture : non bloquant */ }
     }
 
@@ -157,7 +223,9 @@ public sealed class AppSettings
     {
         Username = "";
         ProtectedPassword = null;
-        Save();
+        // Écriture immédiate : le mot de passe ne doit pas rester sur le disque
+        // parce qu'un minuteur n'a pas eu le temps de se déclencher.
+        SaveNow();
     }
 
     // MARK: - Raccourci clavier

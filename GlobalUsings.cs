@@ -1,9 +1,11 @@
-// Le projet active WinForms uniquement pour NotifyIcon (zone de notification).
-// Or ImplicitUsings importe alors System.Windows.Forms, dont plusieurs types
-// portent le même nom que leurs équivalents WPF (KeyEventArgs, MouseEventArgs,
-// Point, Application…). Ces alias globaux tranchent l'ambiguïté en faveur de WPF,
-// qui est le socle de l'interface ; TrayIcon.cs qualifie explicitement les types
-// WinForms dont il a besoin.
+// Alias globaux vers les types WPF.
+//
+// Ils dataient de l'époque où le projet référençait WinForms pour la zone de
+// notification : ImplicitUsings importait alors System.Windows.Forms, dont
+// plusieurs types portent le même nom que leurs équivalents WPF (KeyEventArgs,
+// Point, Application…). WinForms a disparu du projet, mais ces alias restent
+// utiles : ils rendent explicite le socle retenu et évitent d'avoir à qualifier
+// les types au cas par cas.
 
 global using Application = System.Windows.Application;
 global using KeyEventArgs = System.Windows.Input.KeyEventArgs;

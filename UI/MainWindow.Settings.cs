@@ -195,7 +195,9 @@ public partial class MainWindow
             StartupWarning.Visibility = Visibility.Visible;
         }
 
-        _settings.Save();
+        // Enregistrement explicite demandé par l'utilisateur : écriture immédiate,
+        // les modifications par effet de bord (favoris, dossiers) restent différées.
+        _settings.SaveNow();
         ApplySettingsToUi();
 
         bool hotkeyChanged = _settings.QuickSearchHotkey != _settingsOriginalHotkey

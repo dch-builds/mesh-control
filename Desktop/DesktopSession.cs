@@ -171,7 +171,9 @@ public sealed class DesktopSession : IDisposable
     private void SetState(DesktopSessionState s)
     {
         State = s;
-        _uiDispatcher.Invoke(() => StateChanged?.Invoke());
+        // BeginInvoke : le fil de fond n'a pas besoin d'attendre que l'interface
+        // ait fini de se mettre a jour.
+        _uiDispatcher.BeginInvoke(() => StateChanged?.Invoke());
     }
 
     // MARK: - Cycle de vie
@@ -811,7 +813,7 @@ public sealed class DesktopSession : IDisposable
                         : new RemoteDisplay(id, 0, 0, 0, 0))
                     .ToList();
 
-                _uiDispatcher.Invoke(() => DisplaysChanged?.Invoke());
+                _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
                 break;
             }
             case Kvm.DisplayGeometry:
@@ -839,7 +841,7 @@ public sealed class DesktopSession : IDisposable
                 if (_displays.Count == 0)
                     _displays.AddRange(geometry.Select(d => d.Id));
 
-                _uiDispatcher.Invoke(() => DisplaysChanged?.Invoke());
+                _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
                 break;
             }
             case Kvm.Message:
@@ -859,7 +861,16 @@ public sealed class DesktopSession : IDisposable
     {
         ScreenWidth = w;
         ScreenHeight = h;
-        _uiDispatcher.Invoke(() =>
+
+        // BeginInvoke plutôt qu'Invoke : attendre l'interface bloquerait le fil de
+        // réception, et les trames suivantes s'accumuleraient pendant ce temps.
+        //
+        // L'ordre reste garanti vis-à-vis des tuiles : elles empruntent le même
+        // dispatcher à la même priorité, et WPF traite sa file en FIFO à priorité
+        // égale. Le redimensionnement s'exécute donc avant les tuiles qui le
+        // suivent — indispensable, sinon elles seraient rognées sur l'ancienne
+        // taille du framebuffer.
+        _uiDispatcher.BeginInvoke(() =>
         {
             try
             {

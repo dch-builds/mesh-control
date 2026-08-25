@@ -65,6 +65,9 @@ public partial class App : Application
 
         Exit += (_, _) =>
         {
+            // Les enregistrements de réglages sont différés : forcer l'écriture,
+            // sinon les dernières modifications seraient perdues à l'arrêt.
+            AppSettings.FlushToDisk();
             Log.Info("Arrêt de l'application");
             // Libérer le mutex : l'installeur attend sa disparition pour agir.
             try { _instanceMutex?.Dispose(); } catch { }
