@@ -97,6 +97,17 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         _statusTimer.Tick += (_, _) => UpdateStatusBar();
         _statusTimer.Start();
         Closed += (_, _) => _statusTimer.Stop();
+
+        // Le rappel affiché au passage en plein écran s'efface de lui-même.
+        _fullscreenHintTimer.Tick += (_, _) => HideFullscreenHint();
+
+        // En mode onglets, la fenêtre hôte a pu changer d'état pendant qu'une
+        // autre session était affichée : on se réaligne en revenant ici.
+        RootPanel.IsVisibleChanged += (_, _) => SyncFullscreenChrome();
+
+        // Fermer la session en plein écran laisserait la fenêtre hôte sans
+        // bordure ni barre d'onglets, y compris pour les autres sessions.
+        Closed += (_, _) => ExitFullscreen();
     }
 
     /// <summary>Cadence de rafraîchissement de la barre d'état.</summary>
@@ -365,7 +376,7 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
             return;
         }
 
-        if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.W)
+        if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.W or Key.F)
         {
             e.Handled = true;
             // Ctrl et Maj ont déjà été transmis « enfoncés » par leurs propres
@@ -381,6 +392,7 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
                 case Key.T: OpenTerminal_Click(this, new RoutedEventArgs()); break;
                 case Key.E: OpenFiles_Click(this, new RoutedEventArgs()); break;
                 case Key.W: OpenWebPage_Click(this, new RoutedEventArgs()); break;
+                case Key.F: ToggleFullscreen(); break;
             }
             return;
         }
@@ -761,6 +773,105 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         StatsText.Text = $"{kind} ouvert.";
     }
 
+    // MARK: - Plein écran
+
+    /// <summary>
+    /// Fenêtre que cette session a passée en plein écran, s'il y en a une. En
+    /// mode onglets, c'est la fenêtre hôte et non celle-ci.
+    /// </summary>
+    private Window? _fullscreenHost;
+
+    /// <summary>Durée d'affichage du rappel « Ctrl+Maj+F pour revenir ».</summary>
+    private readonly System.Windows.Threading.DispatcherTimer _fullscreenHintTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(5),
+    };
+
+    private void Fullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
+
+    /// <summary>
+    /// Passe en plein écran, ou en sort. Le plein écran s'applique à la fenêtre
+    /// qui héberge réellement le contenu : cette fenêtre en mode « une fenêtre
+    /// par session », la fenêtre à onglets sinon.
+    /// </summary>
+    private void ToggleFullscreen()
+    {
+        var host = _fullscreenHost ?? Window.GetWindow(RootPanel);
+        if (host is null) return;
+
+        bool fullscreen = UI.FullscreenController.Toggle(host);
+        _fullscreenHost = fullscreen ? host : null;
+        ApplyFullscreenChrome(host, fullscreen);
+
+        if (fullscreen) ShowFullscreenHint();
+        else HideFullscreenHint();
+
+        // Le clavier doit continuer d'arriver à la machine distante après la
+        // bascule : le changement de style de fenêtre fait perdre le focus.
+        RootPanel.Focus();
+    }
+
+    /// <summary>Sort du plein écran ; sans effet si la session n'y est pas.</summary>
+    private void ExitFullscreen()
+    {
+        _fullscreenHintTimer.Stop();
+        if (_fullscreenHost is not { } host) return;
+
+        UI.FullscreenController.Exit(host);
+        _fullscreenHost = null;
+        ApplyFullscreenChrome(host, false);
+    }
+
+    /// <summary>
+    /// Masque ou rétablit tout ce qui entoure l'image : barres de la session, et
+    /// bandeau d'onglets de la fenêtre hôte le cas échéant.
+    /// </summary>
+    private void ApplyFullscreenChrome(Window host, bool fullscreen)
+    {
+        var visibility = fullscreen ? Visibility.Collapsed : Visibility.Visible;
+        Toolbar.Visibility = visibility;
+        StatusBar.Visibility = visibility;
+
+        if (host is UI.SessionsWindow sessions) sessions.SetTabStripVisible(!fullscreen);
+
+        FullscreenButton.ToolTip = fullscreen
+            ? "Quitter le plein écran (Ctrl+Maj+F)"
+            : "Plein écran (Ctrl+Maj+F)";
+    }
+
+    /// <summary>
+    /// Réaligne les barres de cette session sur l'état réel de la fenêtre hôte.
+    ///
+    /// En mode onglets, le plein écran appartient à la fenêtre, pas à la session :
+    /// une autre session a pu en sortir (ou y entrer) pendant que celle-ci était
+    /// en arrière-plan. Sans ce recalage, on retrouverait un onglet fenêtré dont
+    /// la barre d'outils est restée masquée.
+    /// </summary>
+    private void SyncFullscreenChrome()
+    {
+        if (!RootPanel.IsVisible) return;
+
+        var host = Window.GetWindow(RootPanel);
+        if (host is null) return;
+
+        var fullscreen = UI.FullscreenController.IsFullscreen(host);
+        _fullscreenHost = fullscreen ? host : null;
+        ApplyFullscreenChrome(host, fullscreen);
+    }
+
+    private void ShowFullscreenHint()
+    {
+        FullscreenHint.Visibility = Visibility.Visible;
+        _fullscreenHintTimer.Stop();
+        _fullscreenHintTimer.Start();
+    }
+
+    private void HideFullscreenHint()
+    {
+        _fullscreenHintTimer.Stop();
+        FullscreenHint.Visibility = Visibility.Collapsed;
+    }
+
     // MARK: - Capture d'écran
 
     /// <summary>
@@ -815,6 +926,13 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
         }
     }
 
+    /// <summary>
+    /// Relâche les modificateurs côté distant. Appelé par la fenêtre à onglets
+    /// quand elle intercepte un raccourci : les touches parties « enfoncées »
+    /// avant l'interception ne recevraient jamais leur relâchement.
+    /// </summary>
+    public void ReleaseKeyboard() => _session.ReleaseModifiers();
+
     /// <summary>Secours si le clavier distant semble bloqué en Ctrl/Alt/Maj.</summary>
     private void ReleaseModifiers_Click(object sender, RoutedEventArgs e)
     {
@@ -825,33 +943,148 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
     // MARK: - Presse-papiers
 
     /// <summary>
-    /// « Colle » le presse-papiers local en le saisissant caractère par caractère
-    /// sur la machine distante. Le protocole KVM ne synchronise pas les
-    /// presse-papiers : c'est la seule voie possible, et elle a l'avantage de
-    /// fonctionner sur Windows comme sur Linux.
+    /// État du presse-papiers de la machine distante : null tant qu'on n'a pas
+    /// essayé de l'écrire, vrai s'il accepte l'écriture, faux s'il faut se
+    /// replier sur la saisie clavier. Déterminé une fois par session : la
+    /// configuration du serveur ne change pas entre deux collages.
+    /// </summary>
+    private bool? _remoteClipboardWritable;
+
+    /// <summary>
+    /// Longueur au-delà de laquelle on n'essaie pas d'écrire le presse-papiers
+    /// distant : le texte transite en JSON par le canal de contrôle du serveur,
+    /// qui porte aussi tout le reste de la session.
+    /// </summary>
+    private const int MaxRemoteClipboardLength = 256 * 1024;
+
+    /// <summary>
+    /// Colle le presse-papiers local sur la machine distante.
+    ///
+    /// Voie normale : écrire le presse-papiers distant, puis envoyer Ctrl+V.
+    /// C'est instantané, quelle que soit la longueur du texte. Si le serveur
+    /// refuse l'écriture (clipboardset désactivé) ou si l'agent ne la confirme
+    /// pas, on se replie sur la saisie caractère par caractère : elle fonctionne
+    /// partout, mais coûte 6 ms par caractère.
     /// </summary>
     private async void Paste_Click(object sender, RoutedEventArgs e)
     {
-        string text;
+        if (ReadClipboardText() is not { } text) return;
+
+        if (_remoteClipboardWritable != false && text.Length <= MaxRemoteClipboardLength)
+        {
+            PasteButton.IsEnabled = false;
+            bool pasted;
+            try { pasted = await TryPasteViaRemoteClipboardAsync(text); }
+            finally { PasteButton.IsEnabled = true; }
+
+            if (pasted) return;
+        }
+
+        await PasteByTypingAsync(text);
+    }
+
+    /// <summary>
+    /// Colle en simulant la frappe, sans passer par le presse-papiers distant.
+    /// Utile quand l'application distante ignore Ctrl+V — certains terminaux
+    /// attendent Ctrl+Maj+V.
+    /// </summary>
+    private async void PasteAsTyping_Click(object sender, RoutedEventArgs e)
+    {
+        if (ReadClipboardText() is { } text) await PasteByTypingAsync(text);
+    }
+
+    /// <summary>
+    /// Écrit le texte dans le presse-papiers distant, vérifie qu'il y est bien
+    /// arrivé, puis envoie Ctrl+V. Renvoie faux s'il faut se replier sur la frappe.
+    ///
+    /// L'écriture n'est pas acquittée : le serveur peut l'avoir écartée sans rien
+    /// dire. On relit donc le presse-papiers distant — une seule fois par
+    /// session — plutôt que d'envoyer un Ctrl+V qui collerait l'ancien contenu :
+    /// une erreur silencieuse est bien plus gênante qu'un collage lent.
+    /// </summary>
+    private async Task<bool> TryPasteViaRemoteClipboardAsync(string text)
+    {
+        try
+        {
+            StatsText.Text = "Envoi vers le presse-papiers distant…";
+            await _connection.SetRemoteClipboardAsync(_node.Id, text);
+
+            if (_remoteClipboardWritable is null)
+            {
+                // Délai court : ce n'est qu'une vérification, et l'utilisateur
+                // attend devant son écran. Le repli, lui, fonctionne toujours.
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                var remote = await _connection.GetRemoteClipboardAsync(_node.Id, timeout.Token);
+                _remoteClipboardWritable = SameBeginning(remote, text);
+
+                if (_remoteClipboardWritable == false)
+                {
+                    Log.Info($"{_node.Name} : le presse-papiers distant n'a pas pris le "
+                           + "texte, repli sur la saisie clavier.", "Bureau");
+                    return false;
+                }
+            }
+
+            _session.SendChord(new[] { Vk.Ctrl }, Vk.Letter('V'));
+            StatsText.Text = $"Collé ({text.Length} car.)";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Écriture ou relecture impossible : sans confirmation, on ne prend
+            // pas le risque d'un Ctrl+V qui collerait autre chose.
+            _remoteClipboardWritable = false;
+            Log.Info($"{_node.Name} : presse-papiers distant inutilisable "
+                   + $"({ex.Message}), repli sur la saisie clavier.", "Bureau");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Le presse-papiers distant contient-il bien ce qu'on vient d'y écrire ?
+    ///
+    /// Comparaison du début seulement : l'agent peut tronquer un texte long, et
+    /// les fins de ligne sont normalisées au passage.
+    /// </summary>
+    private static bool SameBeginning(string remote, string sent)
+    {
+        const int compared = 200;
+        var a = remote.Replace("\r", "");
+        var b = (sent.Length > compared * 2 ? sent[..(compared * 2)] : sent).Replace("\r", "");
+        if (a.Length == 0 || b.Length == 0) return false;
+
+        var length = Math.Min(Math.Min(a.Length, b.Length), compared);
+        return string.CompareOrdinal(a, 0, b, 0, length) == 0;
+    }
+
+    /// <summary>Texte du presse-papiers local, ou null s'il n'y a rien d'exploitable.</summary>
+    private string? ReadClipboardText()
+    {
         try
         {
             if (!Clipboard.ContainsText())
             {
                 StatsText.Text = "Le presse-papiers ne contient pas de texte.";
-                return;
+                return null;
             }
-            text = Clipboard.GetText();
+
+            var text = Clipboard.GetText();
+            return string.IsNullOrEmpty(text) ? null : text;
         }
         catch (Exception ex)
         {
             StatsText.Text = $"Presse-papiers inaccessible : {ex.Message}";
-            return;
+            return null;
         }
+    }
 
-        if (string.IsNullOrEmpty(text)) return;
-
-        // Un texte très long prend un temps notable (~6 ms par caractère) :
-        // on demande confirmation plutôt que de bloquer l'utilisateur par surprise.
+    /// <summary>
+    /// Saisit le texte touche par touche sur la machine distante. Sûr, mais lent :
+    /// au-delà de quelques milliers de caractères, on demande confirmation plutôt
+    /// que de bloquer la machine distante par surprise.
+    /// </summary>
+    private async Task PasteByTypingAsync(string text)
+    {
         const int warnThreshold = 2000;
         if (text.Length > warnThreshold)
         {
@@ -860,7 +1093,8 @@ public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
                 $"Le presse-papiers contient {text.Length} caractères.\n"
                 + $"La saisie prendra environ {seconds} secondes, pendant lesquelles "
                 + "il ne faut pas utiliser la machine distante.\n\nContinuer ?",
-                "Coller un texte long", MessageBoxButton.OKCancel, MessageBoxImage.Question);
+                "Coller un texte long", MessageBoxButton.OKCancel, MessageBoxImage.Question,
+                MessageBoxResult.Cancel);
             if (answer != MessageBoxResult.OK) return;
         }
 

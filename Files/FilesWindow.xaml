@@ -4,7 +4,12 @@
         Title="Fichiers — Mesh Control" Height="640" Width="880"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBackgroundBrush}">
-    <DockPanel x:Name="RootPanel">
+    <!-- AllowDrop sur le panneau entier : on peut lâcher les fichiers n'importe
+         où dans la fenêtre. Background explicite, sinon les zones sans dessin ne
+         reçoivent aucun événement de survol. -->
+    <DockPanel x:Name="RootPanel" Background="Transparent" AllowDrop="True"
+               DragOver="RootPanel_DragOver" DragLeave="RootPanel_DragLeave"
+               Drop="RootPanel_Drop">
         <!-- Barre d'outils -->
         <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}"
                 BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1"
@@ -23,10 +28,11 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button x:Name="UploadButton" Content="Envoyer…"
                             Style="{StaticResource ToolButton}" Click="Upload_Click"
-                            Margin="0,0,6,0" ToolTip="Envoyer un fichier dans ce dossier"/>
+                            Margin="0,0,6,0"
+                            ToolTip="Envoyer des fichiers dans ce dossier — ou les glisser depuis l'Explorateur"/>
                     <Button x:Name="DownloadButton" Content="Télécharger"
                             Style="{StaticResource ToolButton}" Click="Download_Click"
-                            Margin="0,0,6,0" ToolTip="Télécharger le fichier sélectionné"/>
+                            Margin="0,0,6,0" ToolTip="Télécharger les fichiers sélectionnés"/>
                     <Button x:Name="NewFolderButton" Content="Nouveau dossier"
                             Style="{StaticResource ToolButton}" Click="NewFolder_Click"
                             Margin="0,0,6,0"/>
@@ -67,60 +73,76 @@
                                  Foreground="{StaticResource AccentBrush}"
                                  Background="#EFEFF4" BorderThickness="0"/>
                 </StackPanel>
-                <Button Grid.Column="1" Content="Annuler" Style="{StaticResource ToolButton}"
+                <Button x:Name="CancelTransferButton" Grid.Column="1" Content="Annuler"
+                        Style="{StaticResource ToolButton}"
                         Click="CancelTransfer_Click" VerticalAlignment="Center"/>
             </Grid>
         </Border>
 
-        <!-- Liste des fichiers -->
-        <Border Padding="12">
-            <Border Style="{StaticResource Card}" Padding="0">
-                <ListView x:Name="FileList" BorderThickness="0" Background="Transparent"
-                          MouseDoubleClick="FileList_MouseDoubleClick"
-                          SelectionMode="Extended"
-                          PreviewKeyDown="FileList_PreviewKeyDown">
-                    <ListView.View>
-                        <GridView>
-                            <GridViewColumn Header="Nom" Width="380">
-                                <GridViewColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Glyph}" FontSize="14"
-                                                       Margin="0,0,8,0" VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding Name}"
-                                                       VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </GridViewColumn.CellTemplate>
-                            </GridViewColumn>
-                            <GridViewColumn Header="Taille" Width="110"
-                                            DisplayMemberBinding="{Binding SizeText}"/>
-                            <GridViewColumn Header="Modifié le" Width="160"
-                                            DisplayMemberBinding="{Binding ModifiedText}"/>
-                            <GridViewColumn Header="Type" Width="120"
-                                            DisplayMemberBinding="{Binding KindText}"/>
-                        </GridView>
-                    </ListView.View>
+        <!-- Liste des fichiers, et voile affiché pendant un glisser-déposer -->
+        <Grid>
+            <Border Padding="12">
+                <Border Style="{StaticResource Card}" Padding="0">
+                    <ListView x:Name="FileList" BorderThickness="0" Background="Transparent"
+                              MouseDoubleClick="FileList_MouseDoubleClick"
+                              SelectionMode="Extended"
+                              PreviewKeyDown="FileList_PreviewKeyDown">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Nom" Width="380">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Glyph}" FontSize="14"
+                                                           Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Name}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Taille" Width="110"
+                                                DisplayMemberBinding="{Binding SizeText}"/>
+                                <GridViewColumn Header="Modifié le" Width="160"
+                                                DisplayMemberBinding="{Binding ModifiedText}"/>
+                                <GridViewColumn Header="Type" Width="120"
+                                                DisplayMemberBinding="{Binding KindText}"/>
+                            </GridView>
+                        </ListView.View>
 
-                    <ListView.ContextMenu>
-                        <ContextMenu Opened="FileMenu_Opened">
-                            <MenuItem x:Name="MenuOpen" Header="Ouvrir" FontWeight="SemiBold"
-                                      Click="MenuOpen_Click"/>
-                            <MenuItem x:Name="MenuDownload" Header="Télécharger…"
-                                      Click="Download_Click"/>
-                            <Separator/>
-                            <MenuItem x:Name="MenuRename" Header="Renommer…"
-                                      Click="MenuRename_Click"/>
-                            <MenuItem x:Name="MenuDelete" Header="Supprimer…"
-                                      Click="MenuDelete_Click"/>
-                            <Separator/>
-                            <MenuItem x:Name="MenuCopyPath" Header="Copier le chemin"
-                                      Click="MenuCopyPath_Click"/>
-                        </ContextMenu>
-                    </ListView.ContextMenu>
-                </ListView>
+                        <ListView.ContextMenu>
+                            <ContextMenu Opened="FileMenu_Opened">
+                                <MenuItem x:Name="MenuOpen" Header="Ouvrir" FontWeight="SemiBold"
+                                          Click="MenuOpen_Click"/>
+                                <MenuItem x:Name="MenuDownload" Header="Télécharger…"
+                                          Click="Download_Click"/>
+                                <Separator/>
+                                <MenuItem x:Name="MenuRename" Header="Renommer…"
+                                          Click="MenuRename_Click"/>
+                                <MenuItem x:Name="MenuDelete" Header="Supprimer…"
+                                          Click="MenuDelete_Click"/>
+                                <Separator/>
+                                <MenuItem x:Name="MenuCopyPath" Header="Copier le chemin"
+                                          Click="MenuCopyPath_Click"/>
+                            </ContextMenu>
+                        </ListView.ContextMenu>
+                    </ListView>
+                </Border>
             </Border>
-        </Border>
+
+            <!-- Repère visuel du dépôt : sans lui, rien ne dirait que la fenêtre
+                 accepte les fichiers glissés depuis l'Explorateur. -->
+            <Border x:Name="DropOverlay" Visibility="Collapsed" IsHitTestVisible="False"
+                    Background="#D90A84FF" Margin="12" CornerRadius="10">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="⤓" FontSize="30" Foreground="White"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="DropOverlayText" Foreground="White" FontSize="13"
+                               Margin="0,10,0,0" HorizontalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" MaxWidth="600"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </DockPanel>
 </Window>

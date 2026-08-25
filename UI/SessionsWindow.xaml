@@ -31,7 +31,7 @@
                                             Background="Transparent" BorderThickness="0"
                                             Foreground="#9A9DA5"
                                             Click="CloseTab_Click"
-                                            ToolTip="Fermer cet onglet"/>
+                                            ToolTip="Fermer cet onglet (Ctrl+F4, ou clic du milieu)"/>
                                 </StackPanel>
                             </Border>
                             <ControlTemplate.Triggers>

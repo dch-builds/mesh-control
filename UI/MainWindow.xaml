@@ -335,6 +335,26 @@
         </Grid>
     </Grid>
 
+    <!-- ================= Bandeau de confirmation ================= -->
+    <!-- Les confirmations d'action s'écrivaient auparavant dans le compteur
+         d'appareils, que le prochain événement du serveur réécrivait dans la
+         seconde : le message disparaissait avant d'avoir été lu. -->
+    <Border x:Name="ToastBanner" Visibility="Collapsed" IsHitTestVisible="False"
+            VerticalAlignment="Bottom" HorizontalAlignment="Center"
+            Margin="0,0,0,28" CornerRadius="9" Padding="16,11"
+            Background="#F21C1C1E" Opacity="0">
+        <Border.Effect>
+            <DropShadowEffect Color="#44000000" BlurRadius="18" ShadowDepth="2"
+                              Direction="270" Opacity="0.8"/>
+        </Border.Effect>
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="✓" FontSize="13" FontWeight="SemiBold"
+                       Foreground="#34C759" VerticalAlignment="Center" Margin="0,0,9,0"/>
+            <TextBlock x:Name="ToastText" FontSize="12.5" Foreground="White"
+                       VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="480"/>
+        </StackPanel>
+    </Border>
+
     <!-- ================= Voile ================= -->
     <!-- Assombrit le contenu et capte le clic pour fermer le volet. -->
     <Border x:Name="SettingsScrim" Background="#40000000" Visibility="Collapsed"

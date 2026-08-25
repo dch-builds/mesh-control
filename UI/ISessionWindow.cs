@@ -14,4 +14,15 @@ public interface ISessionWindow
     /// permet de l'invoquer aussi bien depuis Loaded que depuis l'hôte.
     /// </summary>
     Task StartSessionAsync();
+
+    /// <summary>
+    /// Relâche les touches maintenues sur la machine distante.
+    ///
+    /// Appelé par la fenêtre hôte lorsqu'elle intercepte un raccourci : les
+    /// modificateurs déjà transmis « enfoncés » ne recevraient jamais leur
+    /// relâchement, et le clavier distant resterait bloqué. Sans effet par
+    /// défaut — seules les sessions qui transmettent le clavier ont ce ménage
+    /// à faire.
+    /// </summary>
+    void ReleaseKeyboard() { }
 }

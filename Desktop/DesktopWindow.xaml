@@ -12,7 +12,7 @@
                PreviewKeyDown="Content_PreviewKeyDown"
                PreviewKeyUp="Content_PreviewKeyUp">
         <!-- Barre d'outils claire -->
-        <Border DockPanel.Dock="Top" Background="White" Padding="14,10">
+        <Border x:Name="Toolbar" DockPanel.Dock="Top" Background="White" Padding="14,10">
             <Border.Effect>
                 <DropShadowEffect Color="#18000000" BlurRadius="8" ShadowDepth="1"
                                   Direction="270" Opacity="0.6"/>
@@ -134,6 +134,13 @@
                             Click="ReleaseModifiers_Click" Padding="9,5" Margin="0,0,6,0"
                             ToolTip="Débloquer le clavier distant (relâche Ctrl, Alt, Maj, Win)"/>
 
+                    <!-- Plein écran : masque barre d'outils, barre d'état et
+                         bandeau d'onglets, et retire la bordure de la fenêtre. -->
+                    <Button x:Name="FullscreenButton" Content="⛶"
+                            Style="{StaticResource ToolButton}"
+                            Click="Fullscreen_Click" Padding="9,5" Margin="0,0,6,0"
+                            ToolTip="Plein écran (Ctrl+Maj+F)"/>
+
                     <!-- Accès aux autres outils de la machine. Un seul bouton
                          plutôt que trois : la barre est déjà dense. -->
                     <Button x:Name="MoreButton" Content="⋯"
@@ -151,6 +158,13 @@
                                           Click="OpenWebPage_Click"/>
                                 <MenuItem Header="Informations système…"
                                           Click="OpenSystemInfo_Click"/>
+                                <Separator/>
+                                <!-- Repli quand le presse-papiers distant est
+                                     inutilisable, ou quand l'application distante
+                                     ignore Ctrl+V (certains terminaux). -->
+                                <MenuItem Header="Coller en simulant la frappe"
+                                          Click="PasteAsTyping_Click"
+                                          ToolTip="Saisit le texte caractère par caractère : lent, mais fonctionne partout"/>
                                 <Separator/>
                                 <!-- Sous-menu plutôt qu'un contrôle de plus dans
                                      la barre, déjà dense. -->
@@ -237,6 +251,18 @@
                        MouseUp="Screen_MouseUp"
                        MouseWheel="Screen_MouseWheel"/>
             </ScrollViewer>
+
+            <!-- En plein écran, la barre d'outils disparaît : sans ce rappel,
+                 le moyen d'en sortir serait invisible. Échap n'est pas utilisé,
+                 la touche devant rester disponible côté distant. -->
+            <Border x:Name="FullscreenHint" Visibility="Collapsed"
+                    IsHitTestVisible="False" Background="#D9000000"
+                    CornerRadius="8" Padding="14,8"
+                    VerticalAlignment="Top" HorizontalAlignment="Center"
+                    Margin="0,18,0,0">
+                <TextBlock Text="Plein écran — Ctrl+Maj+F pour revenir"
+                           Foreground="#E4E6EA" FontSize="12"/>
+            </Border>
         </Grid>
     </DockPanel>
 </Window>

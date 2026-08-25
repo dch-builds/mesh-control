@@ -21,7 +21,12 @@ standard.
 - Cadence réglable jusqu'à 60 images/s, trois niveaux de qualité
 - Souris, molette et clavier complet (codes VK Windows)
 - Raccourcis prédéfinis adaptés à Windows ou Linux
-- Presse-papiers dans les deux sens
+- Plein écran par Ctrl+Maj+F : barres et bandeau d'onglets masqués
+- Presse-papiers dans les deux sens. Le collage écrit le presse-papiers de la
+  machine distante puis envoie Ctrl+V — instantané, quelle que soit la longueur
+  du texte. Si le serveur refuse l'écriture (`clipboardset`) ou si l'agent ne la
+  confirme pas, la saisie caractère par caractère prend le relais ; elle reste
+  accessible à la demande, pour les applications qui ignorent Ctrl+V
 
 **Terminal**
 - Via l'agent : invite de commandes, PowerShell, shell utilisateur, et sur Linux
@@ -31,6 +36,12 @@ standard.
 
 **Fichiers**
 - Navigation, téléchargement, envoi avec fenêtre de fragments en vol
+- Glisser-déposer depuis l'Explorateur, envoi et téléchargement de plusieurs
+  fichiers à la fois : les transferts s'enchaînent dans une file d'attente,
+  annulable d'un bloc. Les doublons locaux sont numérotés plutôt que remplacés
+- Les dossiers ne s'envoient pas d'un bloc — le protocole transfère fichier par
+  fichier — et un envoi est plafonné à 1 Go, le fichier étant chargé en mémoire
+  avant découpage
 - Création de dossier, renommage, suppression
 
 **Administration**
@@ -41,6 +52,10 @@ standard.
 - Génération de liens de partage publics temporaires, avec code d'intégration
 
 **Application**
+- Sessions regroupées en onglets : Ctrl+Tab et Ctrl+Maj+Tab pour circuler,
+  Ctrl+1 à Ctrl+9 pour atteindre une session, Ctrl+F4 ou clic du milieu pour la
+  fermer. Ces raccourcis ne sont captés qu'à partir de deux sessions ouvertes :
+  seuls, ils gardent tout leur sens sur la machine distante
 - Fonctionnement dans la zone de notification, démarrage automatique possible
 - Reconnexion automatique après coupure réseau
 - Journal d'erreurs pour le diagnostic

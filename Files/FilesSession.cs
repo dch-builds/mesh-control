@@ -266,7 +266,12 @@ public sealed class FilesSession : IDisposable
     /// devicefile.ashx (HTTP direct) plutôt que par le relais : c'est plus simple
     /// et plus rapide qu'un flux de fragments acquittés.
     /// </summary>
-    public async Task DownloadAsync(FileEntry entry, string destination,
+    /// <param name="remotePath">
+    /// Chemin complet du fichier sur la machine. Fourni par l'appelant plutôt que
+    /// recalculé depuis le dossier courant : une file de transferts continue de
+    /// tourner pendant que l'utilisateur navigue ailleurs.
+    /// </param>
+    public async Task DownloadAsync(FileEntry entry, string remotePath, string destination,
                                     CancellationToken ct = default)
     {
         if (Transfer is not null)
@@ -283,7 +288,7 @@ public sealed class FilesSession : IDisposable
                 + $"?c={Uri.EscapeDataString(auth)}"
                 + $"&m={Uri.EscapeDataString(meshPart)}"
                 + $"&n={Uri.EscapeDataString(nodePart)}"
-                + $"&f={Uri.EscapeDataString(FullPathOf(entry))}";
+                + $"&f={Uri.EscapeDataString(remotePath)}";
 
         SetTransfer(new TransferProgress
         {
@@ -329,7 +334,18 @@ public sealed class FilesSession : IDisposable
 
     // MARK: - Envoi de fichier
 
-    public async Task UploadAsync(string localPath, CancellationToken ct = default)
+    /// <param name="remotePath">
+    /// Dossier de destination sur la machine, figé par l'appelant : dans un lot,
+    /// les fichiers doivent arriver là où ils ont été déposés, même si
+    /// l'utilisateur a changé de dossier entre-temps.
+    /// </param>
+    /// <remarks>
+    /// La relecture du dossier n'est pas faite ici : sur un lot, elle serait
+    /// refaite à chaque fichier. C'est à l'appelant de relire une fois le lot
+    /// terminé — l'agent ne renvoie pas la nouvelle liste de lui-même.
+    /// </remarks>
+    public async Task UploadAsync(string localPath, string remotePath,
+                                  CancellationToken ct = default)
     {
         if (Transfer is not null)
             throw new MeshException("Un transfert est déjà en cours.");
@@ -356,7 +372,7 @@ public sealed class FilesSession : IDisposable
             {
                 action = "upload",
                 reqid = _uploadReqId,
-                path = CurrentPath,
+                path = remotePath,
                 name,
                 size = data.Length,
                 append = false,
@@ -373,8 +389,6 @@ public sealed class FilesSession : IDisposable
             _uploadCompletion = null;
             SetTransfer(null);
         }
-
-        await ListAsync().ConfigureAwait(false);
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using MeshControl.Core;
 
@@ -52,6 +53,7 @@ public partial class MainWindow : Window
             _searchTimer.Stop();
             ApplyFilter();
         };
+        _toastTimer.Tick += (_, _) => HideToast();
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
 
@@ -69,6 +71,7 @@ public partial class MainWindow : Window
         {
             _refreshTimer.Stop();
             _searchTimer.Stop();
+            _toastTimer.Stop();
             _hotkey?.Dispose();
             _tray?.Dispose();
             _connection?.Disconnect();
@@ -1254,7 +1257,12 @@ public partial class MainWindow : Window
                 break;
 
             case DeviceAction.CopyName:
-                try { Clipboard.SetText(node.Name); } catch { /* presse-papiers occupé */ }
+                try
+                {
+                    Clipboard.SetText(node.Name);
+                    ShowToast($"« {node.Name} » copié.");
+                }
+                catch { /* presse-papiers occupé */ }
                 break;
 
             case DeviceAction.SystemInfo:
@@ -1318,7 +1326,7 @@ public partial class MainWindow : Window
         {
             await _connection.OpenUrlAsync(node.Id, dialog.Value);
             Log.Info($"URL ouverte sur {node.Name} : {dialog.Value}", "Appareil");
-            CountText.Text = $"Adresse envoyée à « {node.Name} ».";
+            ShowToast($"Adresse envoyée à « {node.Name} ».");
         }
         catch (Exception ex)
         {
@@ -1362,7 +1370,7 @@ public partial class MainWindow : Window
         try
         {
             await action();
-            CountText.Text = successMessage;
+            ShowToast(successMessage);
         }
         catch (Exception ex)
         {
@@ -1390,5 +1398,59 @@ public partial class MainWindow : Window
         StatusText.Foreground = isError
             ? (System.Windows.Media.Brush)FindResource("DangerBrush")
             : (System.Windows.Media.Brush)FindResource("TextSecondaryBrush");
+    }
+
+    // MARK: - Bandeau de confirmation
+
+    /// <summary>Durée d'affichage d'une confirmation avant effacement.</summary>
+    private readonly DispatcherTimer _toastTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(5),
+    };
+
+    /// <summary>
+    /// Affiche une confirmation temporaire.
+    ///
+    /// Ces messages allaient auparavant dans le compteur d'appareils, que le
+    /// prochain événement du serveur réécrivait aussitôt : sur un parc actif,
+    /// « Ordre de redémarrage envoyé » disparaissait en moins d'une seconde et
+    /// l'utilisateur ne savait pas si son action était partie.
+    /// </summary>
+    private void ShowToast(string message)
+    {
+        // Action lancée depuis la palette de recherche rapide : la fenêtre
+        // principale est alors souvent masquée dans la zone de notification, où
+        // le bandeau serait invisible. On passe par une bulle système.
+        if (!IsVisible)
+        {
+            _tray?.ShowMessage("Mesh Control", message);
+            return;
+        }
+
+        ToastText.Text = message;
+        ToastBanner.Visibility = Visibility.Visible;
+        ToastBanner.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(1, TimeSpan.FromMilliseconds(140)));
+
+        // Un nouveau message relance le compte à rebours plutôt que de s'ajouter :
+        // un seul bandeau, toujours le plus récent.
+        _toastTimer.Stop();
+        _toastTimer.Start();
+    }
+
+    /// <summary>Efface le bandeau en fondu, à l'expiration du minuteur.</summary>
+    private void HideToast()
+    {
+        _toastTimer.Stop();
+        if (ToastBanner.Visibility != Visibility.Visible) return;
+
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(260))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn },
+        };
+        // Le retrait n'a lieu qu'à la fin du fondu : masquer tout de suite ferait
+        // disparaître le bandeau d'un coup.
+        fade.Completed += (_, _) => ToastBanner.Visibility = Visibility.Collapsed;
+        ToastBanner.BeginAnimation(OpacityProperty, fade);
     }
 }

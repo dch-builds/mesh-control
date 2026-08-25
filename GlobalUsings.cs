@@ -34,6 +34,7 @@ global using Control = System.Windows.Controls.Control;
 global using Separator = System.Windows.Controls.Separator;
 global using PasswordBox = System.Windows.Controls.PasswordBox;
 global using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
+global using OpenFolderDialog = Microsoft.Win32.OpenFolderDialog;
 global using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
 global using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 global using FontFamily = System.Windows.Media.FontFamily;

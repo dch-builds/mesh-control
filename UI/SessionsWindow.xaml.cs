@@ -25,6 +25,11 @@ public partial class SessionsWindow : Window
     private SessionsWindow()
     {
         InitializeComponent();
+
+        // Navigation entre sessions : voir SessionsWindow_PreviewKeyDown.
+        PreviewKeyDown += SessionsWindow_PreviewKeyDown;
+        Tabs.PreviewMouseDown += Tabs_PreviewMouseDown;
+
         Closed += (_, _) =>
         {
             // Fermer les sessions sous-jacentes, sinon elles resteraient actives
@@ -88,6 +93,112 @@ public partial class SessionsWindow : Window
                 }
             });
         }
+    }
+
+    // MARK: - Navigation entre onglets
+
+    /// <summary>
+    /// Raccourcis de la fenêtre à onglets : Ctrl+Tab et Ctrl+Maj+Tab pour passer
+    /// d'une session à l'autre, Ctrl+1 à Ctrl+9 pour aller directement à l'une
+    /// d'elles, Ctrl+F4 pour fermer la session affichée.
+    ///
+    /// Traités ici plutôt que dans les sessions : les événements « Preview »
+    /// descendent de la fenêtre vers son contenu, ce qui nous laisse la priorité
+    /// sur le bureau à distance. Sans cela, Ctrl+Tab partirait vers la machine
+    /// distante au lieu de changer d'onglet.
+    ///
+    /// Rien n'est capté tant qu'une seule session est ouverte : la frappe garde
+    /// alors tout son sens côté distant (Ctrl+Tab dans un navigateur, Ctrl+F4
+    /// pour fermer un document), et il n'y a de toute façon aucun voisin où aller.
+    /// </summary>
+    private void SessionsWindow_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Tabs.Items.Count < 2) return;
+        if (!Keyboard.Modifiers.HasFlag(ModifierKeys.Control)) return;
+
+        switch (e.Key)
+        {
+            case Key.Tab:
+                MoveSelection(Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? -1 : +1);
+                break;
+
+            case Key.F4:
+                if (Tabs.SelectedItem is TabItem current)
+                {
+                    ReleaseRemoteKeyboard();
+                    CloseTab(current);
+                }
+                break;
+
+            case >= Key.D1 and <= Key.D9:
+                SelectByPosition(e.Key - Key.D1);
+                break;
+
+            default:
+                return;   // touche qui ne nous concerne pas : elle suit son chemin
+        }
+
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Va à l'onglet suivant ou précédent, en bouclant : la navigation ne doit
+    /// pas buter sur le bout de la rangée.
+    /// </summary>
+    private void MoveSelection(int delta)
+    {
+        var count = Tabs.Items.Count;
+        if (count == 0) return;
+
+        var index = Tabs.SelectedIndex + delta;
+        SelectTab((index % count + count) % count);
+    }
+
+    /// <summary>
+    /// Sélectionne l'onglet à cette position. Ctrl+9 va au dernier, comme dans
+    /// les navigateurs, plutôt que de ne rien faire tant qu'il y a moins de neuf
+    /// sessions ouvertes.
+    /// </summary>
+    private void SelectByPosition(int index)
+    {
+        var target = index >= 8 ? Tabs.Items.Count - 1 : index;
+        if (target < 0 || target >= Tabs.Items.Count) return;
+        SelectTab(target);
+    }
+
+    private void SelectTab(int index)
+    {
+        // La session que l'on quitte a reçu « Ctrl enfoncé » avant que l'on
+        // intercepte la frappe : sans ce nettoyage, son clavier distant resterait
+        // bloqué en Ctrl jusqu'au prochain retour sur l'onglet.
+        ReleaseRemoteKeyboard();
+        Tabs.SelectedIndex = index;   // le changement redonne le focus au contenu
+    }
+
+    /// <summary>Relâche les touches maintenues sur la machine de la session affichée.</summary>
+    private void ReleaseRemoteKeyboard()
+    {
+        if (Tabs.SelectedItem is TabItem tab
+            && _hosts.TryGetValue(tab, out var host)
+            && host is ISessionWindow session)
+        {
+            session.ReleaseKeyboard();
+        }
+    }
+
+    /// <summary>
+    /// Clic du milieu sur un onglet : il se ferme, comme dans un navigateur. Un
+    /// clic du milieu dans le contenu d'une session n'est pas concerné — celui-ci
+    /// n'appartient pas à un onglet, et la frappe continue vers la machine.
+    /// </summary>
+    private void Tabs_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Middle) return;
+        if (e.OriginalSource is not DependencyObject source) return;
+        if (FindParent<TabItem>(source) is not { } tab) return;
+
+        e.Handled = true;
+        CloseTab(tab);
     }
 
     // MARK: - Fermeture d'onglet
@@ -172,6 +283,19 @@ public partial class SessionsWindow : Window
         UpdateTabStripVisibility();
     }
 
+    /// <summary>Vrai quand une session en plein écran demande de tout masquer.</summary>
+    private bool _tabStripHidden;
+
+    /// <summary>
+    /// Masque ou rétablit le bandeau d'onglets. Utilisé par le plein écran d'une
+    /// session : sans cela, le bandeau resterait posé en haut de l'image.
+    /// </summary>
+    public void SetTabStripVisible(bool visible)
+    {
+        _tabStripHidden = !visible;
+        UpdateTabStripVisibility();
+    }
+
     /// <summary>
     /// Masque le bandeau d'onglets quand une seule session est ouverte : un
     /// onglet unique n'apporte rien et grignoterait de la hauteur utile.
@@ -188,6 +312,8 @@ public partial class SessionsWindow : Window
             return;
         }
 
-        strip.Visibility = Tabs.Items.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
+        strip.Visibility = !_tabStripHidden && Tabs.Items.Count > 1
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 }
