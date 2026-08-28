@@ -179,6 +179,31 @@ public sealed class MeshNode
         return node;
     }
 
+    /// <summary>
+    /// Reprend l'état d'une fiche fraîchement reçue, sans changer d'instance.
+    ///
+    /// L'inventaire « nodes » renvoie la fiche complète, sauf la date de dernière
+    /// connexion qui vient de « lastconnects » : elle est conservée si la
+    /// nouvelle fiche ne la porte pas.
+    /// </summary>
+    public void Adopt(MeshNode fresh)
+    {
+        MeshId = fresh.MeshId;
+        Name = fresh.Name;
+        RealName = fresh.RealName;
+        Host = fresh.Host;
+        Icon = fresh.Icon;
+        Conn = fresh.Conn;
+        Pwr = fresh.Pwr;
+        OsDescription = fresh.OsDescription;
+        Ip = fresh.Ip;
+        MType = fresh.MType;
+        Desc = fresh.Desc;
+        SshPort = fresh.SshPort;
+        RdpPort = fresh.RdpPort;
+        LastConnect = fresh.LastConnect ?? LastConnect;
+    }
+
     /// <summary>Fusionne un node partiel reçu via un événement changenode.</summary>
     public void Merge(JsonElement json)
     {

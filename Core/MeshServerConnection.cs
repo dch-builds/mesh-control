@@ -37,6 +37,7 @@ public sealed class MeshServerConnection : IDisposable
     private Task? _receiveTask;
     private Task? _heartbeatTask;
     private Task? _cookieRefreshTask;
+    private Task? _inventoryRefreshTask;
 
     // Cookies relais générés par {action:'authcookie'}.
     private string? _authCookie;
@@ -92,10 +93,14 @@ public sealed class MeshServerConnection : IDisposable
                  "Serveur");
         SetState(ConnectionState.Connected);
 
+        _lastFrameAt = DateTime.UtcNow;
+        _pongSeen = false;
+
         _loopCts = new CancellationTokenSource();
         StartReceiveLoop(socket, _loopCts.Token);
         StartHeartbeat(_loopCts.Token);
         StartCookieRefresh(_loopCts.Token);
+        StartInventoryRefresh(_loopCts.Token);
 
         await SendJsonAsync(new { action = "meshes" }).ConfigureAwait(false);
         await SendJsonAsync(new { action = "nodes" }).ConfigureAwait(false);
@@ -206,6 +211,10 @@ public sealed class MeshServerConnection : IDisposable
                     MarkConnectionLost();
                     return;
                 }
+                // Toute trame, quel qu'en soit le contenu, prouve que le canal
+                // est vivant.
+                _lastFrameAt = DateTime.UtcNow;
+
                 if (message is WsMessage.Text(var text) && TryParse(text, out var json))
                     Handle(json);
             }
@@ -244,14 +253,14 @@ public sealed class MeshServerConnection : IDisposable
             case "nodes":
                 if (json.TryGetProperty("nodes", out var grouped) && grouped.ValueKind == JsonValueKind.Object)
                 {
-                    _nodes.Clear();
-                    foreach (var group in grouped.EnumerateObject())
-                        if (group.Value.ValueKind == JsonValueKind.Array)
-                            foreach (var item in group.Value.EnumerateArray())
-                                if (MeshNode.From(item, group.Name) is { } node)
-                                    _nodes[node.Id] = node;
+                    MergeNodeInventory(grouped);
                     DevicesChanged?.Invoke();
                 }
+                break;
+            case "pong":
+                // Le serveur répond : le contrôle de silence peut s'appuyer
+                // dessus (voir StartHeartbeat).
+                _pongSeen = true;
                 break;
             case "lastconnects":
                 // { lastconnects: { "<nodeid>": <timestamp ms>, ... } }
@@ -305,6 +314,40 @@ public sealed class MeshServerConnection : IDisposable
     }
 
     /// <summary>
+    /// Fusionne un inventaire complet (« nodes ») dans le dictionnaire.
+    ///
+    /// Les fiches existantes sont mises à jour sur place au lieu d'être
+    /// remplacées. L'interface et les sessions ouvertes gardent une référence
+    /// vers l'objet MeshNode : le remplacer laissait derrière des instances
+    /// orphelines, que les événements « nodeconnect » suivants ne touchaient
+    /// plus. L'état affiché se figeait alors jusqu'au redémarrage de
+    /// l'application — c'était le cas après chaque rafraîchissement de la liste.
+    /// </summary>
+    private void MergeNodeInventory(JsonElement grouped)
+    {
+        var seen = new HashSet<string>();
+
+        foreach (var group in grouped.EnumerateObject())
+        {
+            if (group.Value.ValueKind != JsonValueKind.Array) continue;
+
+            foreach (var item in group.Value.EnumerateArray())
+            {
+                if (MeshNode.From(item, group.Name) is not { } fresh) continue;
+                seen.Add(fresh.Id);
+
+                if (_nodes.TryGetValue(fresh.Id, out var existing)) existing.Adopt(fresh);
+                else _nodes[fresh.Id] = fresh;
+            }
+        }
+
+        // Machines absentes de l'inventaire : retirées du serveur, ou droits
+        // révoqués. Elles ne doivent pas survivre à un rafraîchissement.
+        foreach (var id in _nodes.Keys.Where(id => !seen.Contains(id)).ToList())
+            _nodes.TryRemove(id, out _);
+    }
+
+    /// <summary>
     /// Messages relayés depuis un agent. On n'y traite que la réponse au
     /// presse-papiers ; les autres types passent par leurs tunnels dédiés.
     /// </summary>
@@ -348,6 +391,12 @@ public sealed class MeshServerConnection : IDisposable
         }
     }
 
+    /// <summary>Entier d'un champ d'événement, ou null s'il est absent.</summary>
+    private static int? EventInt(JsonElement ev, string key)
+        => ev.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number
+            ? v.GetInt32()
+            : null;
+
     private void HandleEvent(JsonElement ev)
     {
         var action = GetString(ev, "action");
@@ -356,8 +405,20 @@ public sealed class MeshServerConnection : IDisposable
             case "nodeconnect":
                 if (GetString(ev, "nodeid") is { } nid && _nodes.TryGetValue(nid, out var node))
                 {
-                    node.Conn = ev.TryGetProperty("conn", out var c) && c.ValueKind == JsonValueKind.Number ? c.GetInt32() : 0;
-                    node.Pwr = ev.TryGetProperty("pwr", out var p) && p.ValueKind == JsonValueKind.Number ? p.GetInt32() : 0;
+                    // Seuls les champs réellement présents sont appliqués : un
+                    // événement partiel écrivait 0 dans la connectivité, ce qui
+                    // affichait la machine hors ligne alors qu'elle venait de se
+                    // connecter.
+                    if (EventInt(ev, "conn") is { } conn) node.Conn = conn;
+                    if (EventInt(ev, "pwr") is { } pwr) node.Pwr = pwr;
+
+                    // Une machine qui se connecte est vue « maintenant » : sans
+                    // cela, sa dernière présence resterait sur la date reçue au
+                    // démarrage jusqu'au prochain « lastconnects ».
+                    if (node.IsOnline) node.LastConnect = DateTime.Now;
+
+                    Log.Debug($"{node.Name} : conn={node.Conn} "
+                            + (node.IsOnline ? "(en ligne)" : "(hors ligne)"), "Serveur");
                     DevicesChanged?.Invoke();
                 }
                 break;
@@ -436,16 +497,84 @@ public sealed class MeshServerConnection : IDisposable
         }, ct);
     }
 
+    /// <summary>Période entre deux pings envoyés au serveur.</summary>
+    private static readonly TimeSpan PingInterval = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Silence au-delà duquel le canal est considéré comme mort. Trois périodes
+    /// de ping : il faut avoir laissé passer plusieurs occasions de répondre
+    /// avant de couper une session qui fonctionne peut-être encore.
+    /// </summary>
+    private static readonly TimeSpan SilenceLimit = TimeSpan.FromSeconds(95);
+
+    /// <summary>Dernière trame reçue, quelle qu'elle soit.</summary>
+    private DateTime _lastFrameAt = DateTime.UtcNow;
+
+    /// <summary>
+    /// Vrai dès que le serveur a répondu à un ping. Le contrôle de silence n'est
+    /// armé qu'à partir de là : un serveur qui ne répondrait pas aux pings ne
+    /// doit pas provoquer de déconnexions en boucle.
+    /// </summary>
+    private bool _pongSeen;
+
+    /// <summary>
+    /// Ping régulier, doublé d'un contrôle de silence.
+    ///
+    /// Un websocket peut rester « ouvert » alors que plus rien ne circule :
+    /// coupure Wi-Fi, veille du poste, pare-feu ou proxy qui oublie la session.
+    /// L'envoi continue de réussir — le tampon TCP l'accepte — et l'application
+    /// attendait alors indéfiniment des événements qui ne viendraient plus : la
+    /// liste des machines restait figée jusqu'au redémarrage. Le silence est donc
+    /// surveillé, et la perte signalée pour que la reconnexion automatique prenne
+    /// le relais.
+    /// </summary>
     private void StartHeartbeat(CancellationToken ct)
     {
         _heartbeatTask = Task.Run(async () =>
         {
             while (!ct.IsCancellationRequested)
             {
-                try { await Task.Delay(TimeSpan.FromSeconds(45), ct).ConfigureAwait(false); }
+                try { await Task.Delay(PingInterval, ct).ConfigureAwait(false); }
                 catch { return; }
+
+                var silence = DateTime.UtcNow - _lastFrameAt;
+                if (_pongSeen && silence > SilenceLimit)
+                {
+                    Log.Warning($"Aucune trame du serveur depuis {(int)silence.TotalSeconds} s : "
+                              + "canal considéré comme perdu.", "Serveur");
+                    MarkConnectionLost();
+                    return;
+                }
+
                 try { await SendJsonAsync(new { action = "ping" }).ConfigureAwait(false); }
                 catch { MarkConnectionLost(); return; }
+            }
+        }, ct);
+    }
+
+    /// <summary>Période de resynchronisation complète de l'inventaire.</summary>
+    private static readonly TimeSpan InventoryRefreshInterval = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Relit périodiquement l'inventaire complet.
+    ///
+    /// Les événements suffisent en temps normal, mais un seul événement manqué
+    /// — trame perdue pendant une microcoupure, machine passée en ligne pendant
+    /// la reconnexion — laisserait un état faux jusqu'au prochain changement.
+    /// C'est la ceinture de sécurité : au pire, l'écart se corrige tout seul.
+    /// </summary>
+    private void StartInventoryRefresh(CancellationToken ct)
+    {
+        _inventoryRefreshTask = Task.Run(async () =>
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                try { await Task.Delay(InventoryRefreshInterval, ct).ConfigureAwait(false); }
+                catch { return; }
+
+                if (State != ConnectionState.Connected) continue;
+                try { await RefreshDeviceListAsync().ConfigureAwait(false); }
+                catch { /* la perte de connexion est traitée ailleurs */ }
             }
         }, ct);
     }

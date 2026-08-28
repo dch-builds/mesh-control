@@ -54,6 +54,11 @@ public partial class MainWindow : Window
             ApplyFilter();
         };
         _toastTimer.Tick += (_, _) => HideToast();
+        _resyncTimer.Tick += (_, _) =>
+        {
+            _resyncTimer.Stop();
+            _ = ResyncAsync();
+        };
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
 
@@ -72,6 +77,8 @@ public partial class MainWindow : Window
             _refreshTimer.Stop();
             _searchTimer.Stop();
             _toastTimer.Stop();
+            _resyncTimer.Stop();
+            ReleaseResumeWatch();
             _hotkey?.Dispose();
             _tray?.Dispose();
             _connection?.Disconnect();
@@ -144,6 +151,7 @@ public partial class MainWindow : Window
         ApplyListDensity();
         SetupHotkey();
         SetupTray();
+        SetupResumeWatch();
 
         // Démarrage automatique de session (« --minimized ») ou réglage explicite :
         // on se connecte en tâche de fond sans ouvrir la fenêtre.
@@ -340,6 +348,10 @@ public partial class MainWindow : Window
 
     private void RestoreMainWindow()
     {
+        // L'utilisateur revient regarder la liste : c'est le moment de vérifier
+        // qu'elle est juste, sans attendre la resynchronisation périodique.
+        Resync("retour dans la fenêtre");
+
         Show();   // la fenêtre peut avoir été masquée dans le tray
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
@@ -535,7 +547,7 @@ public partial class MainWindow : Window
 
                 ShowReconnecting(delay);
                 Log.Info($"Reconnexion dans {delay} s (tentative {_reconnectAttempt})", "Serveur");
-                await Task.Delay(TimeSpan.FromSeconds(delay));
+                await WaitBeforeRetryAsync(delay);
 
                 // L'utilisateur s'est reconnecté manuellement entre-temps.
                 if (_connection?.State == ConnectionState.Connected) return;
@@ -589,6 +601,32 @@ public partial class MainWindow : Window
         finally
         {
             _reconnecting = false;
+        }
+    }
+
+    /// <summary>
+    /// Signal qui écourte l'attente avant la prochaine tentative, quand une
+    /// reprise réseau ou une sortie de veille rend le serveur de nouveau
+    /// joignable.
+    /// </summary>
+    private TaskCompletionSource? _reconnectWakeup;
+
+    /// <summary>
+    /// Attend le délai prévu, ou moins si une reprise est signalée entre-temps :
+    /// après un réveil du poste, attendre soixante secondes de plus alors que le
+    /// réseau est revenu ne se justifie pas.
+    /// </summary>
+    private async Task WaitBeforeRetryAsync(int seconds)
+    {
+        var wakeup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _reconnectWakeup = wakeup;
+        try
+        {
+            await Task.WhenAny(Task.Delay(TimeSpan.FromSeconds(seconds)), wakeup.Task);
+        }
+        finally
+        {
+            if (ReferenceEquals(_reconnectWakeup, wakeup)) _reconnectWakeup = null;
         }
     }
 
@@ -661,7 +699,11 @@ public partial class MainWindow : Window
             seen.Add(node.Id);
             var groupName = groupNames.TryGetValue(node.MeshId, out var g) ? g : "Sans dossier";
 
-            if (_rowsById.TryGetValue(node.Id, out var existing))
+            // ReferenceEquals : une reconnexion au serveur reconstruit
+            // l'inventaire, et la ligne existante pointerait alors vers une fiche
+            // orpheline que plus aucun événement ne met à jour. On la recrée.
+            if (_rowsById.TryGetValue(node.Id, out var existing)
+                && ReferenceEquals(existing.Node, node))
             {
                 // Le tri dépend de l'état en ligne, du nom et du dossier : un
                 // changement sur ces valeurs impose de recomposer la vue.
@@ -676,6 +718,11 @@ public partial class MainWindow : Window
                 {
                     structureChanged = true;
                 }
+                // Le filtre « en ligne uniquement » repose sur la connectivité :
+                // la vue doit être recomposée, sinon une machine qui se connecte
+                // n'apparaîtrait jamais dans la liste filtrée.
+                if (existing.OnlineStateChanged && OnlineOnlyCheck.IsChecked == true)
+                    structureChanged = true;
                 // Rafraîchit badge, libellé et icône sans toucher à la vue.
                 existing.RefreshFromNode();
             }
@@ -1398,6 +1445,104 @@ public partial class MainWindow : Window
         StatusText.Foreground = isError
             ? (System.Windows.Media.Brush)FindResource("DangerBrush")
             : (System.Windows.Media.Brush)FindResource("TextSecondaryBrush");
+    }
+
+    // MARK: - Reprise après veille ou coupure réseau
+
+    /// <summary>
+    /// Reprise différée : au réveil du poste, la pile réseau met quelques
+    /// secondes à redevenir utilisable, et les événements arrivent en rafale
+    /// (plusieurs changements d'adresse successifs). Le minuteur les regroupe.
+    /// </summary>
+    private readonly DispatcherTimer _resyncTimer = new()
+    {
+        Interval = TimeSpan.FromSeconds(5),
+    };
+
+    private string _resyncReason = "";
+
+    /// <summary>
+    /// Écoute la sortie de veille et les changements d'adresse réseau.
+    ///
+    /// Dans ces deux cas, le canal de contrôle est souvent mort sans que rien ne
+    /// l'ait signalé : le poste n'a pas eu le temps de fermer proprement ses
+    /// connexions, et le serveur ne peut plus rien envoyer. Sans cette écoute, il
+    /// fallait attendre le contrôle de silence — voire relancer l'application.
+    /// </summary>
+    private void SetupResumeWatch()
+    {
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged
+            += OnNetworkAddressChanged;
+    }
+
+    /// <summary>
+    /// Se détache de ces événements : ils sont portés par des objets statiques,
+    /// qui garderaient la fenêtre en vie après sa fermeture.
+    /// </summary>
+    private void ReleaseResumeWatch()
+    {
+        Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        System.Net.NetworkInformation.NetworkChange.NetworkAddressChanged
+            -= OnNetworkAddressChanged;
+    }
+
+    private void OnPowerModeChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode != Microsoft.Win32.PowerModes.Resume) return;
+        ScheduleResync("sortie de veille");
+    }
+
+    private void OnNetworkAddressChanged(object? sender, EventArgs e)
+        => ScheduleResync("changement d'adresse réseau");
+
+    /// <summary>Programme une vérification, en regroupant les appels rapprochés.</summary>
+    private void ScheduleResync(string reason)
+    {
+        // Ces événements arrivent depuis des fils système : tout ce qui touche à
+        // l'interface doit repasser par le sien.
+        Dispatcher.BeginInvoke(() =>
+        {
+            _resyncReason = reason;
+            _resyncTimer.Stop();
+            _resyncTimer.Start();
+        });
+    }
+
+    /// <summary>Vérifie sans attendre.</summary>
+    private void Resync(string reason)
+    {
+        _resyncTimer.Stop();
+        _resyncReason = reason;
+        _ = ResyncAsync();
+    }
+
+    /// <summary>
+    /// Remet l'affichage en phase avec le serveur : relecture de l'inventaire si
+    /// la connexion tient, reprise immédiate de la reconnexion sinon.
+    /// </summary>
+    private async Task ResyncAsync()
+    {
+        if (_connection is null) return;
+
+        if (_connection.State == ConnectionState.Connected)
+        {
+            Log.Info($"Relecture de l'inventaire ({_resyncReason})", "Serveur");
+            try { await _connection.RefreshDeviceListAsync(); }
+            catch { /* la perte de connexion est détectée par le contrôle de silence */ }
+            return;
+        }
+
+        // Une attente entre deux tentatives est en cours : la raison probable de
+        // l'échec vient de disparaître, inutile de patienter jusqu'au bout.
+        _reconnectAttempt = 0;
+        if (_reconnectWakeup?.TrySetResult() == true)
+        {
+            Log.Info($"Reconnexion avancée ({_resyncReason})", "Serveur");
+            return;
+        }
+
+        if (CanAttemptReconnect()) _ = ReconnectLoopAsync();
     }
 
     // MARK: - Bandeau de confirmation

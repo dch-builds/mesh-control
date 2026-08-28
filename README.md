@@ -57,7 +57,12 @@ standard.
   fermer. Ces raccourcis ne sont captés qu'à partir de deux sessions ouvertes :
   seuls, ils gardent tout leur sens sur la machine distante
 - Fonctionnement dans la zone de notification, démarrage automatique possible
-- Reconnexion automatique après coupure réseau
+- Reconnexion automatique après coupure réseau. Le canal de contrôle est
+  surveillé : un websocket resté ouvert mais muet — veille du poste, coupure
+  Wi-Fi, proxy qui oublie la session — est repéré en moins de deux minutes.
+  L'inventaire est relu à la sortie de veille, au retour du réseau, au retour
+  dans la fenêtre et toutes les cinq minutes : l'état des machines ne peut plus
+  rester figé
 - Journal d'erreurs pour le diagnostic
 
 ## Compilation
