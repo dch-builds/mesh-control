@@ -70,6 +70,20 @@ public partial class MainWindow : Window
             {
                 CloseSettings();
                 args.Handled = true;
+                return;
+            }
+
+            // Ctrl+Maj+W ouvre la page web MeshCentral de la machine
+            // sélectionnée, comme dans le bureau à distance et la palette.
+            // Écarté quand les réglages sont ouverts : le champ de capture du
+            // raccourci global doit pouvoir recevoir cette combinaison comme
+            // n'importe quelle autre.
+            if (args.Key == Key.W && !IsSettingsOpen
+                && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
+                && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            {
+                RunSelected(DeviceAction.WebPage);
+                args.Handled = true;
             }
         };
         Closed += (_, _) =>

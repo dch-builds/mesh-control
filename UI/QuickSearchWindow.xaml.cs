@@ -109,8 +109,8 @@ public partial class QuickSearchWindow : Window
         HintText.Text = list.Count switch
         {
             0 => "Aucune machine ne correspond.",
-            1 => "1 résultat · Entrée bureau à distance · Tab autres actions",
-            _ => $"{list.Count} résultats · ↑↓ naviguer · Entrée bureau · Tab actions · Échap fermer",
+            1 => "1 résultat · Entrée bureau · Ctrl+Maj+W page web · Tab autres actions",
+            _ => $"{list.Count} résultats · ↑↓ naviguer · Entrée bureau · Ctrl+Maj+W page web · Tab actions",
         };
     }
 
@@ -190,8 +190,28 @@ public partial class QuickSearchWindow : Window
 
     // MARK: - Clavier
 
+    /// <summary>
+    /// Machine visée par les raccourcis directs : celle en surbrillance tant
+    /// qu'on choisit la machine, celle dont on parcourt les actions ensuite.
+    /// </summary>
+    private MeshNode? HighlightedNode
+        => _target ?? (ResultList.SelectedItem as DeviceRow)?.Node;
+
     private void QueryBox_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Ctrl+Maj+W ouvre la page web MeshCentral de la machine en surbrillance
+        // sans passer par la liste des actions : ce détour était ce qui coûtait
+        // le plus de frappes. Même combinaison que dans le bureau à distance,
+        // pour n'avoir qu'un seul geste à retenir dans toute l'application.
+        if (e.Key == Key.W
+            && Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
+            && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            if (HighlightedNode is { } node) Run(node, DeviceAction.WebPage);
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Escape:

@@ -227,6 +227,7 @@
                                           Click="MenuInfo_Click"
                                           ToolTip="Processeur, mémoire, disques, BIOS"/>
                                 <MenuItem x:Name="MenuWebPage" Header="Ouvrir la page web…"
+                                          InputGestureText="Ctrl+Maj+W"
                                           Click="MenuWebPage_Click"
                                           ToolTip="Voir cette machine dans MeshCentral"/>
                             </ContextMenu>

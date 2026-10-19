@@ -56,6 +56,10 @@ standard.
   Ctrl+1 à Ctrl+9 pour atteindre une session, Ctrl+F4 ou clic du milieu pour la
   fermer. Ces raccourcis ne sont captés qu'à partir de deux sessions ouvertes :
   seuls, ils gardent tout leur sens sur la machine distante
+- Page web MeshCentral d'une machine par Ctrl+Maj+W, où que l'on se trouve :
+  sur la machine sélectionnée dans la liste, sur celle en surbrillance dans la
+  palette de recherche rapide, et sur celle affichée par une session de bureau
+  à distance
 - Code à deux facteurs demandé une seule fois : le poste est ensuite mémorisé
   auprès du serveur, pour la durée qu'il autorise ou sans limite au moyen d'un
   jeton de connexion
