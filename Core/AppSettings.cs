@@ -114,6 +114,111 @@ public sealed class AppSettings
         set => ProtectedPassword = string.IsNullOrEmpty(value) ? null : Protect(value);
     }
 
+    // MARK: - Mémorisation du second facteur
+
+    /// <summary>
+    /// Cookie « appareil de confiance » remis par le serveur après une
+    /// validation 2FA réussie, chiffré DPAPI.
+    ///
+    /// Renvoyé ensuite comme troisième champ de l'en-tête x-meshauth, sous la
+    /// forme « cookie=… » : le serveur reconnaît le poste et ne redemande pas
+    /// de code. C'est exactement le mécanisme de la case « se souvenir de cet
+    /// appareil » du client web, soumis à la même durée de validité côté
+    /// serveur (twoFactorCookieDurationDays, 30 jours par défaut).
+    /// </summary>
+    public string? ProtectedTwoFactorCookie { get; set; }
+
+    [JsonIgnore]
+    public string TwoFactorCookie
+    {
+        get => Unprotect(ProtectedTwoFactorCookie);
+        set => ProtectedTwoFactorCookie = string.IsNullOrEmpty(value) ? null : Protect(value);
+    }
+
+    /// <summary>
+    /// Fin de validité du cookie ci-dessus, d'après la durée annoncée par le
+    /// serveur. Indicative : passé cette date on cesse de l'envoyer, pour ne
+    /// pas tenter une connexion vouée à redemander un code de toute façon.
+    /// </summary>
+    public DateTime? TwoFactorCookieExpiry { get; set; }
+
+    /// <summary>Vrai si un cookie 2FA utilisable est mémorisé pour ce poste.</summary>
+    [JsonIgnore]
+    public bool HasTwoFactorCookie
+        => !string.IsNullOrEmpty(ProtectedTwoFactorCookie)
+           && (TwoFactorCookieExpiry is null || TwoFactorCookieExpiry > DateTime.Now);
+
+    /// <summary>
+    /// Jeton de connexion MeshCentral : un couple identifiant « ~t:… » /
+    /// mot de passe, propre à ce poste, que le serveur accepte à la place des
+    /// identifiants du compte — et sans second facteur, par conception
+    /// (webserver.js : « If this login occurred using a login token, no 2FA
+    /// needed »).
+    ///
+    /// Contrairement au cookie, il n'expire pas et survit donc au démarrage
+    /// automatique et aux reconnexions. Il se révoque depuis « Mon compte » sur
+    /// le serveur, ou depuis les réglages de l'application.
+    ///
+    /// Les deux moitiés sont chiffrées DPAPI : le mot de passe du jeton vaut
+    /// celui du compte pour ouvrir une session.
+    /// </summary>
+    public string? ProtectedLoginTokenUser { get; set; }
+
+    /// <summary>Mot de passe du jeton de connexion, chiffré DPAPI.</summary>
+    public string? ProtectedLoginTokenPass { get; set; }
+
+    /// <summary>Nom donné au jeton côté serveur, pour l'afficher dans les réglages.</summary>
+    public string? LoginTokenName { get; set; }
+
+    [JsonIgnore]
+    public string LoginTokenUser
+    {
+        get => Unprotect(ProtectedLoginTokenUser);
+        set => ProtectedLoginTokenUser = string.IsNullOrEmpty(value) ? null : Protect(value);
+    }
+
+    [JsonIgnore]
+    public string LoginTokenPass
+    {
+        get => Unprotect(ProtectedLoginTokenPass);
+        set => ProtectedLoginTokenPass = string.IsNullOrEmpty(value) ? null : Protect(value);
+    }
+
+    /// <summary>Vrai si un jeton de connexion est mémorisé pour ce poste.</summary>
+    [JsonIgnore]
+    public bool HasLoginToken
+        => !string.IsNullOrEmpty(ProtectedLoginTokenUser)
+           && !string.IsNullOrEmpty(ProtectedLoginTokenPass);
+
+    /// <summary>
+    /// Oublie le seul jeton de connexion, par exemple quand le serveur l'a
+    /// révoqué. Le cookie d'appareil de confiance, lui, peut rester valable.
+    /// </summary>
+    public void ClearLoginToken()
+    {
+        ProtectedLoginTokenUser = null;
+        ProtectedLoginTokenPass = null;
+        LoginTokenName = null;
+        SaveNow();
+    }
+
+    /// <summary>
+    /// Oublie ce poste : cookie 2FA et jeton de connexion. Le code à deux
+    /// facteurs sera redemandé à la prochaine connexion.
+    /// </summary>
+    public void ClearDeviceTrust()
+    {
+        ProtectedTwoFactorCookie = null;
+        TwoFactorCookieExpiry = null;
+        ProtectedLoginTokenUser = null;
+        ProtectedLoginTokenPass = null;
+        LoginTokenName = null;
+        // Immédiat : ces éléments ouvrent une session à eux seuls, ils ne
+        // doivent pas survivre sur le disque parce qu'un minuteur n'a pas eu le
+        // temps de se déclencher.
+        SaveNow();
+    }
+
     // MARK: - Persistance
 
     private static string SettingsPath
@@ -218,14 +323,18 @@ public sealed class AppSettings
         catch { /* échec d'écriture : non bloquant */ }
     }
 
-    /// <summary>Efface les identifiants mémorisés (utilisateur + mot de passe).</summary>
+    /// <summary>
+    /// Efface les identifiants mémorisés (utilisateur, mot de passe) ainsi que
+    /// la confiance accordée à ce poste : garder un jeton de connexion après
+    /// avoir effacé le mot de passe laisserait un accès ouvert.
+    /// </summary>
     public void ClearCredentials()
     {
         Username = "";
         ProtectedPassword = null;
         // Écriture immédiate : le mot de passe ne doit pas rester sur le disque
         // parce qu'un minuteur n'a pas eu le temps de se déclencher.
-        SaveNow();
+        ClearDeviceTrust();
     }
 
     // MARK: - Raccourci clavier

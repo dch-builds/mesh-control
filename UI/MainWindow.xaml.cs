@@ -161,10 +161,11 @@ public partial class MainWindow : Window
         if (startHidden) HideToTray();
 
         // Connexion automatique si des identifiants sont mémorisés : l'utilisateur
-        // n'a plus rien à ressaisir au lancement.
+        // n'a plus rien à ressaisir au lancement. Un jeton de connexion suffit,
+        // même sans mot de passe enregistré.
         if (_settings.RememberCredentials
             && !string.IsNullOrEmpty(_settings.Username)
-            && !string.IsNullOrEmpty(_settings.Password))
+            && (!string.IsNullOrEmpty(_settings.Password) || _settings.HasLoginToken))
         {
             await ConnectAsync(_settings.Username, _settings.Password, token: null, remember: true);
         }
@@ -370,8 +371,80 @@ public partial class MainWindow : Window
         DevicesPanel.Visibility = Visibility.Collapsed;
         LoadingPanel.Visibility = Visibility.Collapsed;
         RefreshButton.Visibility = Visibility.Collapsed;
+
+        // Le second facteur ne s'affiche que lorsque le serveur le réclame :
+        // revenir à l'écran de connexion repart d'un formulaire propre.
+        TwoFactorPanel.Visibility = Visibility.Collapsed;
+        SendCodeButton.Visibility = Visibility.Collapsed;
+        TokenBox.Clear();
+
         if (string.IsNullOrEmpty(UserBox.Text)) UserBox.Focus();
         else PassBox.Focus();
+    }
+
+    /// <summary>
+    /// Durée, en jours, pendant laquelle le serveur accepte qu'un poste soit
+    /// mémorisé. Annoncée avec la demande de code ; zéro quand l'administrateur
+    /// a désactivé l'option.
+    /// </summary>
+    private int _trustedDeviceDays;
+
+    /// <summary>Canaux d'envoi de code proposés par le serveur, pour SendCode_Click.</summary>
+    private string? _sendCodeToken;
+
+    /// <summary>
+    /// Affiche la demande de code à deux facteurs, avec les seules options que
+    /// le serveur annonce : mémorisation du poste, envoi d'un code.
+    /// </summary>
+    private void ShowTwoFactorPrompt(MeshTwoFactorRequiredException request)
+    {
+        ShowLogin();
+
+        _trustedDeviceDays = request.TrustedDeviceDays;
+        TwoFactorPanel.Visibility = Visibility.Visible;
+
+        // Mémoriser le poste n'a de sens que si le serveur l'autorise.
+        if (_trustedDeviceDays > 0)
+        {
+            TrustDeviceCheck.Visibility = Visibility.Visible;
+            TrustDeviceHint.Visibility = Visibility.Visible;
+            TrustDeviceHint.Text = _trustedDeviceDays == 1
+                ? "Le serveur autorise ce poste pour une journée."
+                : $"Le serveur autorise ce poste pour {_trustedDeviceDays} jours. "
+                + "Les réglages permettent ensuite de l'autoriser sans limite.";
+        }
+        else
+        {
+            TrustDeviceCheck.Visibility = Visibility.Collapsed;
+            TrustDeviceHint.Visibility = Visibility.Collapsed;
+        }
+
+        // Codes envoyés par le serveur : un seul bouton, pour le premier canal
+        // disponible.
+        _sendCodeToken = request.EmailAvailable ? "**email**"
+                       : request.SmsAvailable ? "**sms**"
+                       : request.MessengerAvailable ? "**msg**"
+                       : null;
+        if (_sendCodeToken is not null && !request.CodeSent)
+        {
+            SendCodeButton.Content = _sendCodeToken switch
+            {
+                "**email**" => "Recevoir un code par courriel",
+                "**sms**" => "Recevoir un code par SMS",
+                _ => "Recevoir un code par messagerie",
+            };
+            SendCodeButton.Visibility = Visibility.Visible;
+        }
+
+        TokenBox.Focus();
+    }
+
+    /// <summary>Demande au serveur d'envoyer un code (courriel, SMS, messagerie).</summary>
+    private async void SendCode_Click(object sender, RoutedEventArgs e)
+    {
+        if (_sendCodeToken is null) return;
+        await ConnectAsync(UserBox.Text.Trim(), PassBox.Password, _sendCodeToken,
+                           RememberCheck.IsChecked == true);
     }
 
     private void ShowLoading(string detail = "")
@@ -407,9 +480,41 @@ public partial class MainWindow : Window
         if (e.Key == Key.Enter) ConnectButton_Click(sender, e);
     }
 
+    /// <summary>
+    /// Compose les identifiants présentés au serveur.
+    ///
+    /// Un code fraîchement saisi l'emporte sur tout : c'est lui qui permet de
+    /// (re)mémoriser le poste. Sinon on présente ce qui évite la ressaisie —
+    /// le jeton de connexion s'il existe, le cookie d'appareil de confiance
+    /// à défaut.
+    /// </summary>
+    private MeshLogin BuildLogin(string password, string? token)
+    {
+        if (string.IsNullOrEmpty(token) && _settings.HasLoginToken)
+        {
+            return new MeshLogin
+            {
+                Password = _settings.LoginTokenPass,
+                LoginTokenUser = _settings.LoginTokenUser,
+            };
+        }
+
+        return new MeshLogin
+        {
+            Password = password,
+            TwoFactorToken = token,
+            TwoFactorCookie = string.IsNullOrEmpty(token) && _settings.HasTwoFactorCookie
+                ? _settings.TwoFactorCookie
+                : null,
+        };
+    }
+
     private async Task ConnectAsync(string user, string password, string? token, bool remember)
     {
-        if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(password))
+        // Le jeton de connexion remplace le mot de passe : il suffit à ouvrir
+        // la session, même si le mot de passe du compte n'est pas mémorisé.
+        if (string.IsNullOrEmpty(user)
+            || (string.IsNullOrEmpty(password) && !_settings.HasLoginToken))
         {
             SetStatus("Renseignez l'utilisateur et le mot de passe.", isError: true);
             ShowLogin();
@@ -454,19 +559,71 @@ public partial class MainWindow : Window
         ShowLoading(_settings.Host);
         SetStatus("");
 
+        // Retenu pour le diagnostic d'un refus : un cookie rejeté doit être
+        // oublié, un code refusé ne remet pas la mémorisation en cause.
+        var sentTrustedCookie = string.IsNullOrEmpty(token) && _settings.HasTwoFactorCookie;
+
         try
         {
-            await _connection.ConnectAsync(password, token);
+            var login = BuildLogin(password, token);
+            try
+            {
+                await _connection.ConnectAsync(login);
+            }
+            catch (MeshException) when (login.LoginTokenUser is not null)
+            {
+                // Jeton révoqué ou expiré côté serveur : l'oublier et repartir
+                // des identifiants du compte, quitte à redemander un code.
+                Log.Warning("Jeton de connexion refusé par le serveur : retour aux "
+                          + "identifiants du compte.", "Serveur");
+                _settings.ClearLoginToken();
+                if (string.IsNullOrEmpty(password)) throw;
 
-            // Mémoriser (ou effacer) les identifiants selon la case cochée.
+                login = BuildLogin(password, token);
+                await _connection.ConnectAsync(login);
+            }
+
+            // Mémoriser (ou effacer) les identifiants selon la case cochée. Une
+            // session ouverte par jeton n'apporte aucun mot de passe nouveau :
+            // on ne touche pas à celui qui est enregistré.
             _settings.RememberCredentials = remember;
             _settings.Username = user;
-            if (remember) _settings.Password = password;
-            else _settings.ProtectedPassword = null;
+            if (!remember)
+            {
+                // Ne rien laisser derrière soi : un jeton ou un cookie rouvrirait
+                // une session alors que l'utilisateur a refusé toute mémorisation.
+                _settings.ProtectedPassword = null;
+                _settings.ClearDeviceTrust();
+            }
+            else if (!string.IsNullOrEmpty(password))
+            {
+                _settings.Password = password;
+            }
             _settings.Save();
+
+            // Le code vient d'être validé : c'est le seul moment où le serveur
+            // accepte de délivrer un cookie d'appareil de confiance. Inutile de
+            // le demander si l'administrateur a désactivé l'option.
+            if (!string.IsNullOrEmpty(token)
+                && remember
+                && _trustedDeviceDays > 0
+                && TrustDeviceCheck.IsChecked == true)
+            {
+                await RememberThisDeviceAsync();
+            }
 
             SubtitleText.Text = $"{_settings.Host} · {_connection.UserInfo?.Name ?? user}";
             ShowDevices();
+        }
+        catch (MeshTwoFactorRequiredException ex)
+        {
+            // Si un cookie mémorisé vient d'être présenté et que le serveur
+            // redemande un code, c'est qu'il ne l'accepte plus : expiré, ou
+            // révoqué par un changement de clé côté serveur.
+            if (sentTrustedCookie) ForgetTwoFactorCookie();
+
+            SetStatus(ex.Message, isError: !ex.CodeSent);
+            ShowTwoFactorPrompt(ex);
         }
         catch (Exception ex)
         {
@@ -478,6 +635,47 @@ public partial class MainWindow : Window
         {
             ConnectButton.IsEnabled = true;
         }
+    }
+
+    /// <summary>
+    /// Demande au serveur de mémoriser ce poste, pour que le code ne soit plus
+    /// redemandé à chaque connexion.
+    /// </summary>
+    private async Task RememberThisDeviceAsync()
+    {
+        if (_connection is null) return;
+
+        try
+        {
+            var cookie = await _connection.RequestTrustedDeviceCookieAsync();
+            if (cookie is null)
+            {
+                Log.Warning("Le serveur n'autorise pas la mémorisation de ce poste.", "Serveur");
+                SetStatus("Le serveur n'autorise pas à mémoriser ce poste.", isError: true);
+                return;
+            }
+
+            _settings.TwoFactorCookie = cookie;
+            _settings.TwoFactorCookieExpiry = _trustedDeviceDays > 0
+                ? DateTime.Now.AddDays(_trustedDeviceDays)
+                : null;
+            _settings.SaveNow();
+            Log.Info($"Ce poste est mémorisé pour {_trustedDeviceDays} jours.", "Serveur");
+        }
+        catch (Exception ex)
+        {
+            // Échec sans conséquence : la session est ouverte, seul le confort
+            // de la prochaine connexion est perdu.
+            Log.Warning($"Mémorisation de ce poste impossible : {ex.Message}", "Serveur");
+        }
+    }
+
+    /// <summary>Oublie le cookie d'appareil de confiance, sans toucher au jeton.</summary>
+    private void ForgetTwoFactorCookie()
+    {
+        _settings.ProtectedTwoFactorCookie = null;
+        _settings.TwoFactorCookieExpiry = null;
+        _settings.SaveNow();
     }
 
     // BeginInvoke : appelé depuis le fil de réception du serveur, qui ne doit pas
@@ -513,7 +711,9 @@ public partial class MainWindow : Window
     private bool CanAttemptReconnect()
     {
         if (_reconnecting) return false;
-        if (string.IsNullOrEmpty(_sessionUser) || string.IsNullOrEmpty(_sessionPassword))
+        if (string.IsNullOrEmpty(_sessionUser)) return false;
+        // Un jeton de connexion rouvre la session à lui seul.
+        if (string.IsNullOrEmpty(_sessionPassword) && !_settings.HasLoginToken)
             return false;
 
         // Ne pas insister si le serveur a rejeté le compte : réessayer avec les
@@ -565,7 +765,10 @@ public partial class MainWindow : Window
                     connection.StateChanged += OnStateChanged;
                     connection.DevicesChanged += OnDevicesChanged;
 
-                    await connection.ConnectAsync(_sessionPassword!);
+                    // Le second facteur mémorisé est représenté comme à la
+                    // connexion initiale : sans lui, une 2FA obligatoire
+                    // rendrait toute reconnexion automatique impossible.
+                    await connection.ConnectAsync(BuildLogin(_sessionPassword ?? "", null));
 
                     // Remplacer l'ancienne connexion une fois la nouvelle établie.
                     if (_connection is not null)
@@ -587,6 +790,16 @@ public partial class MainWindow : Window
                 catch (Exception ex)
                 {
                     Log.Warning($"Tentative de reconnexion échouée : {ex.Message}", "Serveur");
+
+                    // L'autorisation de ce poste n'est plus valable : rendre la
+                    // main à l'utilisateur pour qu'il saisisse un code.
+                    if (ex is MeshTwoFactorRequiredException twoFactor)
+                    {
+                        ForgetTwoFactorCookie();
+                        SetStatus(twoFactor.Message, isError: true);
+                        ShowTwoFactorPrompt(twoFactor);
+                        return;
+                    }
 
                     // Identifiants refusés : inutile d'insister.
                     if (ex is MeshException && !ex.Message.Contains("joindre", StringComparison.OrdinalIgnoreCase))

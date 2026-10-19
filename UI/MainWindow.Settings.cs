@@ -100,6 +100,7 @@ public partial class MainWindow
         AccountText.Text = string.IsNullOrEmpty(_settings.Username)
             ? "Aucun compte mémorisé."
             : $"Connecté en tant que « {_settings.Username} »";
+        UpdateTrustStateUi();
 
         // Diagnostic
         VerboseLogCheck.IsChecked = _settings.VerboseLogging;
@@ -234,6 +235,124 @@ public partial class MainWindow
         return 10;
     }
 
+    // MARK: - Autorisation de ce poste (second facteur)
+
+    /// <summary>
+    /// Reflète l'état de l'autorisation : jeton de connexion, mémorisation
+    /// temporaire, ou rien. Les boutons ne s'affichent que lorsqu'ils peuvent
+    /// aboutir — créer un jeton suppose une session ouverte avec le compte.
+    /// </summary>
+    private void UpdateTrustStateUi()
+    {
+        var canCreate = _connection is { State: ConnectionState.Connected }
+                        && _connection.CanCreateLoginToken;
+
+        if (_settings.HasLoginToken)
+        {
+            TrustStateText.Text = string.IsNullOrEmpty(_settings.LoginTokenName)
+                ? "Ce poste est autorisé sans limite de durée."
+                : $"Ce poste est autorisé sans limite de durée (jeton « {_settings.LoginTokenName} »).";
+            TrustDeviceButton.Visibility = Visibility.Collapsed;
+            ForgetDeviceButton.Visibility = Visibility.Visible;
+        }
+        else if (_settings.HasTwoFactorCookie)
+        {
+            TrustStateText.Text = _settings.TwoFactorCookieExpiry is { } until
+                ? $"Ce poste est mémorisé jusqu'au {until:dd/MM/yyyy}."
+                : "Ce poste est mémorisé : le code n'est pas redemandé.";
+            TrustDeviceButton.Visibility = canCreate ? Visibility.Visible : Visibility.Collapsed;
+            ForgetDeviceButton.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            TrustStateText.Text = "Le code à deux facteurs est demandé à chaque connexion.";
+            TrustDeviceButton.Visibility = canCreate ? Visibility.Visible : Visibility.Collapsed;
+            ForgetDeviceButton.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>
+    /// Crée un jeton de connexion pour ce poste : le serveur acceptera ensuite
+    /// l'application sans second facteur, indéfiniment.
+    /// </summary>
+    private async void TrustDevice_Click(object sender, RoutedEventArgs e)
+    {
+        if (_connection is not { State: ConnectionState.Connected })
+        {
+            ShowSettingsFeedback("Connectez-vous d'abord au serveur.", isError: true);
+            return;
+        }
+        if (!_connection.CanCreateLoginToken)
+        {
+            ShowSettingsFeedback("Cette session est déjà ouverte avec un jeton.", isError: true);
+            return;
+        }
+
+        TrustDeviceButton.IsEnabled = false;
+        try
+        {
+            // Le nom identifie le poste dans « Mon compte » sur le serveur :
+            // c'est là que l'administrateur révoquera le jeton si nécessaire.
+            var name = $"Mesh Control — {Environment.MachineName}";
+            var token = await _connection.CreateLoginTokenAsync(name);
+            if (token is null)
+            {
+                ShowSettingsFeedback(
+                    "Le serveur refuse les jetons de connexion pour ce compte.", isError: true);
+                return;
+            }
+
+            _settings.LoginTokenUser = token.User;
+            _settings.LoginTokenPass = token.Password;
+            _settings.LoginTokenName = token.Name;
+            _settings.SaveNow();
+
+            Log.Info($"Jeton de connexion créé pour ce poste : {token.Name}", "Serveur");
+            UpdateTrustStateUi();
+            ShowSettingsFeedback("Ce poste est autorisé : plus aucun code à saisir.");
+        }
+        catch (Exception ex)
+        {
+            ShowSettingsFeedback($"Échec : {ex.Message}", isError: true);
+        }
+        finally
+        {
+            TrustDeviceButton.IsEnabled = true;
+        }
+    }
+
+    /// <summary>
+    /// Retire l'autorisation de ce poste : le jeton est révoqué côté serveur
+    /// quand c'est possible, et les secrets locaux sont effacés dans tous les
+    /// cas. Le code sera redemandé à la prochaine connexion.
+    /// </summary>
+    private async void ForgetDevice_Click(object sender, RoutedEventArgs e)
+    {
+        var tokenUser = _settings.LoginTokenUser;
+
+        _settings.ClearDeviceTrust();
+        UpdateTrustStateUi();
+        Log.Info("Autorisation de ce poste retirée (second facteur).", "Serveur");
+
+        if (string.IsNullOrEmpty(tokenUser))
+        {
+            ShowSettingsFeedback("Ce poste est oublié.");
+            return;
+        }
+
+        // La révocation peut être refusée en silence : c'est la réponse du
+        // serveur qui dit si le jeton est bien mort.
+        if (_connection is { State: ConnectionState.Connected }
+            && await _connection.RevokeLoginTokenAsync(tokenUser))
+        {
+            ShowSettingsFeedback("Ce poste est oublié, le jeton est révoqué.");
+            return;
+        }
+
+        ShowSettingsFeedback("Ce poste est oublié. Le jeton reste à révoquer depuis "
+                           + "« Mon compte » sur le serveur.");
+    }
+
     private void ShowSettingsFeedback(string message, bool isError = false)
     {
         SettingsFeedback.Text = message;
@@ -298,23 +417,39 @@ public partial class MainWindow
     /// revient à l'écran de connexion. Les fenêtres de session ouvertes sont
     /// fermées, car elles deviendraient inutilisables sans connexion.
     /// </summary>
-    private void Logout_Click(object sender, RoutedEventArgs e)
+    private async void Logout_Click(object sender, RoutedEventArgs e)
     {
         // Compter les sessions actives pour prévenir avant de les interrompre.
         var openSessions = Application.Current.Windows.OfType<Window>()
             .Count(w => w is Desktop.DesktopWindow or Ssh.TerminalWindow
                           or Ssh.SshWindow or Files.FilesWindow);
 
+        // Se déconnecter efface aussi l'autorisation de ce poste : laisser un
+        // jeton de connexion derrière soi reviendrait à garder un accès ouvert.
+        var trustNote = (_settings.HasLoginToken || _settings.HasTwoFactorCookie)
+            ? " L'autorisation de ce poste sera retirée : un code à deux facteurs "
+              + "sera redemandé."
+            : "";
+
         var detail = openSessions > 0
             ? $"{openSessions} session(s) en cours seront fermées.\n\n"
               + "Le mot de passe mémorisé sera effacé : il faudra le ressaisir à la "
-              + "prochaine connexion."
+              + "prochaine connexion." + trustNote
             : "Le mot de passe mémorisé sera effacé : il faudra le ressaisir à la "
-              + "prochaine connexion.";
+              + "prochaine connexion." + trustNote;
 
         if (MessageBox.Show(detail, "Se déconnecter ?",
                 MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
             return;
+
+        // Révoquer le jeton tant que la connexion est encore ouverte : après la
+        // déconnexion, plus rien ne permet de joindre le serveur.
+        var tokenUser = _settings.LoginTokenUser;
+        if (!string.IsNullOrEmpty(tokenUser) && _connection is { State: ConnectionState.Connected })
+        {
+            try { await _connection.RevokeLoginTokenAsync(tokenUser); }
+            catch (Exception ex) { Log.Warning($"Révocation du jeton impossible : {ex.Message}", "Serveur"); }
+        }
 
         Logout();
     }
@@ -348,10 +483,11 @@ public partial class MainWindow
             _connection = null;
         }
 
-        // Oublier les identifiants et l'inventaire du serveur.
+        // Oublier les identifiants, l'autorisation de ce poste et l'inventaire
+        // du serveur.
         _settings.ProtectedPassword = null;
         _settings.RememberCredentials = false;
-        _settings.Save();
+        _settings.ClearDeviceTrust();   // écrit immédiatement
 
         ClearDeviceInventory();
 

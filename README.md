@@ -56,6 +56,9 @@ standard.
   Ctrl+1 à Ctrl+9 pour atteindre une session, Ctrl+F4 ou clic du milieu pour la
   fermer. Ces raccourcis ne sont captés qu'à partir de deux sessions ouvertes :
   seuls, ils gardent tout leur sens sur la machine distante
+- Code à deux facteurs demandé une seule fois : le poste est ensuite mémorisé
+  auprès du serveur, pour la durée qu'il autorise ou sans limite au moyen d'un
+  jeton de connexion
 - Fonctionnement dans la zone de notification, démarrage automatique possible
 - Reconnexion automatique après coupure réseau. Le canal de contrôle est
   surveillé : un websocket resté ouvert mais muet — veille du poste, coupure
@@ -94,6 +97,14 @@ L'adresse du serveur se règle au premier lancement ou dans le volet des
 réglages. Les identifiants sont chiffrés par DPAPI — liés à la session Windows
 de l'utilisateur — et stockés dans `%APPDATA%\Mesh Control\`.
 
+Lorsque le serveur impose un second facteur, le code n'est demandé qu'une fois :
+l'application obtient du serveur un cookie d'appareil de confiance, valable
+`twoFactorCookieDurationDays` jours — 30 par défaut. Le volet des réglages
+permet d'aller plus loin et de créer un **jeton de connexion** propre au poste,
+qui n'expire pas : c'est ce qu'il faut pour un démarrage automatique et des
+reconnexions sans intervention. Le jeton se révoque depuis l'application, ou
+depuis « Mon compte » sur le serveur ; se déconnecter le retire également.
+
 Certaines fonctions dépendent de la configuration du serveur MeshCentral :
 
 | Fonction | Prérequis serveur |
@@ -102,6 +113,8 @@ Certaines fonctions dépendent de la configuration du serveur MeshCentral :
 | Presse-papiers | `clipboardget` / `clipboardset` non désactivés |
 | Processus, informations système | droit « Console » sur le groupe d'appareils |
 | Intégration en iframe | `allowFraming` et `allowedFramingOrigins` |
+| Poste mémorisé pour le second facteur | `twoFactorCookieDurationDays` non nul |
+| Jeton de connexion | `passwordRequirements.loginTokens` non désactivé |
 
 ## Organisation du code
 

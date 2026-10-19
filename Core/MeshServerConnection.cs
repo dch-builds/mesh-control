@@ -7,7 +7,72 @@ namespace MeshControl.Core;
 public enum ConnectionState { Disconnected, Connecting, Connected, Failed, Reconnecting }
 
 /// <summary>Erreurs de haut niveau, équivalent de MeshError.</summary>
-public sealed class MeshException(string message) : Exception(message);
+public class MeshException(string message) : Exception(message);
+
+/// <summary>
+/// Le serveur réclame un second facteur (« tokenrequired »). Transporte ce
+/// qu'il annonce dans la même trame, pour que l'interface sache quoi proposer :
+/// envoi du code par courriel ou SMS, et durée de la mémorisation du poste.
+/// </summary>
+public sealed class MeshTwoFactorRequiredException(string message) : MeshException(message)
+{
+    /// <summary>Le serveur peut envoyer un code par courriel (jeton « **email** »).</summary>
+    public bool EmailAvailable { get; init; }
+
+    /// <summary>Le serveur peut envoyer un code par SMS (jeton « **sms** »).</summary>
+    public bool SmsAvailable { get; init; }
+
+    /// <summary>Le serveur peut envoyer un code par messagerie (jeton « **msg** »).</summary>
+    public bool MessengerAvailable { get; init; }
+
+    /// <summary>
+    /// Durée, en jours, pendant laquelle le serveur accepte qu'un poste soit
+    /// mémorisé. Zéro signifie que l'administrateur a désactivé l'option.
+    /// </summary>
+    public int TrustedDeviceDays { get; init; }
+
+    /// <summary>Un code vient d'être envoyé (courriel, SMS ou messagerie).</summary>
+    public bool CodeSent { get; init; }
+}
+
+/// <summary>
+/// Jeton de connexion créé par le serveur : un couple identifiant/mot de passe
+/// de remplacement, propre à un client, qui ne passe pas par le second facteur.
+/// </summary>
+/// <param name="User">Identifiant du jeton, toujours préfixé « ~t: ».</param>
+/// <param name="Password">Mot de passe du jeton — visible une seule fois.</param>
+/// <param name="Name">Nom donné au jeton, affiché côté serveur.</param>
+/// <param name="Expire">Fin de validité, ou null si le jeton n'expire pas.</param>
+public sealed record LoginToken(string User, string Password, string Name, DateTime? Expire);
+
+/// <summary>
+/// De quoi ouvrir une session : les identifiants, et ce qui permet de passer
+/// le second facteur sans ressaisie.
+/// </summary>
+public sealed class MeshLogin
+{
+    /// <summary>Mot de passe du compte — ou du jeton de connexion, s'il y en a un.</summary>
+    public required string Password { get; init; }
+
+    /// <summary>
+    /// Code à deux facteurs saisi par l'utilisateur. Les valeurs spéciales
+    /// « **email** », « **sms** » et « **msg** » demandent au serveur d'en
+    /// envoyer un au lieu d'en vérifier un.
+    /// </summary>
+    public string? TwoFactorToken { get; init; }
+
+    /// <summary>
+    /// Cookie « appareil de confiance » obtenu lors d'une précédente validation.
+    /// Envoyé tel quel : le serveur le reconnaît et ne redemande pas de code.
+    /// </summary>
+    public string? TwoFactorCookie { get; init; }
+
+    /// <summary>
+    /// Identifiant « ~t:… » quand la session s'ouvre par jeton de connexion.
+    /// Remplace alors le nom d'utilisateur du profil.
+    /// </summary>
+    public string? LoginTokenUser { get; init; }
+}
 
 /// <summary>
 /// Le canal de contrôle MeshCentral : wss://server/control.ashx en trames JSON.
@@ -21,6 +86,21 @@ public sealed class MeshServerConnection : IDisposable
     public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
     public ServerInfo? ServerInfo { get; private set; }
     public UserInfo? UserInfo { get; private set; }
+
+    /// <summary>
+    /// Vrai quand la session a été ouverte avec un jeton de connexion. Le
+    /// serveur refuse alors tout ce qui touche au compte : changement de mot de
+    /// passe, réglages de 2FA, et création ou révocation de jetons.
+    /// </summary>
+    public bool UsedLoginToken { get; private set; }
+
+    /// <summary>
+    /// Vrai si le serveur autorise la création de jetons de connexion pour ce
+    /// compte. Le drapeau 0x00000100 de features2 signale au contraire une
+    /// session déjà ouverte par jeton, donc bridée.
+    /// </summary>
+    public bool CanCreateLoginToken
+        => !UsedLoginToken && ((ServerInfo?.Features2 ?? 0) & 0x00000100) == 0;
     public IReadOnlyList<Mesh> Meshes => _meshes;
     public IReadOnlyDictionary<string, MeshNode> Nodes => _nodes;
     public string? LastError { get; private set; }
@@ -55,7 +135,11 @@ public sealed class MeshServerConnection : IDisposable
 
     // MARK: - Connexion
 
-    public async Task ConnectAsync(string password, string? token = null)
+    /// <summary>Connexion par identifiants de compte, sans second facteur mémorisé.</summary>
+    public Task ConnectAsync(string password, string? token = null)
+        => ConnectAsync(new MeshLogin { Password = password, TwoFactorToken = token });
+
+    public async Task ConnectAsync(MeshLogin login)
     {
         if (State == ConnectionState.Connecting) return;
         var url = Profile.WebSocketUri("control.ashx")
@@ -63,10 +147,25 @@ public sealed class MeshServerConnection : IDisposable
         SetState(ConnectionState.Connecting);
         LastError = null;
 
+        // Un jeton de connexion remplace le couple compte/mot de passe : son
+        // identifiant « ~t:… » prend la place du nom d'utilisateur.
+        var username = string.IsNullOrEmpty(login.LoginTokenUser)
+            ? Profile.Username
+            : login.LoginTokenUser;
+        UsedLoginToken = !string.IsNullOrEmpty(login.LoginTokenUser);
+
         // En-tête x-meshauth : base64(user),base64(pass)[,base64(2fa)]
-        var authValue = $"{B64(Profile.Username)},{B64(password)}";
+        //
+        // Le troisième champ accepte aussi bien un code à usage unique qu'un
+        // cookie d'appareil de confiance, préfixé « cookie= » — le serveur
+        // distingue les deux (checkUserOneTimePassword). Un code fraîchement
+        // saisi l'emporte : c'est lui qui permettra d'obtenir un cookie neuf.
+        var authValue = $"{B64(username)},{B64(login.Password)}";
+        var token = login.TwoFactorToken;
         if (!string.IsNullOrEmpty(token))
             authValue += $",{B64(token)}";
+        else if (!string.IsNullOrEmpty(login.TwoFactorCookie))
+            authValue += $",{B64($"cookie={login.TwoFactorCookie}")}";
 
         var socket = new MeshWebSocket(
             url,
@@ -142,9 +241,28 @@ public sealed class MeshServerConnection : IDisposable
     {
         var cause = GetString(json, "cause") ?? "";
         var msg = GetString(json, "msg") ?? "";
+
+        if (msg == "tokenrequired")
+        {
+            var sent = GetBool(json, "email2fasent")
+                       || GetBool(json, "sms2fasent")
+                       || GetBool(json, "msg2fasent");
+            return new MeshTwoFactorRequiredException(
+                sent ? "Un code vient de vous être envoyé. Saisissez-le pour continuer."
+                     : "Ce compte requiert un code à deux facteurs.")
+            {
+                EmailAvailable = GetBool(json, "email2fa"),
+                SmsAvailable = GetBool(json, "sms2fa"),
+                MessengerAvailable = GetBool(json, "msg2fa"),
+                TrustedDeviceDays = json.TryGetProperty("twoFactorCookieDays", out var days)
+                                    && days.ValueKind == JsonValueKind.Number
+                    ? days.GetInt32() : 0,
+                CodeSent = sent,
+            };
+        }
+
         return (cause, msg) switch
         {
-            (_, "tokenrequired") => new MeshException("Ce compte requiert un code à deux facteurs."),
             ("noauth", "nokey") => new MeshException("Ce serveur requiert une clé d'accès URL. Ajoutez-la dans les paramètres du serveur."),
             ("banned", _) => new MeshException("Trop de tentatives — cette IP est temporairement bannie par le serveur."),
             ("notools", _) => new MeshException("Ce compte n'est pas autorisé à utiliser des clients API."),
@@ -232,6 +350,13 @@ public sealed class MeshServerConnection : IDisposable
             && _pendingResponses.TryRemove(responseId, out var pending))
         {
             pending.TrySetResult(json);
+            return;
+        }
+
+        // Réponses que le serveur n'identifie que par leur action.
+        if (_actionWaiters.TryRemove(action, out var actionWaiter))
+        {
+            actionWaiter.TrySetResult(json);
             return;
         }
 
@@ -470,6 +595,122 @@ public sealed class MeshServerConnection : IDisposable
         // « nodes » reconstruit le dictionnaire : sans cette requête, les dates
         // de dernière connexion seraient perdues au premier rafraîchissement.
         await SendJsonAsync(new { action = "lastconnects" }).ConfigureAwait(false);
+    }
+
+    // MARK: - Mémorisation du second facteur
+
+    /// <summary>
+    /// Réponses reconnues à leur seule action. Le serveur ne reprend pas le
+    /// responseid partout — « createLoginToken » et « twoFactorCookie » n'en
+    /// renvoient qu'en cas de refus — et ces réponses n'ont pas de message
+    /// d'erreur dédié : un refus se traduit par un silence, d'où l'attente
+    /// bornée dans le temps.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _actionWaiters = new();
+
+    private async Task<JsonElement?> RequestByActionAsync(
+        string action, object command, int timeoutSeconds = 10)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+
+        var tcs = new TaskCompletionSource<JsonElement>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _actionWaiters[action] = tcs;
+        try
+        {
+            await SendJsonAsync(command).ConfigureAwait(false);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            using var registration = timeout.Token.Register(() => tcs.TrySetResult(default));
+
+            var response = await tcs.Task.ConfigureAwait(false);
+            return response.ValueKind == JsonValueKind.Object ? response : null;
+        }
+        finally
+        {
+            _actionWaiters.TryRemove(action, out _);
+        }
+    }
+
+    /// <summary>
+    /// Demande au serveur un cookie « appareil de confiance », à renvoyer aux
+    /// connexions suivantes pour ne plus avoir à saisir de code. Équivalent de
+    /// la case à cocher du client web, soumis à la même durée de validité.
+    ///
+    /// Renvoie null si le serveur refuse : option désactivée
+    /// (twoFactorCookieDurationDays à 0) ou session ouverte par jeton.
+    /// </summary>
+    public async Task<string?> RequestTrustedDeviceCookieAsync()
+    {
+        var response = await RequestByActionAsync(
+            "twoFactorCookie", new { action = "twoFactorCookie" }).ConfigureAwait(false);
+        if (response is not { } json) return null;
+
+        var cookie = GetString(json, "cookie");
+        return string.IsNullOrEmpty(cookie) ? null : cookie;
+    }
+
+    /// <summary>
+    /// Crée un jeton de connexion propre à ce poste : un couple
+    /// identifiant/mot de passe de remplacement que le serveur accepte sans
+    /// second facteur. Le mot de passe n'est communiqué qu'ici, à la création.
+    /// </summary>
+    /// <param name="name">Nom du jeton, visible dans « Mon compte » sur le serveur.</param>
+    /// <param name="expireMinutes">Durée de validité en minutes ; 0 pour aucune expiration.</param>
+    /// <returns>Le jeton, ou null si le serveur refuse (option désactivée pour ce compte).</returns>
+    public async Task<LoginToken?> CreateLoginTokenAsync(string name, int expireMinutes = 0)
+    {
+        var response = await RequestByActionAsync("createLoginToken", new
+        {
+            action = "createLoginToken",
+            name,
+            expire = expireMinutes,
+            responseid = RandomHex(10),
+        }).ConfigureAwait(false);
+
+        if (response is not { } json) return null;
+
+        // Refus : { action, responseid, result: "<raison>" }.
+        if (GetString(json, "result") is { } refusal)
+        {
+            Log.Warning($"Jeton de connexion refusé par le serveur : {refusal}", "Serveur");
+            return null;
+        }
+
+        var user = GetString(json, "tokenUser");
+        var pass = GetString(json, "tokenPass");
+        if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(pass)) return null;
+
+        DateTime? expire = null;
+        if (json.TryGetProperty("expire", out var expireEl)
+            && expireEl.ValueKind == JsonValueKind.Number
+            && expireEl.GetInt64() > 0)
+        {
+            expire = DateTimeOffset.FromUnixTimeMilliseconds(expireEl.GetInt64()).LocalDateTime;
+        }
+
+        return new LoginToken(user, pass, GetString(json, "name") ?? name, expire);
+    }
+
+    /// <summary>
+    /// Révoque un jeton de connexion côté serveur.
+    ///
+    /// Le serveur peut refuser — jetons désactivés pour ce compte, ou session
+    /// ouverte par jeton — et il le fait en restant silencieux. On tente donc,
+    /// et c'est sa réponse qui tranche : false signifie qu'il faudra passer par
+    /// « Mon compte » sur le serveur.
+    /// </summary>
+    public async Task<bool> RevokeLoginTokenAsync(string tokenUser)
+    {
+        if (string.IsNullOrEmpty(tokenUser)) return false;
+
+        var response = await RequestByActionAsync("loginTokens", new
+        {
+            action = "loginTokens",
+            remove = new[] { tokenUser },
+        }).ConfigureAwait(false);
+
+        return response is not null;
     }
 
     /// <summary>Appareil sans agent dans un groupe local/relais (mesh mtype 3).</summary>
@@ -1049,6 +1290,9 @@ public sealed class MeshServerConnection : IDisposable
 
     private static string? GetString(JsonElement o, string key) =>
         o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static bool GetBool(JsonElement o, string key) =>
+        o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
 
     public void Dispose() => Cleanup();
 }
