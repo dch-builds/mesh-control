@@ -1,6 +1,7 @@
-<Window x:Class="MeshControl.UI.SystemInfoWindow"
+<ui:ChromeWindow x:Class="MeshControl.UI.SystemInfoWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:MeshControl.UI"
         Title="Informations système — Mesh Control" Height="640" Width="560"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource WindowBackgroundBrush}">
@@ -48,4 +49,4 @@
             <StackPanel x:Name="SectionsPanel"/>
         </ScrollViewer>
     </DockPanel>
-</Window>
+</ui:ChromeWindow>

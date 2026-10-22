@@ -13,7 +13,7 @@ namespace MeshControl.UI;
 /// plateforme et la version, la réponse est soit du JSON, soit du texte déjà
 /// mis en forme : la lecture gère les deux cas.
 /// </summary>
-public partial class SystemInfoWindow : Window
+public partial class SystemInfoWindow : ChromeWindow
 {
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;

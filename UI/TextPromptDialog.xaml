@@ -1,6 +1,7 @@
-<Window x:Class="MeshControl.UI.TextPromptDialog"
+<ui:ChromeWindow x:Class="MeshControl.UI.TextPromptDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:MeshControl.UI"
         Width="400" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Background="{StaticResource WindowBackgroundBrush}">
@@ -21,4 +22,4 @@
                     Click="Confirm_Click" Padding="18,8" IsDefault="True"/>
         </StackPanel>
     </StackPanel>
-</Window>
+</ui:ChromeWindow>

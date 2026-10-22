@@ -1,6 +1,7 @@
-<Window x:Class="MeshControl.Files.FilesWindow"
+<ui:ChromeWindow x:Class="MeshControl.Files.FilesWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:MeshControl.UI"
         Title="Fichiers — Mesh Control" Height="640" Width="880"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBackgroundBrush}">
@@ -145,4 +146,4 @@
             </Border>
         </Grid>
     </DockPanel>
-</Window>
+</ui:ChromeWindow>

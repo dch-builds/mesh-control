@@ -11,7 +11,7 @@ namespace MeshControl.Ssh;
 /// configuration serveur n'est nécessaire — c'est l'équivalent de l'onglet
 /// « Terminal » de l'interface web, avec le choix du shell.
 /// </summary>
-public partial class TerminalWindow : Window, MeshControl.UI.ISessionWindow
+public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISessionWindow
 {
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;

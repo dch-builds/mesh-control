@@ -14,7 +14,7 @@ namespace MeshControl.UI;
 /// session et ses gestionnaires d'événements. Cela évite de dupliquer le code
 /// des bureaux, terminaux et navigateurs de fichiers.
 /// </summary>
-public partial class SessionsWindow : Window
+public partial class SessionsWindow : ChromeWindow
 {
     /// <summary>Instance unique : toutes les sessions se regroupent ici.</summary>
     private static SessionsWindow? _instance;

@@ -1,6 +1,7 @@
-<Window x:Class="MeshControl.UI.ProcessWindow"
+<ui:ChromeWindow x:Class="MeshControl.UI.ProcessWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:MeshControl.UI"
         Title="Processus — Mesh Control" Height="600" Width="720"
         WindowStartupLocation="CenterOwner"
         Background="{StaticResource WindowBackgroundBrush}">
@@ -62,4 +63,4 @@
             </ListView>
         </Border>
     </DockPanel>
-</Window>
+</ui:ChromeWindow>

@@ -7,7 +7,7 @@ using MeshControl.Core;
 
 namespace MeshControl.Desktop;
 
-public partial class DesktopWindow : Window, MeshControl.UI.ISessionWindow
+public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISessionWindow
 {
     /// <summary>Empêche un double démarrage (Loaded et hôte d'onglet).</summary>
     private bool _sessionStarted;

@@ -8,7 +8,7 @@ using MeshControl.Core;
 
 namespace MeshControl.UI;
 
-public partial class MainWindow : Window
+public partial class MainWindow : ChromeWindow
 {
     private MeshServerConnection? _connection;
     private AppSettings _settings = AppSettings.Load();
@@ -43,7 +43,6 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        StateChanged += OnWindowStateChanged;
         _refreshTimer.Tick += (_, _) =>
         {
             _refreshTimer.Stop();
@@ -388,71 +387,6 @@ public partial class MainWindow : Window
         _settings.Save();
         ApplyFilter();
     }
-
-    // MARK: - Barre de titre
-
-    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
-        => WindowState = WindowState.Minimized;
-
-    private void MaximizeButton_Click(object sender, RoutedEventArgs e)
-        => WindowState = WindowState == WindowState.Maximized
-            ? WindowState.Normal
-            : WindowState.Maximized;
-
-    /// <summary>
-    /// Fermer passe par Close() et non par un arrêt : c'est la logique
-    /// habituelle qui décide ensuite de masquer la fenêtre dans la zone de
-    /// notification ou de quitter pour de bon.
-    /// </summary>
-    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
-
-    /// <summary>
-    /// Agrandie, une fenêtre dont l'application dessine elle-même le cadre
-    /// déborde de sa bordure de redimensionnement : les bords passent sous ceux
-    /// de l'écran et la barre de titre se retrouve pour partie hors champ. On
-    /// compense par une marge, et on bascule au passage le glyphe du bouton
-    /// entre « agrandir » et « restaurer ».
-    /// </summary>
-    private void OnWindowStateChanged(object? sender, EventArgs e)
-    {
-        bool maximized = WindowState == WindowState.Maximized;
-
-        WindowRoot.Margin = maximized
-            ? new Thickness(SystemParameters.WindowResizeBorderThickness.Left
-                            + SystemParameters.WindowNonClientFrameThickness.Left)
-            : new Thickness(0);
-
-        // Segoe MDL2 Assets : E922 agrandir, E923 restaurer.
-        MaximizeButton.Content = maximized ? "" : "";
-        MaximizeButton.ToolTip = maximized ? "Restaurer" : "Agrandir";
-    }
-
-    /// <summary>
-    /// Windows 11 arrondit les angles des fenêtres, mais pas celles dont
-    /// l'application dessine elle-même le cadre : il faut le lui demander.
-    /// Sans cela, la fenêtre tranche par ses angles carrés au milieu d'un bureau
-    /// qui les arrondit tous. L'attribut n'existe pas avant Windows 11, où
-    /// l'appel échoue sans conséquence.
-    /// </summary>
-    protected override void OnSourceInitialized(EventArgs e)
-    {
-        base.OnSourceInitialized(e);
-
-        const int CornerPreference = 33;   // DWMWA_WINDOW_CORNER_PREFERENCE
-        const int Round = 2;               // DWMWCP_ROUND
-
-        try
-        {
-            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            int preference = Round;
-            DwmSetWindowAttribute(handle, CornerPreference, ref preference, sizeof(int));
-        }
-        catch { /* antérieur à Windows 11 : les angles restent carrés */ }
-    }
-
-    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute,
-                                                    ref int value, int size);
 
     // MARK: - Mises à jour
 

@@ -17,7 +17,7 @@ public sealed class ProcessRow
 /// Gestionnaire de processus distant. L'agent renvoie la liste via un message
 /// « ps » ; l'arrêt passe par la commande console « kill ».
 /// </summary>
-public partial class ProcessWindow : Window
+public partial class ProcessWindow : ChromeWindow
 {
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;

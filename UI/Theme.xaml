@@ -1,6 +1,8 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                    xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+                    xmlns:ui="clr-namespace:MeshControl.UI">
 
     <!-- ============================================================
          Palette — thème clair adapté à Windows,
@@ -426,6 +428,106 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsExpanded" Value="True">
                             <Setter TargetName="Body" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================
+         Fenêtre de l'application
+         ============================================================ -->
+
+    <!-- Gabarit commun à toutes les fenêtres (voir ChromeWindow). La barre de
+         titre de Windows laisse place à la nôtre, pour que chaque fenêtre forme
+         un tout. WindowChrome, plutôt qu'une fenêtre sans style, conserve ce que
+         le système sait faire : accrochage aux bords, menu au clic droit,
+         double-clic pour agrandir, glisser pour déplacer. CaptionHeight doit
+         valoir la hauteur de la barre, et tout ce qui s'y pose de cliquable doit
+         déclarer IsHitTestVisibleInChrome — sinon le système capte les clics
+         avant les boutons. -->
+    <Style x:Key="AppWindow" TargetType="Window">
+        <Setter Property="WindowStyle" Value="None"/>
+        <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}"/>
+        <Setter Property="shell:WindowChrome.WindowChrome">
+            <Setter.Value>
+                <shell:WindowChrome CaptionHeight="44" ResizeBorderThickness="6"
+                                    GlassFrameThickness="0" CornerRadius="0"
+                                    UseAeroCaptionButtons="False"/>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Window">
+                    <Grid x:Name="Root" Background="{TemplateBinding Background}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border x:Name="TitleBar" Grid.Row="0" Height="44"
+                                Background="{StaticResource CardBrush}"
+                                BorderBrush="{StaticResource SeparatorBrush}"
+                                BorderThickness="0,0,0,1">
+                            <Grid>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                            Margin="15,0,54,0">
+                                    <Image Source="/app.ico" Width="17" Height="17"
+                                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                                    <TextBlock Text="{TemplateBinding Title}"
+                                               FontSize="12.5" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                               VerticalAlignment="Center" Margin="9,0,0,0"
+                                               TextTrimming="CharacterEllipsis"/>
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                                    <Button x:Name="MinBtn" Style="{DynamicResource WindowButton}"
+                                            Content="&#xE921;" ToolTip="Réduire"
+                                            Command="{x:Static SystemCommands.MinimizeWindowCommand}"/>
+                                    <Button x:Name="MaxBtn" Style="{DynamicResource WindowButton}"
+                                            ToolTip="Agrandir"
+                                            Command="{x:Static SystemCommands.MaximizeWindowCommand}">
+                                        <TextBlock x:Name="MaxGlyph" Text="&#xE922;"/>
+                                    </Button>
+                                    <Button Style="{DynamicResource WindowCloseButton}"
+                                            Content="&#xE8BB;" ToolTip="Fermer"
+                                            Command="{x:Static SystemCommands.CloseWindowCommand}"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- AdornerDecorator : sans lui, les décorations posées
+                             par WPF (validation, glisser-déposer) n'auraient plus
+                             de couche où se dessiner. -->
+                        <AdornerDecorator Grid.Row="1">
+                            <ContentPresenter/>
+                        </AdornerDecorator>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <!-- Agrandie, une fenêtre dont l'application dessine le
+                             cadre déborde de sa bordure de redimensionnement :
+                             ses bords passent sous ceux de l'écran. Une marge
+                             compense, et le pictogramme bascule. -->
+                        <Trigger Property="WindowState" Value="Maximized">
+                            <Setter TargetName="Root" Property="Margin" Value="7"/>
+                            <Setter TargetName="MaxGlyph" Property="Text" Value="&#xE923;"/>
+                            <Setter TargetName="MaxBtn" Property="ToolTip" Value="Restaurer"/>
+                        </Trigger>
+                        <!-- Boîte de dialogue : ni réduction ni agrandissement. -->
+                        <Trigger Property="ResizeMode" Value="NoResize">
+                            <Setter TargetName="MinBtn" Property="Visibility" Value="Collapsed"/>
+                            <Setter TargetName="MaxBtn" Property="Visibility" Value="Collapsed"/>
+                        </Trigger>
+                        <!-- Plein écran : plus de barre ni de marge, l'image
+                             distante prend toute la dalle. Ce déclencheur vient
+                             après celui de l'agrandissement, dont il doit
+                             annuler la marge. -->
+                        <Trigger Property="ui:ChromeWindow.IsFullscreen" Value="True">
+                            <Setter TargetName="TitleBar" Property="Visibility" Value="Collapsed"/>
+                            <Setter TargetName="Root" Property="Margin" Value="0"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

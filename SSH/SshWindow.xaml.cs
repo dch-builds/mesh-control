@@ -6,7 +6,7 @@ using MeshControl.Core;
 
 namespace MeshControl.Ssh;
 
-public partial class SshWindow : Window, MeshControl.UI.ISessionWindow
+public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISessionWindow
 {
     /// <summary>Empêche un double démarrage (Loaded et hôte d'onglet).</summary>
     private bool _sessionStarted;

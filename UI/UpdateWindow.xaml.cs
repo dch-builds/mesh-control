@@ -11,7 +11,7 @@ namespace MeshControl.UI;
 /// n'y a rien à fermer soi-même, et une installation réussie ne revient jamais
 /// dans ce code.
 /// </summary>
-public partial class UpdateWindow : Window
+public partial class UpdateWindow : ChromeWindow
 {
     private readonly UpdateInfo _update;
     private CancellationTokenSource? _cts;

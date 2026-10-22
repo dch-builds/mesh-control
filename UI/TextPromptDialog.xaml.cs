@@ -4,7 +4,7 @@ using System.Windows.Input;
 namespace MeshControl.UI;
 
 /// <summary>Invite de saisie d'une ligne de texte (nom de dossier, renommage…).</summary>
-public partial class TextPromptDialog : Window
+public partial class TextPromptDialog : ChromeWindow
 {
     public string? Value { get; private set; }
 

@@ -9,7 +9,7 @@ namespace MeshControl.UI;
 /// Crée et gère les liens de partage public d'un appareil, et fournit le code
 /// iframe prêt à intégrer dans un outil interne.
 /// </summary>
-public partial class ShareWindow : Window
+public partial class ShareWindow : ChromeWindow
 {
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;

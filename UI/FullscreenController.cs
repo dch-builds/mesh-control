@@ -28,6 +28,7 @@ public static class FullscreenController
             window.WindowStyle = saved.Style;
             window.ResizeMode = saved.Resize;
             window.WindowState = saved.State;
+            ChromeWindow.SetIsFullscreen(window, false);
             return false;
         }
 
@@ -41,6 +42,7 @@ public static class FullscreenController
         window.WindowState = WindowState.Normal;
         window.WindowStyle = WindowStyle.None;
         window.ResizeMode = ResizeMode.NoResize;
+        ChromeWindow.SetIsFullscreen(window, true);
         window.WindowState = WindowState.Maximized;
         return true;
     }

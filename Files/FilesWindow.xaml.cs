@@ -7,7 +7,7 @@ using MeshControl.UI;
 
 namespace MeshControl.Files;
 
-public partial class FilesWindow : Window, MeshControl.UI.ISessionWindow
+public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISessionWindow
 {
     /// <summary>Empêche un double démarrage (Loaded et hôte d'onglet).</summary>
     private bool _sessionStarted;

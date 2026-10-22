@@ -1,6 +1,7 @@
-<Window x:Class="MeshControl.UI.UpdateWindow"
+<ui:ChromeWindow x:Class="MeshControl.UI.UpdateWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="clr-namespace:MeshControl.UI"
         Title="Mise à jour — Mesh Control"
         Width="480" SizeToContent="Height" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
@@ -49,4 +50,4 @@
                     Click="Install_Click" Padding="18,8" IsDefault="True"/>
         </StackPanel>
     </StackPanel>
-</Window>
+</ui:ChromeWindow>
