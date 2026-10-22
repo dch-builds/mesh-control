@@ -82,14 +82,23 @@ dotnet build MeshControl.csproj -c Release
 
 ## Publication
 
-Produit une application autonome, sans prérequis .NET sur les postes cibles :
+Produit une application autonome — aucun prérequis .NET sur les postes cibles —
+puis l'empaquette pour Velopack :
 
 ```powershell
-.\publish.ps1
+.\publish.ps1            # publie et empaquette
+.\publish.ps1 -Upload    # envoie aussi la release, en brouillon
 ```
 
-Le résultat est dans `dist/` : l'ensemble des fichiers peut être copié tel quel
-sur les postes, ou empaqueté dans un installeur.
+Les fichiers de l'application vont dans `dist/`, les paquets dans `Releases/` :
+`Setup.exe` pour une première installation, et un paquet delta qui ne contient
+que les différences avec la version précédente — quelques centaines de
+kilooctets, là où l'installeur complet en fait 67 mégaoctets.
+
+Les releases sont publiées sur
+[mesh-control-releases](https://github.com/dch-builds/mesh-control-releases), un
+dépôt public d'où l'application se met à jour seule. L'installation ne réclame
+aucun droit administrateur : elle se fait dans le profil de l'utilisateur.
 
 > Windows affiche un avertissement SmartScreen au premier lancement,
 > l'exécutable n'étant pas signé numériquement. Cliquer sur « Informations

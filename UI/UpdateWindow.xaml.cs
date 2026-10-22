@@ -7,9 +7,9 @@ namespace MeshControl.UI;
 /// <summary>
 /// Propose une mise à jour, la télécharge et l'applique.
 ///
-/// Velopack remplace le dossier de l'application puis relance le processus. À la
-/// différence de l'ancien installeur, il n'y a donc rien à fermer soi-même : une
-/// installation réussie ne revient jamais dans ce code.
+/// Velopack remplace le dossier de l'application puis relance le processus : il
+/// n'y a rien à fermer soi-même, et une installation réussie ne revient jamais
+/// dans ce code.
 /// </summary>
 public partial class UpdateWindow : Window
 {

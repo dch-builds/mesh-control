@@ -16,15 +16,13 @@
 #   .\publish.ps1                  → publie et empaquette
 #   .\publish.ps1 -Upload          → envoie aussi la release, en brouillon
 #   .\publish.ps1 -FirstRelease    → tout premier paquet (dépôt encore vide)
-#   .\publish.ps1 -NoPack          → publication seule (installeur Inno)
 
 param(
     [string]$Output   = "$PSScriptRoot\dist",
     [string]$Releases = "$PSScriptRoot\Releases",
     [string]$RepoUrl  = "https://github.com/dch-builds/mesh-control-releases",
     [switch]$Upload,
-    [switch]$FirstRelease,
-    [switch]$NoPack
+    [switch]$FirstRelease
 )
 
 $ErrorActionPreference = 'Stop'
@@ -43,7 +41,7 @@ $mainExe   = 'Mesh Control.exe'
 # projet : les deux moitiés d'un même produit n'ont pas vocation à diverger.
 $vpkVersion = '1.2.161'
 
-if (-not $NoPack -and -not (Get-Command vpk -ErrorAction SilentlyContinue)) {
+if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
     throw "L'outil vpk est introuvable. Installez-le :`n" +
           "  dotnet tool install -g vpk --version $vpkVersion"
 }
@@ -78,16 +76,6 @@ Write-Host "  Version : $version"
 Write-Host "  Fichiers: $($files.Count)"
 Write-Host "  Taille  : $totalMb Mo"
 Write-Host ""
-
-if ($NoPack) {
-    # Chemin conservé le temps de la migration : la dernière version Inno
-    # (1.1.15) reste nécessaire pour faire basculer le parc existant. Elle se
-    # construit depuis la branche de maintenance, sous l'ancien nom.
-    Write-Host "Empaquetage Velopack ignoré (-NoPack)." -ForegroundColor Yellow
-    Write-Host "Étape suivante : compiler l'installeur avec Inno Setup." -ForegroundColor Yellow
-    Write-Host "  installer\MeshControl.iss" -ForegroundColor Yellow
-    return
-}
 
 New-Item -ItemType Directory -Force $Releases | Out-Null
 

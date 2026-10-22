@@ -38,37 +38,9 @@ public partial class App : Application
     public static string Version =>
         Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
 
-    /// <summary>
-    /// Mutex nomme, conservé pour toute la durée de vie du processus.
-    ///
-    /// Le nom ne doit surtout pas être celui des versions Mesh Control, qui portent
-    /// « MeshControl.SingleInstance » et dont l'unins000.exe le surveille (directive
-    /// AppMutex) pour attendre la fermeture de l'application. Lors de la bascule,
-    /// cette version-ci tourne pendant que l'ancienne installation est
-    /// désinstallée : un nom commun ferait croire au désinstalleur que
-    /// l'application est encore active, et il resterait bloqué. Le changement de
-    /// nom de l'application règle la question d'office — d'où l'abandon du
-    /// suffixe « .v2 », qui n'avait de sens que tant que la base du nom restait
-    /// identique.
-    ///
-    /// Velopack n'a pas besoin de ce mutex — il repère lui-même les processus qui
-    /// verrouillent le dossier « current ». Il ne subsiste donc que le temps de
-    /// la migration.
-    /// </summary>
-    private System.Threading.Mutex? _instanceMutex;
-
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-
-        // createdNew inutilisé : on ne bloque pas un second lancement, le mutex
-        // ne sert qu'à signaler notre présence.
-        try
-        {
-            _instanceMutex = new System.Threading.Mutex(
-                initiallyOwned: false, name: "MeshControl.SingleInstance");
-        }
-        catch { /* nom déjà pris ou restriction : sans conséquence ici */ }
 
         // L'application vit dans la zone de notification : elle ne doit pas
         // s'arrêter quand la fenêtre principale est masquée, ni quand on ferme la
@@ -110,7 +82,6 @@ public partial class App : Application
             // sinon les dernières modifications seraient perdues à l'arrêt.
             AppSettings.FlushToDisk();
             Log.Info("Arrêt de l'application");
-            try { _instanceMutex?.Dispose(); } catch { }
         };
     }
 

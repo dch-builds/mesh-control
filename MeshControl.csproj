@@ -31,10 +31,12 @@
     <Description>Contrôle à distance des postes via MeshCentral</Description>
     <Copyright>© Mesh Control</Copyright>
 
-    <!-- Publication en FICHIERS SÉPARÉS, destinée à un installeur (Inno Setup).
+    <!-- Publication en FICHIERS SÉPARÉS, que Velopack empaquette ensuite.
          On évite volontairement PublishSingleFile : celui-ci réextrait tout le
          contenu dans un dossier temporaire à chaque lancement, ce qui ralentit le
-         démarrage sans apporter d'intérêt une fois l'application installée.
+         démarrage sans apporter d'intérêt une fois l'application installée. Il
+         priverait de surcroît les paquets delta de toute prise : un fichier
+         unique change en entier dès qu'une ligne change.
          Autonome (SelfContained) pour ne dépendre d'aucun runtime .NET sur les postes. -->
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

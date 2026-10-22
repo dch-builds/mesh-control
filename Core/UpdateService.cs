@@ -98,8 +98,7 @@ public static class UpdateService
 
     /// <summary>
     /// Applique la mise à jour et relance l'application. Ne rend pas la main :
-    /// le processus est remplacé. Il n'y a donc rien à fermer soi-même, à la
-    /// différence de l'ancien installeur.
+    /// le processus est remplacé, il n'y a donc rien à fermer soi-même.
     /// </summary>
     public static void ApplyAndRestart(UpdateInfo update)
     {
