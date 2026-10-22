@@ -40,9 +40,3 @@ desktop.ini
 settings.json
 *.log
 
-# ============================================================
-# Jeton d'accès au dépôt privé (mises à jour)
-# Compilé dans le binaire, donc NON confidentiel : il ne doit
-# de toute façon jamais être versionné.
-# ============================================================
-Core/UpdateSecrets.cs

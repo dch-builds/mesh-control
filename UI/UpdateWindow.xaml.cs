@@ -1,37 +1,34 @@
 using System.Windows;
 using MeshControl.Core;
+using Velopack;
 
 namespace MeshControl.UI;
 
 /// <summary>
-/// Propose une mise à jour, la télécharge et lance l'installeur.
+/// Propose une mise à jour, la télécharge et l'applique.
 ///
-/// L'installeur ne peut pas remplacer un exécutable en cours d'utilisation :
-/// l'application doit donc se fermer. C'est le script Inno qui la relance
-/// (section [Run]).
+/// Velopack remplace le dossier de l'application puis relance le processus. À la
+/// différence de l'ancien installeur, il n'y a donc rien à fermer soi-même : une
+/// installation réussie ne revient jamais dans ce code.
 /// </summary>
 public partial class UpdateWindow : Window
 {
     private readonly UpdateInfo _update;
     private CancellationTokenSource? _cts;
 
-    /// <summary>Vrai quand l'installeur a été lancé : l'appelant doit quitter.</summary>
-    public bool InstallerLaunched { get; private set; }
-
     public UpdateWindow(UpdateInfo update)
     {
         _update = update;
         InitializeComponent();
 
-        HeadlineText.Text = $"Mesh Control {update.Version} est disponible";
+        HeadlineText.Text = $"Mesh Control {UpdateService.TargetVersion(update)} est disponible";
         VersionText.Text = $"Version installée : {UpdateService.CurrentVersion}"
-            + (update.AssetSize > 0
-                ? $"  ·  Téléchargement de {update.AssetSize / 1024 / 1024} Mo"
-                : "");
+            + $"  ·  Téléchargement de {FormatSize(UpdateService.DownloadSize(update))}";
 
-        if (!string.IsNullOrWhiteSpace(update.Notes))
+        var notes = UpdateService.Notes(update);
+        if (!string.IsNullOrWhiteSpace(notes))
         {
-            NotesText.Text = update.Notes.Trim();
+            NotesText.Text = notes.Trim();
             NotesBox.Visibility = Visibility.Visible;
         }
 
@@ -41,6 +38,15 @@ public partial class UpdateWindow : Window
             if (_cts is { IsCancellationRequested: false }) _cts.Cancel();
         };
     }
+
+    /// <summary>
+    /// Un paquet delta pèse souvent moins d'un mégaoctet : arrondir au mégaoctet
+    /// afficherait « 0 Mo » pour une mise à jour bien réelle.
+    /// </summary>
+    private static string FormatSize(long bytes)
+        => bytes >= 1024 * 1024
+            ? $"{bytes / 1024.0 / 1024.0:0.#} Mo"
+            : $"{Math.Max(1, bytes / 1024)} Ko";
 
     private void Later_Click(object sender, RoutedEventArgs e)
     {
@@ -65,14 +71,13 @@ public partial class UpdateWindow : Window
 
         try
         {
-            var path = await UpdateService.DownloadAsync(_update, progress, _cts.Token);
+            await UpdateService.DownloadAsync(_update, progress, _cts.Token);
 
-            ProgressLabel.Text = "Lancement de l'installation…";
-            UpdateService.LaunchInstaller(path);
-            InstallerLaunched = true;
+            ProgressLabel.Text = "Installation…";
 
-            DialogResult = true;
-            Close();
+            // Ne rend pas la main : le processus est remplacé par la nouvelle
+            // version. Ce qui suit ne s'exécute qu'en cas d'échec.
+            UpdateService.ApplyAndRestart(_update);
         }
         catch (OperationCanceledException)
         {

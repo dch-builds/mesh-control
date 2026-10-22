@@ -326,37 +326,28 @@ public partial class MainWindow : Window
             if (manual)
             {
                 MessageBox.Show(
-                    UpdateSecrets.IsConfigured
+                    UpdateService.IsAvailable
                         ? $"Mesh Control {UpdateService.CurrentVersion} est à jour."
-                        : "La recherche de mises à jour n'est pas configurée sur cette installation.",
+                        : "Les mises à jour ne sont proposées que sur une version installée.",
                     "Mesh Control", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             return;
         }
 
         // Version déjà refusée : on ne réinsiste pas à chaque démarrage.
-        if (!manual && _settings.SkippedUpdateVersion == update.Version.ToString())
+        if (!manual && _settings.SkippedUpdateVersion == UpdateService.TargetVersion(update))
             return;
 
         // Fenêtre principale masquée dans la zone de notification : l'afficher,
         // sinon la boîte de dialogue surgirait sans contexte.
         if (!IsVisible) RestoreMainWindow();
 
-        var dialog = new UpdateWindow(update) { Owner = this };
-        var accepted = dialog.ShowDialog() == true;
-
-        if (accepted && dialog.InstallerLaunched)
+        // Une installation menée à bien ne revient pas ici : Velopack remplace le
+        // processus par la nouvelle version. Si l'on reprend la main, c'est que
+        // l'utilisateur a refusé ou que l'installation a échoué.
+        if (new UpdateWindow(update) { Owner = this }.ShowDialog() != true)
         {
-            // L'installeur attend que l'application soit fermée pour remplacer
-            // les fichiers ; il la relancera ensuite lui-même.
-            _exiting = true;
-            Close();
-            return;
-        }
-
-        if (!accepted)
-        {
-            _settings.SkippedUpdateVersion = update.Version.ToString();
+            _settings.SkippedUpdateVersion = UpdateService.TargetVersion(update);
             _settings.Save();
         }
     }
