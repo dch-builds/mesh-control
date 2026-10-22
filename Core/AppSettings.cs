@@ -45,6 +45,18 @@ public sealed class AppSettings
     /// </summary>
     public int ListDensity { get; set; } = 1;
 
+    /// <summary>
+    /// Vue à deux volets : les dossiers à gauche, les machines du dossier choisi
+    /// à droite. Sur un parc de plusieurs centaines de machines réparties en
+    /// nombreux dossiers, la liste groupée oblige à beaucoup défiler ; ce mode
+    /// ramène la navigation à un clic. Faux par défaut : la liste groupée reste
+    /// la vue d'origine.
+    /// </summary>
+    public bool FolderView { get; set; }
+
+    /// <summary>Dossier retenu d'une session à l'autre dans la vue à deux volets.</summary>
+    public string? SelectedFolder { get; set; }
+
     /// <summary>Rechercher les mises à jour au démarrage.</summary>
     public bool CheckForUpdates { get; set; } = true;
 

@@ -103,6 +103,7 @@ public sealed class DeviceRow : INotifyPropertyChanged
             Notify(nameof(Subtitle));
             Notify(nameof(OsGlyph));
             Notify(nameof(OsGlyphColor));
+            Notify(nameof(OsGlyphBackground));
         }
 
         CaptureState();
@@ -138,6 +139,22 @@ public sealed class DeviceRow : INotifyPropertyChanged
         OSFamily.MacOS => "#8E8E93",
         OSFamily.Mobile => "#30B0C7",
         _ => "#8A8A8E",
+    };
+
+    /// <summary>
+    /// Fond de la pastille, dans la même teinte que le pictogramme mais très
+    /// délavée. Un gris identique pour tous obligeait à lire le pictogramme pour
+    /// distinguer les familles ; la couleur du fond, elle, se saisit sans
+    /// lecture, et reste assez pâle pour ne pas disputer l'attention au nom de
+    /// la machine.
+    /// </summary>
+    public string OsGlyphBackground => Node.OsFamily switch
+    {
+        OSFamily.Windows => "#E8F2FE",
+        OSFamily.Linux => "#FDF0E6",
+        OSFamily.MacOS => "#F0F0F2",
+        OSFamily.Mobile => "#E3F5F8",
+        _ => "#F0F0F2",
     };
 
     public string StatusBrush => IsOnline ? "#34C759" : "#C7C7CC";

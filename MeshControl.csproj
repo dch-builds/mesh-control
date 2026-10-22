@@ -58,6 +58,13 @@
     <Page Include="App.xaml" />
   </ItemGroup>
 
+  <!-- app.ico sert déjà d'icône Win32 de l'exécutable (ApplicationIcon plus
+       haut). La déclarer en ressource la rend aussi accessible au XAML, pour
+       l'afficher dans la barre de titre que l'application dessine elle-même. -->
+  <ItemGroup>
+    <Resource Include="app.ico" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
     <PackageReference Include="Velopack" Version="1.2.161" />

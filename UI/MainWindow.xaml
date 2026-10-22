@@ -2,12 +2,64 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Mesh Control" Height="700" Width="980"
+        MinHeight="440" MinWidth="740"
         WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        Icon="/app.ico"
         Background="{StaticResource WindowBackgroundBrush}">
 
-    <!-- Grille racine : le contenu principal, puis le voile et le volet des
-         réglages qui se superposent par-dessus. -->
-    <Grid x:Name="RootGrid">
+    <!-- La barre de titre de Windows laisse place à la nôtre, pour que la
+         fenêtre forme un tout plutôt qu'un contenu posé sous un bandeau system.
+         WindowChrome, plutôt qu'une fenêtre sans style, conserve ce que le
+         système sait faire : accrochage aux bords, menu au clic droit,
+         double-clic pour agrandir, glisser pour déplacer. CaptionHeight doit
+         valoir la hauteur de notre barre, et tout ce qui s'y pose de cliquable
+         doit déclarer IsHitTestVisibleInChrome — sinon le système capte les
+         clics avant les boutons. -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="44" ResizeBorderThickness="6"
+                      GlassFrameThickness="0" CornerRadius="0"
+                      UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+
+    <!-- Le contenu occupe la seconde ligne : le voile des réglages ne doit pas
+         recouvrir la barre de titre, sans quoi la fenêtre ne pourrait plus être
+         fermée tant que le volet est ouvert. -->
+    <Grid x:Name="WindowRoot">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- ================= Barre de titre ================= -->
+        <Border Grid.Row="0" Height="44" Background="{StaticResource CardBrush}"
+                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,0,0,1">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                            Margin="15,0,0,0">
+                    <Image Source="/app.ico" Width="17" Height="17"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock Text="Mesh Control" FontSize="12.5" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               VerticalAlignment="Center" Margin="9,0,0,0"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Button x:Name="MinimizeButton" Style="{StaticResource WindowButton}"
+                            Content="&#xE921;" Click="MinimizeButton_Click"
+                            ToolTip="Réduire"/>
+                    <Button x:Name="MaximizeButton" Style="{StaticResource WindowButton}"
+                            Content="&#xE922;" Click="MaximizeButton_Click"
+                            ToolTip="Agrandir"/>
+                    <Button x:Name="CloseButton" Style="{StaticResource WindowCloseButton}"
+                            Content="&#xE8BB;" Click="CloseButton_Click"
+                            ToolTip="Fermer"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+    <Grid x:Name="RootGrid" Grid.Row="1">
 
     <Grid Margin="22,18,22,18">
         <Grid.RowDefinitions>
@@ -16,19 +68,24 @@
         </Grid.RowDefinitions>
 
         <!-- ================= En-tête ================= -->
-        <Grid Grid.Row="0" Margin="0,0,0,16">
-            <StackPanel HorizontalAlignment="Left">
-                <TextBlock Text="Mesh Control" Style="{StaticResource TitleText}"/>
-                <StackPanel Orientation="Horizontal" Margin="1,3,0,0">
-                    <TextBlock x:Name="SubtitleText" Style="{StaticResource CaptionText}"
-                               Text="Contrôle à distance" VerticalAlignment="Center"/>
-                    <!-- Rappel du raccourci de recherche rapide -->
-                    <Border x:Name="HotkeyHintBadge" Background="#EFEFF4" CornerRadius="5"
-                            Padding="6,2" VerticalAlignment="Center" Margin="10,0,0,0">
-                        <TextBlock x:Name="HotkeyHintText" FontSize="10"
-                                   Foreground="{StaticResource TextSecondaryBrush}"/>
-                    </Border>
-                </StackPanel>
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <!-- Le nom de l'application vit maintenant dans la barre de titre :
+                 l'en-tête ne le répète plus et dit à quel serveur on est relié,
+                 ce qui est la seule chose qu'on ait besoin de relire ici. -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left"
+                        VerticalAlignment="Center">
+                <TextBlock x:Name="SubtitleText" Text="Contrôle à distance"
+                           FontSize="19" FontWeight="SemiBold"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           VerticalAlignment="Center"/>
+                <!-- Rappel du raccourci de recherche rapide. Posé à côté du nom
+                     du serveur plutôt qu'en dessous : seul sur sa ligne, il
+                     flottait sans rien pour l'ancrer. -->
+                <Border x:Name="HotkeyHintBadge" Background="#EBEBF0" CornerRadius="6"
+                        Padding="8,3" VerticalAlignment="Center" Margin="13,3,0,0">
+                    <TextBlock x:Name="HotkeyHintText" FontSize="10.5"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                </Border>
             </StackPanel>
 
             <!-- Actions discrètes en haut à droite -->
@@ -128,8 +185,9 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <TextBlock Grid.Column="0" Text="&#x1F50D;" FontSize="11"
-                                           Opacity="0.35" Margin="11,0,0,0"
+                                <TextBlock Grid.Column="0" Text="&#xE721;"
+                                           FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                           Foreground="#AEAEB2" Margin="12,0,0,0"
                                            VerticalAlignment="Center" IsHitTestVisible="False"/>
 
                                 <Grid Grid.Column="1" Margin="8,0,0,0">
@@ -147,7 +205,8 @@
 
                                 <!-- Effacer la recherche -->
                                 <Button x:Name="ClearSearchButton" Grid.Column="2"
-                                        Content="✕" FontSize="10" Width="22" Height="22"
+                                        Content="&#xE711;" FontFamily="Segoe MDL2 Assets"
+                                        FontSize="10" Width="22" Height="22"
                                         Margin="0,0,7,0" Padding="0" Cursor="Hand"
                                         Background="Transparent" BorderThickness="0"
                                         Foreground="{StaticResource TextSecondaryBrush}"
@@ -166,19 +225,76 @@
                                 VerticalAlignment="Center">
                         <TextBlock x:Name="CountText" Style="{StaticResource CaptionText}"
                                    VerticalAlignment="Center"/>
+                        <!-- Bascule entre la liste groupée et la vue à deux volets -->
+                        <Button x:Name="ToggleViewButton" Style="{StaticResource ToolButton}"
+                                Click="ToggleView_Click" Margin="12,0,0,0"
+                                Padding="8,5" ToolTip="Afficher les dossiers à gauche">
+                            <TextBlock x:Name="ToggleViewGlyph" Text="&#xE8A4;"
+                                       FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </Button>
                         <!-- Replier / déplier tous les dossiers -->
                         <Button x:Name="ToggleGroupsButton" Style="{StaticResource ToolButton}"
                                 Click="ToggleGroups_Click" Margin="12,0,0,0"
                                 Padding="8,5" FontSize="11"
                                 ToolTip="Replier tous les dossiers">
-                            <TextBlock x:Name="ToggleGroupsGlyph" Text="⌃" FontSize="12"
+                            <TextBlock x:Name="ToggleGroupsGlyph" Text="&#xE70E;"
+                                       FontFamily="Segoe MDL2 Assets" FontSize="9"
                                        Foreground="{StaticResource TextSecondaryBrush}"/>
                         </Button>
                     </StackPanel>
                 </Grid>
 
+                <!-- Vue à deux volets. La colonne de gauche est dimensionnée au
+                     contenu : volet masqué, elle ne prend aucune place et la
+                     liste occupe toute la largeur, comme dans la vue groupée. -->
+                <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Volet des dossiers -->
+                <Border x:Name="FolderPane" Grid.Column="0" Visibility="Collapsed"
+                        Style="{StaticResource Card}" Padding="6" Width="238"
+                        Margin="0,0,14,0">
+                    <ListBox x:Name="FolderList"
+                             Style="{StaticResource DeviceListBoxStyle}"
+                             ItemContainerStyle="{StaticResource FolderItemStyle}"
+                             SelectionChanged="FolderList_SelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid ToolTip="{Binding Tooltip}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                                               FontFamily="Segoe MDL2 Assets" FontSize="13"
+                                               Foreground="{Binding GlyphColor}"
+                                               VerticalAlignment="Center" Margin="1,0,10,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                               FontSize="12.5"
+                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"/>
+                                    <!-- Nombre de machines en ligne : c'est ce qu'on
+                                         cherche en ouvrant un dossier. Le total est
+                                         dans l'info-bulle. -->
+                                    <TextBlock Grid.Column="2" Text="{Binding Counter}"
+                                               FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextSecondaryBrush}"
+                                               Opacity="{Binding CounterOpacity}"
+                                               VerticalAlignment="Center" Margin="8,0,1,0"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+
                 <!-- Carte contenant la liste -->
-                <Border Style="{StaticResource Card}" Padding="6">
+                <Border Grid.Column="1" Style="{StaticResource Card}" Padding="6">
                     <ListBox x:Name="DeviceList"
                              Style="{StaticResource DeviceListBoxStyle}"
                              ItemContainerStyle="{StaticResource DeviceItemStyle}"
@@ -249,8 +365,8 @@
                                                          dans GroupExpander_Loaded : câblés ici, ils
                                                          s'accumuleraient au recyclage des
                                                          conteneurs par la virtualisation. -->
-                                                    <Expander Background="Transparent"
-                                                              BorderThickness="0" Margin="0,2,0,6"
+                                                    <Expander Style="{StaticResource GroupExpander}"
+                                                              Margin="0,2,0,6"
                                                               Loaded="GroupExpander_Loaded">
                                                         <Expander.Header>
                                                             <StackPanel Orientation="Horizontal">
@@ -290,7 +406,8 @@
                                           Width="{DynamicResource DeviceIconSize}"
                                           Height="{DynamicResource DeviceIconSize}"
                                           Margin="0,0,12,0">
-                                        <Border Background="#F0F0F5" CornerRadius="9"/>
+                                        <Border Background="{Binding OsGlyphBackground}"
+                                                CornerRadius="10"/>
                                         <TextBlock Text="{Binding OsGlyph}" FontSize="17"
                                                    Foreground="{Binding OsGlyphColor}"
                                                    HorizontalAlignment="Center"
@@ -346,6 +463,7 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
                 </Border>
+                </Grid>
             </DockPanel>
 
             <!-- Vue 3 : chargement -->
@@ -641,5 +759,6 @@
         </DockPanel>
     </Border>
 
+    </Grid>
     </Grid>
 </Window>

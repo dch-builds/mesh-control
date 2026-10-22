@@ -43,6 +43,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        StateChanged += OnWindowStateChanged;
         _refreshTimer.Tick += (_, _) =>
         {
             _refreshTimer.Stop();
@@ -201,6 +202,7 @@ public partial class MainWindow : Window
         SubtitleText.Text = _settings.Host;
         UserBox.Text = _settings.Username;
         RememberCheck.IsChecked = _settings.RememberCredentials;
+        ApplyFolderView();
 
         // Rappel visuel du raccourci de recherche rapide. On le reformate au
         // passage : un réglage enregistré avant la francisation contiendrait
@@ -306,6 +308,151 @@ public partial class MainWindow : Window
 
         RunAction(node, action);
     }
+
+    // MARK: - Vue à deux volets
+
+    /// <summary>Dossier choisi dans le volet. Null ou AllKey : tout le parc.</summary>
+    private string? _selectedFolderKey;
+
+    /// <summary>
+    /// Vrai le temps de rétablir la sélection du volet par programme : sans
+    /// cela, chaque reconstruction relancerait un filtrage et un enregistrement
+    /// des réglages.
+    /// </summary>
+    private bool _restoringFolder;
+
+    private void ToggleView_Click(object sender, RoutedEventArgs e)
+    {
+        _settings.FolderView = !_settings.FolderView;
+        _settings.Save();
+        ApplyFolderView();
+        RebuildFolderPanel();
+        ApplyFilter();
+    }
+
+    /// <summary>Montre ou masque le volet, et met le bouton en accord.</summary>
+    private void ApplyFolderView()
+    {
+        bool on = _settings.FolderView;
+        FolderPane.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        ToggleViewButton.ToolTip = on ? "Revenir à la liste groupée"
+                                      : "Afficher les dossiers à gauche";
+        ToggleViewGlyph.Foreground = (System.Windows.Media.Brush)FindResource(
+            on ? "AccentBrush" : "TextSecondaryBrush");
+    }
+
+    /// <summary>
+    /// Reconstruit le volet depuis <c>_allRows</c>. Appelé quand la composition
+    /// du parc change, et non à chaque événement serveur : la sélection serait
+    /// perdue en continu. Elle est rétablie par clé, le volet étant recréé.
+    /// </summary>
+    private void RebuildFolderPanel()
+    {
+        if (!_settings.FolderView) return;
+
+        // Segoe MDL2 Assets : E71D liste complète, E735 étoile, ED25 dossier.
+        // Attention, E8B7 — que la documentation donne pour « Folder » — ne
+        // dessine rien dans cette police et s'affiche en carré vide.
+        var rows = new List<FolderRow>
+        {
+            new(FolderRow.AllKey, "Toutes les machines", "", "#8A8A8E",
+                _allRows.Count, _allRows.Count(r => r.IsOnline)),
+        };
+
+        var favorites = _allRows.Where(r => r.IsFavorite).ToList();
+        if (favorites.Count > 0)
+            rows.Add(new FolderRow(FavoritesGroup, "Favoris", "", "#FFB300",
+                                   favorites.Count, favorites.Count(r => r.IsOnline)));
+
+        rows.AddRange(_allRows
+            .GroupBy(r => r.RealGroupName, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new FolderRow(g.Key, g.Key, "", "#8A8A8E",
+                                       g.Count(), g.Count(r => r.IsOnline))));
+
+        _restoringFolder = true;
+        FolderList.ItemsSource = rows;
+        var wanted = _selectedFolderKey ?? _settings.SelectedFolder ?? FolderRow.AllKey;
+        FolderList.SelectedItem = rows.FirstOrDefault(f => f.Key == wanted) ?? rows[0];
+        _selectedFolderKey = (FolderList.SelectedItem as FolderRow)?.Key;
+        _restoringFolder = false;
+    }
+
+    private void FolderList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_restoringFolder) return;
+        if (FolderList.SelectedItem is not FolderRow folder) return;
+
+        _selectedFolderKey = folder.Key;
+        _settings.SelectedFolder = folder.Key;
+        _settings.Save();
+        ApplyFilter();
+    }
+
+    // MARK: - Barre de titre
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e)
+        => WindowState = WindowState.Minimized;
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e)
+        => WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
+
+    /// <summary>
+    /// Fermer passe par Close() et non par un arrêt : c'est la logique
+    /// habituelle qui décide ensuite de masquer la fenêtre dans la zone de
+    /// notification ou de quitter pour de bon.
+    /// </summary>
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    /// <summary>
+    /// Agrandie, une fenêtre dont l'application dessine elle-même le cadre
+    /// déborde de sa bordure de redimensionnement : les bords passent sous ceux
+    /// de l'écran et la barre de titre se retrouve pour partie hors champ. On
+    /// compense par une marge, et on bascule au passage le glyphe du bouton
+    /// entre « agrandir » et « restaurer ».
+    /// </summary>
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        bool maximized = WindowState == WindowState.Maximized;
+
+        WindowRoot.Margin = maximized
+            ? new Thickness(SystemParameters.WindowResizeBorderThickness.Left
+                            + SystemParameters.WindowNonClientFrameThickness.Left)
+            : new Thickness(0);
+
+        // Segoe MDL2 Assets : E922 agrandir, E923 restaurer.
+        MaximizeButton.Content = maximized ? "" : "";
+        MaximizeButton.ToolTip = maximized ? "Restaurer" : "Agrandir";
+    }
+
+    /// <summary>
+    /// Windows 11 arrondit les angles des fenêtres, mais pas celles dont
+    /// l'application dessine elle-même le cadre : il faut le lui demander.
+    /// Sans cela, la fenêtre tranche par ses angles carrés au milieu d'un bureau
+    /// qui les arrondit tous. L'attribut n'existe pas avant Windows 11, où
+    /// l'appel échoue sans conséquence.
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        const int CornerPreference = 33;   // DWMWA_WINDOW_CORNER_PREFERENCE
+        const int Round = 2;               // DWMWCP_ROUND
+
+        try
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            int preference = Round;
+            DwmSetWindowAttribute(handle, CornerPreference, ref preference, sizeof(int));
+        }
+        catch { /* antérieur à Windows 11 : les angles restent carrés */ }
+    }
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute,
+                                                    ref int value, int size);
 
     // MARK: - Mises à jour
 
@@ -979,6 +1126,8 @@ public partial class MainWindow : Window
             .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+        // Le volet suit la composition du parc, pas chaque événement serveur.
+        RebuildFolderPanel();
         ApplyFilter();
     }
 
@@ -1228,7 +1377,8 @@ public partial class MainWindow : Window
 
     private void UpdateToggleGroupsButton()
     {
-        ToggleGroupsGlyph.Text = _allGroupsCollapsed ? "⌄" : "⌃";
+        // Segoe MDL2 Assets : E70D chevron bas, E70E chevron haut.
+        ToggleGroupsGlyph.Text = _allGroupsCollapsed ? "" : "";
         ToggleGroupsButton.ToolTip = _allGroupsCollapsed
             ? "Déplier tous les dossiers"
             : "Replier tous les dossiers";
@@ -1265,13 +1415,29 @@ public partial class MainWindow : Window
 
         var rows = source.ToList();
 
+        // Vue à deux volets : restreindre au dossier choisi. Une recherche en
+        // cours reprend la main sur le dossier — sinon le champ paraîtrait ne
+        // rien trouver dès que la machine cherchée se range ailleurs.
+        bool folderFiltered = false;
+        if (_settings.FolderView && string.IsNullOrEmpty(query)
+            && _selectedFolderKey is { } folderKey && folderKey != FolderRow.AllKey)
+        {
+            rows = folderKey == FavoritesGroup
+                ? rows.Where(r => r.IsFavorite).ToList()
+                : rows.Where(r => string.Equals(r.RealGroupName, folderKey,
+                                      StringComparison.OrdinalIgnoreCase)).ToList();
+            folderFiltered = true;
+        }
+
         // Sections virtuelles en tête : favoris puis machines récentes. Une même
         // machine peut apparaître deux fois (en favori et dans son dossier) ;
         // c'est voulu, comme un raccourci vers l'entrée réelle.
         _virtualRows.Clear();
         var display = new List<DeviceRow>();
 
-        if (string.IsNullOrEmpty(query))
+        // Dans un dossier précis, ni favoris ni récentes : on a demandé ce
+        // dossier-là, pas un florilège.
+        if (string.IsNullOrEmpty(query) && !folderFiltered)
         {
             // Ordre stable, indépendant de l'état en ligne (voir RebuildDeviceList).
             var favorites = rows.Where(r => r.IsFavorite)
@@ -1299,14 +1465,19 @@ public partial class MainWindow : Window
                 _collapsedGroups.Add(name);
         }
 
-        DeviceList.ItemsSource = BuildGroupedView(display);
+        // Un seul dossier affiché : vue plate, pour ne pas coiffer la liste d'un
+        // en-tête de groupe unique qui répéterait le volet.
+        DeviceList.ItemsSource = folderFiltered
+            ? (System.Collections.IEnumerable)display
+            : BuildGroupedView(display);
 
         var totalOnline = _allRows.Count(r => r.IsOnline);
         CountText.Text = rows.Count == _allRows.Count
             ? $"{_allRows.Count} appareils · {totalOnline} en ligne"
             : $"{rows.Count} affichés sur {_allRows.Count} · {totalOnline} en ligne";
         // Le bouton de repli n'a de sens qu'avec plusieurs dossiers affichés.
-        ToggleGroupsButton.Visibility = rows.Select(r => r.GroupName).Distinct().Skip(1).Any()
+        ToggleGroupsButton.Visibility = !folderFiltered
+            && rows.Select(r => r.GroupName).Distinct().Skip(1).Any()
             ? Visibility.Visible : Visibility.Collapsed;
 
         // Déduire le sens du bouton de l'état réel plutôt que de le mémoriser :
