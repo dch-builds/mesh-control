@@ -1,9 +1,12 @@
 # ============================================================
-# Sorties de compilation
+# Sorties de compilation et de publication
 # ============================================================
 bin/
 obj/
 dist/
+# Paquets Velopack : 247 Mo pour deux versions seulement, et leur place
+# est sur le dépôt de distribution, pas dans le dépôt du code.
+Releases/
 
 # ============================================================
 # Empaquetage (script Inno Setup et installeurs produits)
