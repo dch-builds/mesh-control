@@ -8,15 +8,22 @@
 #   dist\      les fichiers de l'application, tels quels
 #   Releases\  les paquets Velopack (Setup.exe, .nupkg, manifeste de canal)
 #
+# Les mises à jour sont distribuées par un dépôt PUBLIC, distinct du dépôt privé
+# qui héberge ce code. Aucun jeton n'est donc embarqué dans l'application ; celui
+# que réclame l'envoi est lu à la volée auprès de gh.
+#
 # Usage :
-#   .\publish.ps1                         → publie et empaquette
-#   .\publish.ps1 -NoPack                 → publication seule (installeur Inno)
-#   .\publish.ps1 -UpdateUrl https://...  → autre source de mises à jour
+#   .\publish.ps1                  → publie et empaquette
+#   .\publish.ps1 -Upload          → envoie aussi la release, en brouillon
+#   .\publish.ps1 -FirstRelease    → tout premier paquet (dépôt encore vide)
+#   .\publish.ps1 -NoPack          → publication seule (installeur Inno)
 
 param(
-    [string]$Output    = "$PSScriptRoot\dist",
-    [string]$Releases  = "$PSScriptRoot\Releases",
-    [string]$UpdateUrl = "https://meshcentral.example.com/updates/",
+    [string]$Output   = "$PSScriptRoot\dist",
+    [string]$Releases = "$PSScriptRoot\Releases",
+    [string]$RepoUrl  = "https://github.com/dch-builds/mesh-control-releases",
+    [switch]$Upload,
+    [switch]$FirstRelease,
     [switch]$NoPack
 )
 
@@ -25,7 +32,7 @@ $project = Join-Path $PSScriptRoot 'MeshControl.csproj'
 
 # Identité du paquet. Le packId sert de nom au dossier d'installation
 # (%LOCALAPPDATA%\<packId>) : il ne doit surtout pas valoir « Mesh Control », qui
-# entrerait en collision avec le dossier de journaux déjà utilisé par Log.cs.
+# entrerait en collision avec le dossier de journaux utilisé par Log.cs.
 $packId    = 'MeshControl'
 $packTitle = 'Mesh Control'
 $authors   = 'Mesh Control'
@@ -74,7 +81,8 @@ Write-Host ""
 
 if ($NoPack) {
     # Chemin conservé le temps de la migration : la dernière version Inno
-    # (1.1.15) reste nécessaire pour faire basculer le parc existant.
+    # (1.1.15) reste nécessaire pour faire basculer le parc existant. Elle se
+    # construit depuis la branche de maintenance, sous l'ancien nom.
     Write-Host "Empaquetage Velopack ignoré (-NoPack)." -ForegroundColor Yellow
     Write-Host "Étape suivante : compiler l'installeur avec Inno Setup." -ForegroundColor Yellow
     Write-Host "  installer\MeshControl.iss" -ForegroundColor Yellow
@@ -84,16 +92,27 @@ if ($NoPack) {
 New-Item -ItemType Directory -Force $Releases | Out-Null
 
 # Récupération de la version déjà publiée. Sans elle, vpk n'a rien à quoi
-# comparer et produit un paquet complet — 44 Mo à télécharger pour une
-# correction d'une ligne, ce que la migration vise précisément à supprimer.
-# --allowEmptyChannel couvre le tout premier paquet, quand la source est encore
-# vide : la commande sort alors sans erreur au lieu d'interrompre le script.
-Write-Host "Récupération de la version publiée (pour le delta)..." -ForegroundColor Cyan
-vpk download http --url $UpdateUrl --outputDir $Releases --channel $channel --allowEmptyChannel
-if ($LASTEXITCODE -ne 0) { throw "Le téléchargement des releases existantes a échoué." }
+# comparer et produit un paquet complet — 44 Mo à télécharger pour une correction
+# d'une ligne, ce que la migration vise précisément à supprimer.
+#
+# « vpk download github » n'a pas d'option tolérant un dépôt vide : le tout
+# premier paquet doit donc être demandé explicitement avec -FirstRelease. C'est
+# voulu — un échec ici doit interrompre la publication plutôt que produire en
+# silence un paquet sans delta.
+if ($FirstRelease) {
+    Write-Host "Premier paquet (-FirstRelease) : aucun delta à calculer." -ForegroundColor Yellow
+} else {
+    Write-Host "Récupération de la version publiée (pour le delta)..." -ForegroundColor Cyan
+    vpk download github --repoUrl $RepoUrl --outputDir $Releases --channel $channel
+    if ($LASTEXITCODE -ne 0) {
+        throw "Téléchargement de la release publiée impossible. Si le dépôt est " +
+              "encore vide, relancez avec -FirstRelease."
+    }
+}
 
 Write-Host ""
 Write-Host "Empaquetage Velopack..." -ForegroundColor Cyan
+
 # --runtime n'est pas optionnel ici : sans lui, vpk suppose x86 et marque le
 # paquet comme tel, alors que l'application est publiée en win-x64. Le paquet
 # s'installerait quand même, mais les contrôles de compatibilité de l'installeur
@@ -123,11 +142,33 @@ if (Test-Path $setup) {
 }
 if ($delta) {
     Write-Host "  Delta   : $([math]::Round($delta.Length / 1MB, 1)) Mo" -ForegroundColor Green
-} else {
-    # Normal pour la toute première version, anormal ensuite : le plus souvent,
-    # la source n'était pas joignable et le delta n'a pas pu être calculé.
-    Write-Host "  Delta   : aucun (première version, ou source injoignable)" -ForegroundColor Yellow
+} elseif (-not $FirstRelease) {
+    # Anormal hors première version : le plus souvent, la release publiée n'a pas
+    # pu être récupérée et la comparaison s'est faite dans le vide.
+    Write-Host "  Delta   : aucun — vérifiez que la version publiée a bien été récupérée" -ForegroundColor Yellow
 }
 Write-Host ""
-Write-Host "Étape suivante : synchroniser le dossier vers la source de mises à jour." -ForegroundColor Yellow
-Write-Host "  $Releases  ->  $UpdateUrl" -ForegroundColor Yellow
+
+if (-not $Upload) {
+    Write-Host "Étape suivante : envoyer la release." -ForegroundColor Yellow
+    Write-Host "  .\publish.ps1 -Upload" -ForegroundColor Yellow
+    return
+}
+
+# Le jeton d'envoi est lu auprès de gh : il reste sur le poste de compilation et
+# n'entre jamais dans un binaire. Sans --publish, la release part en brouillon —
+# elle ne devient visible des clients qu'une fois publiée depuis GitHub.
+$token = gh auth token
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
+    throw "Jeton GitHub indisponible. Connectez-vous avec « gh auth login »."
+}
+
+Write-Host "Envoi de la release (brouillon)..." -ForegroundColor Cyan
+vpk upload github --repoUrl $RepoUrl --token $token `
+                  --outputDir $Releases --channel $channel
+if ($LASTEXITCODE -ne 0) { throw "L'envoi a échoué." }
+
+Write-Host ""
+Write-Host "Release envoyée en brouillon." -ForegroundColor Green
+Write-Host "  $RepoUrl/releases" -ForegroundColor Yellow
+Write-Host "  Les clients ne la verront qu'une fois publiée." -ForegroundColor Yellow

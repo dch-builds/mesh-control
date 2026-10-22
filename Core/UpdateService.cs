@@ -20,9 +20,9 @@ public sealed record UpdateInfo(
 /// Vérifie si une version plus récente est publiée, la télécharge et lance
 /// l'installeur.
 ///
-/// Le dépôt étant privé, l'API GitHub exige un jeton (voir UpdateSecrets et
-/// l'avertissement de sécurité qui l'accompagne). Sans jeton configuré, la
-/// vérification est simplement désactivée.
+/// Les mises à jour sont publiées sur un dépôt public, distinct du dépôt privé
+/// du code source : l'API GitHub répond sans authentification et aucun jeton
+/// n'est embarqué (voir UpdateSecrets).
 /// </summary>
 public static class UpdateService
 {
@@ -43,8 +43,14 @@ public static class UpdateService
     {
         var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Mesh-Control-Updater");
-        client.DefaultRequestHeaders.Authorization =
-            new AuthenticationHeaderValue("Bearer", UpdateSecrets.Token);
+
+        // Le dépôt de distribution est public : l'API répond sans
+        // authentification. Un en-tête « Bearer » vide, lui, ferait rejeter la
+        // requête — on ne l'ajoute donc que si un jeton est renseigné.
+        if (!string.IsNullOrWhiteSpace(UpdateSecrets.Token))
+            client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", UpdateSecrets.Token);
+
         client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
         return client;
     }
@@ -93,8 +99,9 @@ public static class UpdateService
                 if (name is null || !name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                // L'URL d'API (et non browser_download_url) : elle accepte le
-                // jeton, ce qui est indispensable sur un dépôt privé.
+                // L'URL d'API plutôt que browser_download_url : elle fonctionne
+                // avec ou sans jeton, et resterait valable si le dépôt de
+                // distribution redevenait privé.
                 var apiUrl = asset.TryGetProperty("url", out var u) ? u.GetString() : null;
                 if (apiUrl is null) continue;
 
