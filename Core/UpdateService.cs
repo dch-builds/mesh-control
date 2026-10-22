@@ -42,7 +42,7 @@ public static class UpdateService
     private static HttpClient CreateClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Mesh Control-Remote-Updater");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Mesh-Control-Updater");
         client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", UpdateSecrets.Token);
         client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");

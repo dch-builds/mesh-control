@@ -1,21 +1,59 @@
 using System.Reflection;
 using System.Windows;
 using System.Windows.Threading;
+using Velopack;
 using MeshControl.Core;
 
 namespace MeshControl;
 
 public partial class App : Application
 {
+    /// <summary>
+    /// Point d'entrée, écrit à la main plutôt que généré par WPF (voir
+    /// StartupObject dans le .csproj).
+    ///
+    /// Un lancement de l'exécutable n'est pas toujours un démarrage
+    /// d'application : Velopack le réutilise pour ses propres besoins — appliquer
+    /// une mise à jour, exécuter un hook d'installation ou de désinstallation — et
+    /// Run() termine alors le processus sans revenir ici. Amorcer WPF avant lui
+    /// ferait payer le chargement du framework à chacune de ces opérations, dont
+    /// certaines sont minutées par l'updater.
+    /// </summary>
+    [STAThread]
+    private static void Main()
+    {
+        VelopackApp.Build().Run();
+
+        // Avant tout le reste : la reprise déplace les dossiers de données, et
+        // Log comme AppSettings créent le leur dès le premier appel. Un dossier
+        // créé trop tôt, même vide, bloquerait le déplacement.
+        LegacyMigration.Run();
+
+        var app = new App();
+        app.InitializeComponent();
+        app.Run();
+    }
+
     /// <summary>Version affichée et journalisée.</summary>
     public static string Version =>
         Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.0.0";
 
     /// <summary>
-    /// Mutex nomme, conservé pour toute la durée de vie du processus. L'installeur
-    /// Inno l'observe (directive AppMutex) pour savoir que l'application tourne et
-    /// attendre sa fermeture avant de remplacer les fichiers — indispensable à la
-    /// mise à jour silencieuse.
+    /// Mutex nomme, conservé pour toute la durée de vie du processus.
+    ///
+    /// Le nom ne doit surtout pas être celui des versions Mesh Control, qui portent
+    /// « MeshControl.SingleInstance » et dont l'unins000.exe le surveille (directive
+    /// AppMutex) pour attendre la fermeture de l'application. Lors de la bascule,
+    /// cette version-ci tourne pendant que l'ancienne installation est
+    /// désinstallée : un nom commun ferait croire au désinstalleur que
+    /// l'application est encore active, et il resterait bloqué. Le changement de
+    /// nom de l'application règle la question d'office — d'où l'abandon du
+    /// suffixe « .v2 », qui n'avait de sens que tant que la base du nom restait
+    /// identique.
+    ///
+    /// Velopack n'a pas besoin de ce mutex — il repère lui-même les processus qui
+    /// verrouillent le dossier « current ». Il ne subsiste donc que le temps de
+    /// la migration.
     /// </summary>
     private System.Threading.Mutex? _instanceMutex;
 
@@ -24,7 +62,7 @@ public partial class App : Application
         base.OnStartup(e);
 
         // createdNew inutilisé : on ne bloque pas un second lancement, le mutex
-        // ne sert qu'à signaler notre présence à l'installeur.
+        // ne sert qu'à signaler notre présence.
         try
         {
             _instanceMutex = new System.Threading.Mutex(
@@ -38,6 +76,9 @@ public partial class App : Application
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         Log.StartSession(Version);
+
+        // Le compte rendu de la reprise attendait d'avoir un journal où aller.
+        LegacyMigration.WriteReport();
 
         // Les erreurs sont journalisées intégralement (type, message, pile) mais
         // présentées simplement : une pile d'appels brute n'aide pas un
@@ -69,7 +110,6 @@ public partial class App : Application
             // sinon les dernières modifications seraient perdues à l'arrêt.
             AppSettings.FlushToDisk();
             Log.Info("Arrêt de l'application");
-            // Libérer le mutex : l'installeur attend sa disparition pour agir.
             try { _instanceMutex?.Dispose(); } catch { }
         };
     }

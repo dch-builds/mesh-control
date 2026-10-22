@@ -15,6 +15,13 @@
     <ApplicationTitle>Mesh Control</ApplicationTitle>
     <ApplicationIcon>app.ico</ApplicationIcon>
 
+    <!-- Point d'entrée écrit à la main (voir App.xaml.cs) plutôt que celui que
+         WPF génère. Velopack doit s'amorcer avant toute initialisation WPF : il
+         peut détourner le lancement pour appliquer une mise à jour ou exécuter
+         un hook, et doit alors rendre la main immédiatement — sans payer le coût
+         de chargement du framework. -->
+    <StartupObject>MeshControl.App</StartupObject>
+
     <!-- Métadonnées visibles dans les propriétés du fichier .exe -->
     <Version>1.1.14</Version>
     <FileVersion>1.1.14.0</FileVersion>
@@ -40,8 +47,18 @@
     <SatelliteResourceLanguages>fr;en</SatelliteResourceLanguages>
   </PropertyGroup>
 
+  <!-- App.xaml cesse d'être la définition d'application : c'est elle qui ferait
+       générer un Main concurrent du nôtre. Déclarée en Page, elle produit
+       toujours InitializeComponent() — donc les ressources et StartupUri — mais
+       laisse le point d'entrée à StartupObject ci-dessus. -->
+  <ItemGroup>
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.11" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
 </Project>
