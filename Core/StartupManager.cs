@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Microsoft.Win32;
+using Velopack.Locators;
 
 namespace MeshControl.Core;
 
@@ -37,14 +38,45 @@ public static class StartupManager
     /// </summary>
     private const int DelaySeconds = 20;
 
-    /// <summary>Chemin de l'exécutable, tel qu'inscrit au démarrage.</summary>
+    /// <summary>
+    /// Chemin de l'exécutable, tel qu'inscrit au démarrage.
+    ///
+    /// Sous Velopack, le processus en cours tourne depuis le dossier des fichiers
+    /// versionnés, que chaque mise à jour remplace en bloc. On inscrit donc le
+    /// stub posé à la racine de l'installation : il ne bouge jamais, et c'est
+    /// précisément le chemin que Velopack destine aux raccourcis et aux
+    /// lanceurs. Hors installation — exécution depuis le dossier de compilation,
+    /// ou version portable, qui n'a pas de stub — on retombe sur le processus
+    /// courant.
+    /// </summary>
     private static string? ExecutablePath
     {
         get
         {
             // Environment.ProcessPath vise le vrai .exe (et non la dll).
             var path = Environment.ProcessPath;
-            return string.IsNullOrEmpty(path) ? null : path;
+            if (string.IsNullOrEmpty(path)) return null;
+
+            try
+            {
+                if (VelopackLocator.IsCurrentSet && !VelopackLocator.Current.IsPortable)
+                {
+                    var root = VelopackLocator.Current.RootAppDir;
+                    if (!string.IsNullOrEmpty(root))
+                    {
+                        var stub = Path.Combine(root, Path.GetFileName(path));
+                        if (File.Exists(stub)) return stub;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Sans conséquence : le chemin du processus reste valable tant
+                // que l'application n'est pas mise à jour.
+                Log.Debug($"Stub Velopack introuvable : {ex.Message}", "Démarrage");
+            }
+
+            return path;
         }
     }
 
