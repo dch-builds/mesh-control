@@ -4,7 +4,7 @@ Application Windows native pour piloter un serveur
 [MeshCentral](https://meshcentral.com) : bureau à distance, terminal, transfert
 de fichiers et actions d'alimentation.
 
-Écrite en C# / WPF sur .NET 9, sans dépendance externe hors bibliothèque
+Écrite en C# / WPF sur .NET 10, sans dépendance externe hors bibliothèque
 standard.
 
 ## Fonctionnalités
@@ -93,7 +93,7 @@ standard.
 
 ## Compilation
 
-Nécessite le [SDK .NET 9](https://dotnet.microsoft.com/download).
+Nécessite le [SDK .NET 10](https://dotnet.microsoft.com/download).
 
 ```bash
 dotnet build MeshControl.csproj -c Release
