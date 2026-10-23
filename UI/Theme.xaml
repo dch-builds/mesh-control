@@ -507,12 +507,12 @@
                         </AdornerDecorator>
                     </Grid>
                     <ControlTemplate.Triggers>
-                        <!-- Agrandie, une fenêtre dont l'application dessine le
-                             cadre déborde de sa bordure de redimensionnement :
-                             ses bords passent sous ceux de l'écran. Une marge
-                             compense, et le pictogramme bascule. -->
+                        <!-- Agrandie, la fenêtre tient désormais exactement dans
+                             la zone de travail : ChromeWindow borne ses
+                             dimensions en répondant à WM_GETMINMAXINFO. Plus
+                             rien ne déborde, donc plus de marge à compenser —
+                             seul le pictogramme bascule. -->
                         <Trigger Property="WindowState" Value="Maximized">
-                            <Setter TargetName="Root" Property="Margin" Value="7"/>
                             <Setter TargetName="MaxGlyph" Property="Text" Value="&#xE923;"/>
                             <Setter TargetName="MaxBtn" Property="ToolTip" Value="Restaurer"/>
                         </Trigger>
@@ -521,13 +521,10 @@
                             <Setter TargetName="MinBtn" Property="Visibility" Value="Collapsed"/>
                             <Setter TargetName="MaxBtn" Property="Visibility" Value="Collapsed"/>
                         </Trigger>
-                        <!-- Plein écran : plus de barre ni de marge, l'image
-                             distante prend toute la dalle. Ce déclencheur vient
-                             après celui de l'agrandissement, dont il doit
-                             annuler la marge. -->
+                        <!-- Plein écran : plus de barre de titre, l'image
+                             distante prend toute la dalle. -->
                         <Trigger Property="ui:ChromeWindow.IsFullscreen" Value="True">
                             <Setter TargetName="TitleBar" Property="Visibility" Value="Collapsed"/>
-                            <Setter TargetName="Root" Property="Margin" Value="0"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

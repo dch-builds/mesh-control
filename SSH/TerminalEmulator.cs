@@ -44,6 +44,23 @@ public sealed class TerminalEmulator
     /// <summary>Incrémenté à chaque modification, pour déclencher un redessin.</summary>
     public int Revision { get; private set; }
 
+    /// <summary>
+    /// Nombre de lignes conservées après leur sortie par le haut de l'écran.
+    /// Au-delà, les plus anciennes sont oubliées : une sortie continue — un
+    /// suivi de journal, par exemple — finirait sinon par occuper toute la
+    /// mémoire disponible.
+    /// </summary>
+    public const int ScrollbackLimit = 5000;
+
+    // Tampon circulaire : les lignes entrent une à une et ne ressortent que par
+    // l'autre bout. Une liste obligerait à décaler tout le contenu à chaque
+    // ligne une fois la limite atteinte, soit à chaque ligne affichée.
+    private readonly TerminalCell[]?[] _scrollback = new TerminalCell[ScrollbackLimit][];
+    private int _scrollbackStart;
+
+    /// <summary>Lignes d'historique actuellement conservées.</summary>
+    public int ScrollbackCount { get; private set; }
+
     // Style courant appliqué aux caractères écrits.
     private TerminalCell _pen = TerminalCell.Blank;
 
@@ -227,8 +244,50 @@ public sealed class TerminalEmulator
 
     private void ScrollUp()
     {
+        // La ligne qui disparaît rejoint l'historique, mais seulement quand le
+        // défilement porte sur l'écran entier. Une zone de défilement réduite
+        // (CSI r) sert à animer une portion de l'affichage — un bandeau, une
+        // barre de progression — et ses lignes ne sont pas de la sortie passée.
+        if (_scrollTop == 0 && _scrollBottom == Rows - 1) PushScrollback(Grid[0]);
+
         for (int r = _scrollTop; r < _scrollBottom; r++) Grid[r] = Grid[r + 1];
         Grid[_scrollBottom] = NewBlankLine();
+    }
+
+    private void PushScrollback(TerminalCell[] line)
+    {
+        _scrollback[(_scrollbackStart + ScrollbackCount) % ScrollbackLimit] = line;
+
+        if (ScrollbackCount < ScrollbackLimit) ScrollbackCount++;
+        else _scrollbackStart = (_scrollbackStart + 1) % ScrollbackLimit;
+    }
+
+    /// <summary>
+    /// Une ligne par son numéro absolu : 0 à Rows-1 pour l'écran courant,
+    /// négatif pour l'historique (-1 est la dernière ligne sortie par le haut).
+    /// Renvoie une ligne vide hors de ces bornes, pour que la vue n'ait pas à
+    /// vérifier ses propres calculs.
+    ///
+    /// Les lignes d'historique gardent la largeur qu'avait l'écran au moment où
+    /// elles sont sorties : elles peuvent donc être plus courtes ou plus longues
+    /// que <see cref="Cols"/>.
+    /// </summary>
+    public TerminalCell[] LineAt(int row)
+    {
+        if (row >= 0) return row < Rows ? Grid[row] : [];
+
+        var index = ScrollbackCount + row;
+        if (index < 0) return [];
+        return _scrollback[(_scrollbackStart + index) % ScrollbackLimit] ?? [];
+    }
+
+    /// <summary>Oublie l'historique, sans toucher à l'écran courant.</summary>
+    public void ClearScrollback()
+    {
+        Array.Clear(_scrollback);
+        _scrollbackStart = 0;
+        ScrollbackCount = 0;
+        Revision++;
     }
 
     private void ScrollDown()
@@ -370,6 +429,9 @@ public sealed class TerminalEmulator
                 for (int r = 0; r < CursorRow; r++) Grid[r] = NewBlankLine();
                 EraseInLine(1);
                 break;
+            case 3:   // l'historique seul — « clear » l'envoie après le mode 2
+                ClearScrollback();
+                break;
             default:  // tout l'écran
                 for (int r = 0; r < Rows; r++) Grid[r] = NewBlankLine();
                 break;
@@ -435,17 +497,29 @@ public sealed class TerminalEmulator
         _scrollBottom = Rows - 1;
         CursorVisible = true;
         for (int r = 0; r < Rows; r++) Grid[r] = NewBlankLine();
+        ClearScrollback();
     }
 
-    /// <summary>Contenu textuel de la grille (pour copier vers le presse-papiers).</summary>
-    public string GetText()
+    /// <summary>
+    /// Contenu textuel, pour le presse-papiers. L'historique est inclus par
+    /// défaut : « Copier tout » doit rendre toute la sortie, pas seulement la
+    /// hauteur de la fenêtre.
+    /// </summary>
+    public string GetText(bool includeScrollback = true)
     {
         var sb = new StringBuilder();
-        foreach (var line in Grid)
-        {
-            var text = new string(line.Select(c => c.Char).ToArray()).TrimEnd();
-            sb.AppendLine(text);
-        }
+        var first = includeScrollback ? -ScrollbackCount : 0;
+
+        for (int row = first; row < Rows; row++)
+            sb.AppendLine(LineText(LineAt(row)));
+
         return sb.ToString().TrimEnd();
     }
+
+    /// <summary>
+    /// Texte d'une ligne, espaces de fin retirés : la grille est toujours pleine
+    /// de blancs jusqu'au bord droit, qu'on ne veut pas dans le presse-papiers.
+    /// </summary>
+    public static string LineText(TerminalCell[] line) =>
+        new string(line.Select(c => c.Char).ToArray()).TrimEnd();
 }

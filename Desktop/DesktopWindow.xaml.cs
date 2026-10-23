@@ -64,6 +64,8 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         InitializeComponent();
         // L'arbre visuel existe : les handlers peuvent désormais y toucher.
         _uiReady = true;
+        _fullscreen = new UI.SessionFullscreen(RootPanel, FullscreenHint, Toolbar, StatusBar);
+        _fullscreen.Changed += OnFullscreenChanged;
         ApplyDefaultsFromSettings();
         ApplyFitMode();
 
@@ -94,20 +96,29 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // La barre d'état se rafraîchit à intervalle fixe : la recalculer à
         // chaque tuile reçue ferait travailler l'UI des dizaines de fois par
         // seconde pour un affichage que l'œil ne suit pas.
-        _statusTimer.Tick += (_, _) => UpdateStatusBar();
+        _statusTimer.Tick += (_, _) =>
+        {
+            UpdateStatusBar();
+            UpdateStreamPause();
+        };
         _statusTimer.Start();
         Closed += (_, _) => _statusTimer.Stop();
 
-        // Le rappel affiché au passage en plein écran s'efface de lui-même.
-        _fullscreenHintTimer.Tick += (_, _) => HideFullscreenHint();
+        // Réduction de la fenêtre en mode « une fenêtre par session » : la
+        // réaction est alors immédiate, sans attendre le tick suivant.
+        StateChanged += (_, _) => UpdateStreamPause();
 
         // En mode onglets, la fenêtre hôte a pu changer d'état pendant qu'une
         // autre session était affichée : on se réaligne en revenant ici.
-        RootPanel.IsVisibleChanged += (_, _) => SyncFullscreenChrome();
+        RootPanel.IsVisibleChanged += (_, _) =>
+        {
+            _fullscreen.Sync();
+            UpdateStreamPause();
+        };
 
         // Fermer la session en plein écran laisserait la fenêtre hôte sans
         // bordure ni barre d'onglets, y compris pour les autres sessions.
-        Closed += (_, _) => ExitFullscreen();
+        Closed += (_, _) => _fullscreen.Exit();
     }
 
     /// <summary>Cadence de rafraîchissement de la barre d'état.</summary>
@@ -146,6 +157,36 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         StatusTotal.Text = total >= 1024L * 1024
             ? $"{total / 1024.0 / 1024.0:0.0} Mo reçus"
             : $"{total / 1024} Ko reçus";
+    }
+
+    /// <summary>Vrai quand le flux d'images a été suspendu faute de spectateur.</summary>
+    private bool _streamPaused;
+
+    /// <summary>
+    /// Suspend le flux d'images quand personne ne le regarde : onglet passé à
+    /// l'arrière-plan, fenêtre réduite. Une session laissée ouverte continuait
+    /// sinon de recevoir l'écran complet à la cadence demandée — trois sessions
+    /// ouvertes, c'étaient trois flux pour un seul écran réellement regardé.
+    ///
+    /// L'état est relu au tick de la barre d'état plutôt que surveillé par
+    /// abonnement : réduire une fenêtre ne rend pas son contenu invisible au
+    /// sens de WPF, et la fenêtre hôte change dès que la session passe en
+    /// onglet, ce qui obligerait à défaire et refaire l'abonnement.
+    /// </summary>
+    private void UpdateStreamPause()
+    {
+        // Avant le démarrage, le contenu n'est pas encore à l'écran : sans ce
+        // garde, la session s'ouvrirait sur une pause immédiatement défaite.
+        if (!_uiReady || !_sessionStarted) return;
+
+        var host = Window.GetWindow(RootPanel);
+        var watched = RootPanel.IsVisible && host?.WindowState != WindowState.Minimized;
+        if (!watched == _streamPaused) return;
+
+        _streamPaused = !watched;
+        // La reprise redemande une image complète : l'agent n'envoie que les
+        // tuiles modifiées, et celles d'une pause ne reviendraient jamais.
+        _session.SetPaused(_streamPaused);
     }
 
     /// <summary>
@@ -283,6 +324,15 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
     private void Fit_Changed(object sender, RoutedEventArgs e) => ApplyFitMode();
 
+    /// <summary>Bascule entre l'image ajustée à la fenêtre et la taille réelle.</summary>
+    private void ToggleFit()
+    {
+        FitCheck.IsChecked = FitCheck.IsChecked != true;
+        StatsText.Text = FitCheck.IsChecked == true
+            ? "Image ajustée à la fenêtre."
+            : "Image à sa taille réelle.";
+    }
+
     // MARK: - Conversion coordonnées écran WPF -> pixels distants
 
     private bool TryMapToRemote(Point p, out int rx, out int ry)
@@ -322,18 +372,59 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // Donner le focus au panneau racine (et non à la fenêtre) : c'est lui qui
         // porte les gestionnaires clavier, y compris en mode onglets.
         RootPanel.Focus();
+
+        // Boutons latéraux : le protocole KVM ne transporte que les trois
+        // boutons principaux. On les traduit en touches de navigation, celles
+        // que Windows produit lui-même pour ces boutons — l'Explorateur et les
+        // navigateurs y répondent de la même façon.
+        if (e.ChangedButton is System.Windows.Input.MouseButton.XButton1
+                            or System.Windows.Input.MouseButton.XButton2)
+        {
+            _session.SendKeyTap(e.ChangedButton == System.Windows.Input.MouseButton.XButton1
+                ? Vk.BrowserBack
+                : Vk.BrowserForward);
+            return;
+        }
+
         if (!TryMapToRemote(e.GetPosition((IInputElement)sender), out int x, out int y)) return;
         var button = MapButton(e.ChangedButton);
         if (button is null) return;
+
+        // Capturer la souris pour la durée du glisser. Relâché au-dessus de la
+        // barre d'outils ou hors de la fenêtre, le bouton ne produirait aucun
+        // MouseUp ici : la machine distante le garderait enfoncé, et un
+        // glisser-déposer qui dérape laissait l'icône collée au curseur.
+        if (sender is UIElement image) image.CaptureMouse();
+
         _session.SendMouseButton(button.Value, down: true, x, y);
     }
 
     private void Screen_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        // Rendre la capture dès que plus aucun bouton n'est enfoncé : la garder
+        // priverait le reste de la fenêtre de la souris.
+        if (sender is UIElement image && image.IsMouseCaptured && !AnyMouseButtonPressed)
+            image.ReleaseMouseCapture();
+
         if (!TryMapToRemote(e.GetPosition((IInputElement)sender), out int x, out int y)) return;
         var button = MapButton(e.ChangedButton);
         if (button is null) return;
         _session.SendMouseButton(button.Value, down: false, x, y);
+    }
+
+    private static bool AnyMouseButtonPressed =>
+        Mouse.LeftButton == MouseButtonState.Pressed
+        || Mouse.RightButton == MouseButtonState.Pressed
+        || Mouse.MiddleButton == MouseButtonState.Pressed;
+
+    /// <summary>
+    /// Capture perdue autrement que par un relâchement normal : une boîte de
+    /// dialogue qui s'ouvre, un changement d'application. Les boutons encore
+    /// enfoncés ne recevront jamais leur relâchement, il faut l'envoyer nous-mêmes.
+    /// </summary>
+    private void Screen_LostMouseCapture(object sender, MouseEventArgs e)
+    {
+        if (AnyMouseButtonPressed) _session.ReleaseMouseButtons();
     }
 
     private void Screen_MouseWheel(object sender, MouseWheelEventArgs e)
@@ -376,7 +467,8 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
             return;
         }
 
-        if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.W or Key.F)
+        if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.W
+                               or Key.F or Key.R or Key.D or Key.A or Key.Delete)
         {
             e.Handled = true;
             // Ctrl et Maj ont déjà été transmis « enfoncés » par leurs propres
@@ -393,6 +485,17 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
                 case Key.E: OpenFiles_Click(this, new RoutedEventArgs()); break;
                 case Key.W: OpenWebPage_Click(this, new RoutedEventArgs()); break;
                 case Key.F: ToggleFullscreen(); break;
+                case Key.R: Refresh_Click(this, new RoutedEventArgs()); break;
+                case Key.D: ReleaseModifiers_Click(this, new RoutedEventArgs()); break;
+                case Key.A: ToggleFit(); break;
+
+                // Ctrl+Maj+Suppr pour Ctrl+Alt+Suppr : la vraie combinaison est
+                // confisquée par Windows en local. On passe par la commande KVM
+                // dédiée, la seule qui atteigne l'écran de sécurité.
+                case Key.Delete:
+                    _session.SendCtrlAltDel();
+                    StatsText.Text = "Envoyé : Ctrl+Alt+Suppr";
+                    break;
             }
             return;
         }
@@ -416,6 +519,17 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // la vraie touche est alors dans SystemKey.
         if (key == Key.System)
             key = Keyboard.IsKeyDown(Key.RightAlt) ? Key.RightAlt : Key.LeftAlt;
+
+        // La touche Windows n'est pas transmise. Windows l'intercepte de toute
+        // façon en local : les deux menus Démarrer s'ouvraient ensemble, et
+        // celui du poste local prenant la main, le relâchement n'arrivait jamais
+        // à la machine distante, qui restait bloquée en Win. Le menu
+        // « Raccourcis » l'envoie proprement, seule ou en combinaison.
+        if (key is Key.LWin or Key.RWin)
+        {
+            if (down) StatsText.Text = "Touche Windows : passez par le menu « Raccourcis ».";
+            return true;
+        }
 
         int vk = KeyInterop.VirtualKeyFromKey(key);
         if (vk <= 0 || vk > 255) return false;
@@ -776,101 +890,26 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     // MARK: - Plein écran
 
     /// <summary>
-    /// Fenêtre que cette session a passée en plein écran, s'il y en a une. En
-    /// mode onglets, c'est la fenêtre hôte et non celle-ci.
+    /// Plein écran de cette session. Le mécanisme est partagé avec les
+    /// terminaux : il porte sur la fenêtre hôte, qui n'est pas celle-ci en mode
+    /// onglets.
     /// </summary>
-    private Window? _fullscreenHost;
-
-    /// <summary>Durée d'affichage du rappel « Ctrl+Maj+F pour revenir ».</summary>
-    private readonly System.Windows.Threading.DispatcherTimer _fullscreenHintTimer = new()
-    {
-        Interval = TimeSpan.FromSeconds(5),
-    };
+    private UI.SessionFullscreen _fullscreen = null!;
 
     private void Fullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
 
-    /// <summary>
-    /// Passe en plein écran, ou en sort. Le plein écran s'applique à la fenêtre
-    /// qui héberge réellement le contenu : cette fenêtre en mode « une fenêtre
-    /// par session », la fenêtre à onglets sinon.
-    /// </summary>
     private void ToggleFullscreen()
     {
-        var host = _fullscreenHost ?? Window.GetWindow(RootPanel);
-        if (host is null) return;
-
-        bool fullscreen = UI.FullscreenController.Toggle(host);
-        _fullscreenHost = fullscreen ? host : null;
-        ApplyFullscreenChrome(host, fullscreen);
-
-        if (fullscreen) ShowFullscreenHint();
-        else HideFullscreenHint();
-
+        _fullscreen.Toggle();
         // Le clavier doit continuer d'arriver à la machine distante après la
         // bascule : le changement de style de fenêtre fait perdre le focus.
         RootPanel.Focus();
     }
 
-    /// <summary>Sort du plein écran ; sans effet si la session n'y est pas.</summary>
-    private void ExitFullscreen()
-    {
-        _fullscreenHintTimer.Stop();
-        if (_fullscreenHost is not { } host) return;
-
-        UI.FullscreenController.Exit(host);
-        _fullscreenHost = null;
-        ApplyFullscreenChrome(host, false);
-    }
-
-    /// <summary>
-    /// Masque ou rétablit tout ce qui entoure l'image : barres de la session, et
-    /// bandeau d'onglets de la fenêtre hôte le cas échéant.
-    /// </summary>
-    private void ApplyFullscreenChrome(Window host, bool fullscreen)
-    {
-        var visibility = fullscreen ? Visibility.Collapsed : Visibility.Visible;
-        Toolbar.Visibility = visibility;
-        StatusBar.Visibility = visibility;
-
-        if (host is UI.SessionsWindow sessions) sessions.SetTabStripVisible(!fullscreen);
-
+    private void OnFullscreenChanged(bool fullscreen) =>
         FullscreenButton.ToolTip = fullscreen
             ? "Quitter le plein écran (Ctrl+Maj+F)"
             : "Plein écran (Ctrl+Maj+F)";
-    }
-
-    /// <summary>
-    /// Réaligne les barres de cette session sur l'état réel de la fenêtre hôte.
-    ///
-    /// En mode onglets, le plein écran appartient à la fenêtre, pas à la session :
-    /// une autre session a pu en sortir (ou y entrer) pendant que celle-ci était
-    /// en arrière-plan. Sans ce recalage, on retrouverait un onglet fenêtré dont
-    /// la barre d'outils est restée masquée.
-    /// </summary>
-    private void SyncFullscreenChrome()
-    {
-        if (!RootPanel.IsVisible) return;
-
-        var host = Window.GetWindow(RootPanel);
-        if (host is null) return;
-
-        var fullscreen = UI.FullscreenController.IsFullscreen(host);
-        _fullscreenHost = fullscreen ? host : null;
-        ApplyFullscreenChrome(host, fullscreen);
-    }
-
-    private void ShowFullscreenHint()
-    {
-        FullscreenHint.Visibility = Visibility.Visible;
-        _fullscreenHintTimer.Stop();
-        _fullscreenHintTimer.Start();
-    }
-
-    private void HideFullscreenHint()
-    {
-        _fullscreenHintTimer.Stop();
-        FullscreenHint.Visibility = Visibility.Collapsed;
-    }
 
     // MARK: - Capture d'écran
 

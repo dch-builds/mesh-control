@@ -30,8 +30,23 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
         SetStatus("Connexion…", "#EFEFF4", "#8A8A8E");
 
         _terminal = new TerminalControl();
+        _terminal.SetFontSize(AppSettings.Load().TerminalFontSize);
         _terminal.GridSizeChanged += (cols, rows) => _session?.Resize(cols, rows);
+        _terminal.PasteRequested += () => Paste_Click(this, new RoutedEventArgs());
+        // Abonnement après la taille initiale : avant, on réenregistrerait la
+        // valeur qu'on vient tout juste de lire.
+        _terminal.FontSizeChanged += SaveFontSize;
         TerminalHost.Child = _terminal;
+        SearchBar.Attach(_terminal);
+
+        _fullscreen = new UI.SessionFullscreen(RootPanel, FullscreenHint, Toolbar);
+        _fullscreen.Changed += OnFullscreenChanged;
+        // En mode onglets, une autre session a pu changer l'état de la fenêtre
+        // hôte pendant que celle-ci était en arrière-plan.
+        RootPanel.IsVisibleChanged += (_, _) => _fullscreen.Sync();
+        // Fermer en plein écran laisserait la fenêtre hôte sans bordure ni
+        // bandeau d'onglets, y compris pour les autres sessions.
+        Closed += (_, _) => _fullscreen.Exit();
 
         // Les frappes sont interceptées sur le CONTENU (et non la fenêtre) :
         // en mode onglets, la fenêtre porteuse n'est jamais affichée et ne
@@ -219,16 +234,55 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
         await StartSessionAsync();
     }
 
+    private void Search_Click(object sender, RoutedEventArgs e) => SearchBar.Toggle();
+
+    // MARK: - Plein écran
+
+    /// <summary>
+    /// Plein écran de cette session, mécanisme partagé avec le bureau à
+    /// distance : il porte sur la fenêtre hôte, qui n'est pas celle-ci en mode
+    /// onglets.
+    /// </summary>
+    private readonly UI.SessionFullscreen _fullscreen;
+
+    private void Fullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
+
+    private void ToggleFullscreen()
+    {
+        _fullscreen.Toggle();
+        // Le clavier doit revenir au shell après la bascule : le changement de
+        // style de fenêtre fait perdre le focus.
+        _terminal.Focus();
+    }
+
+    private void OnFullscreenChanged(bool fullscreen) =>
+        FullscreenButton.ToolTip = fullscreen
+            ? "Quitter le plein écran (Ctrl+Maj+F)"
+            : "Plein écran (Ctrl+Maj+F)";
+
+    /// <summary>
+    /// Enregistre la taille de police choisie au zoom. Les réglages sont relus
+    /// juste avant : une autre fenêtre a pu en modifier d'autres depuis
+    /// l'ouverture de ce terminal, et réécrire notre copie les perdrait.
+    /// </summary>
+    private static void SaveFontSize(double size)
+    {
+        var settings = AppSettings.Load();
+        settings.TerminalFontSize = (int)size;
+        settings.Save();
+    }
+
     // MARK: - Clavier
 
     /// <summary>
-    /// Vrai quand un contrôle de la barre d'outils a le focus : les frappes lui
-    /// appartiennent alors et ne doivent pas partir vers le shell.
+    /// Vrai quand un champ de l'interface — barre d'outils, recherche — a le
+    /// focus : les frappes lui appartiennent alors et ne doivent pas partir
+    /// vers le shell.
     /// </summary>
     private bool ToolbarHasFocus =>
         Keyboard.FocusedElement is DependencyObject focused
         && focused is not TerminalControl
-        && (focused is ComboBox or ComboBoxItem or Button);
+        && (focused is ComboBox or ComboBoxItem or Button or TextBox);
 
     private void Terminal_PreviewTextInput(object sender, TextCompositionEventArgs e)
     {
@@ -241,22 +295,47 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
 
     private void Terminal_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (_session?.State != SshSessionState.Connected) return;
         if (ToolbarHasFocus) return;
 
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
-        // Raccourcis locaux du terminal : ne pas transmettre au shell.
-        if (ctrl && shift && e.Key == Key.V)
-        {
-            Paste_Click(this, new RoutedEventArgs());
-            e.Handled = true;
-            return;
-        }
+        // Ces trois-là passent avant le test d'état : relire, copier et
+        // rechercher dans la sortie d'une session fermée est précisément ce
+        // qu'on vient y faire.
         if (ctrl && shift && e.Key == Key.C)
         {
             CopyAll_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+            return;
+        }
+        if (ctrl && shift && e.Key == Key.F)
+        {
+            ToggleFullscreen();
+            e.Handled = true;
+            return;
+        }
+        if (ctrl && shift && e.Key == Key.R)
+        {
+            SearchBar.Toggle();
+            e.Handled = true;
+            return;
+        }
+
+        // Défilement de l'historique, lui aussi indépendant de l'état de la
+        // session. Toute autre frappe ramène la vue en bas.
+        if (_terminal.HandleViewKey(e.Key, Keyboard.Modifiers))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (_session?.State != SshSessionState.Connected) return;
+
+        // Raccourci local du terminal : ne pas transmettre au shell.
+        if (ctrl && shift && e.Key == Key.V)
+        {
+            Paste_Click(this, new RoutedEventArgs());
             e.Handled = true;
             return;
         }
@@ -292,11 +371,25 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
             _session.SendInput(text.Replace("\r\n", "\r").Replace("\n", "\r"));
         }
         catch { /* presse-papiers verrouillé par une autre application */ }
+
+        // Le terminal reprend la main : après une action de la barre d'outils,
+        // on veut taper, pas rester accroché au contrôle qu'on vient d'utiliser.
+        _terminal.Focus();
     }
 
+    /// <summary>
+    /// Copie la sélection si elle existe, tout le terminal — historique compris
+    /// — sinon. La sélection est levée dans la foulée : elle a servi, et la
+    /// laisser en vidéo inverse ferait croire qu'il reste quelque chose à faire.
+    /// </summary>
     private void CopyAll_Click(object sender, RoutedEventArgs e)
     {
-        try { Clipboard.SetText(_terminal.Emulator.GetText()); }
+        var text = _terminal.TextForCopy();
+        if (string.IsNullOrEmpty(text)) return;
+
+        try { Clipboard.SetText(text); }
         catch { /* idem */ }
+        _terminal.ClearSelection();
+        _terminal.Focus();
     }
 }

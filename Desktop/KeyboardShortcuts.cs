@@ -20,6 +20,10 @@ internal static class Vk
     public const byte PrintScreen = 0x2C;
     public const byte Delete = 0x2E;
     public const byte LeftWin = 0x5B;
+    // Touches de navigation que Windows produit lui-même pour les deux boutons
+    // latéraux de la souris.
+    public const byte BrowserBack = 0xA6;
+    public const byte BrowserForward = 0xA7;
     public const byte F1 = 0x70;
     public const byte F2 = 0x71;
     public const byte F3 = 0x72;

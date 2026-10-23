@@ -90,7 +90,8 @@
                               Foreground="{StaticResource TextPrimaryBrush}"
                               VerticalAlignment="Center" IsChecked="True"
                               Checked="Fit_Changed" Unchecked="Fit_Changed"
-                              Margin="0,0,12,0"/>
+                              Margin="0,0,12,0"
+                              ToolTip="Ajuster l'image à la fenêtre (Ctrl+Maj+A)"/>
 
                     <!-- Visible seulement quand la reprise automatique a
                          abandonné : sinon la session se rétablit toute seule. -->
@@ -101,12 +102,14 @@
                             ToolTip="Relancer la connexion à cette machine"/>
 
                     <Button Content="Rafraîchir" Style="{StaticResource ToolButton}"
-                            Click="Refresh_Click" Margin="0,0,6,0"/>
+                            Click="Refresh_Click" Margin="0,0,6,0"
+                            ToolTip="Redemander une image complète (Ctrl+Maj+R)"/>
 
                     <!-- Menu de raccourcis clavier envoyés à la machine distante -->
                     <Button x:Name="ShortcutsButton" Content="Raccourcis ▾"
                             Style="{StaticResource ToolButton}"
-                            Click="Shortcuts_Click" Margin="0,0,6,0">
+                            Click="Shortcuts_Click" Margin="0,0,6,0"
+                            ToolTip="Combinaisons envoyées à la machine distante (Ctrl+Alt+Suppr : Ctrl+Maj+Suppr)">
                         <Button.ContextMenu>
                             <ContextMenu x:Name="ShortcutsMenu" Placement="Bottom"/>
                         </Button.ContextMenu>
@@ -133,7 +136,7 @@
                     <!-- Secours : débloque un modificateur resté enfoncé côté distant -->
                     <Button Content="⌨" Style="{StaticResource ToolButton}"
                             Click="ReleaseModifiers_Click" Padding="9,5" Margin="0,0,6,0"
-                            ToolTip="Débloquer le clavier distant (relâche Ctrl, Alt, Maj, Win)"/>
+                            ToolTip="Débloquer le clavier distant : relâche Ctrl, Alt, Maj, Win (Ctrl+Maj+D)"/>
 
                     <!-- Plein écran : masque barre d'outils, barre d'état et
                          bandeau d'onglets, et retire la bordure de la fenêtre. -->
@@ -236,7 +239,8 @@
                        MouseMove="Screen_MouseMove"
                        MouseDown="Screen_MouseDown"
                        MouseUp="Screen_MouseUp"
-                       MouseWheel="Screen_MouseWheel"/>
+                       MouseWheel="Screen_MouseWheel"
+                       LostMouseCapture="Screen_LostMouseCapture"/>
             </Grid>
 
             <ScrollViewer x:Name="Scroller" Visibility="Collapsed"
@@ -250,7 +254,8 @@
                        MouseMove="Screen_MouseMove"
                        MouseDown="Screen_MouseDown"
                        MouseUp="Screen_MouseUp"
-                       MouseWheel="Screen_MouseWheel"/>
+                       MouseWheel="Screen_MouseWheel"
+                       LostMouseCapture="Screen_LostMouseCapture"/>
             </ScrollViewer>
 
             <!-- En plein écran, la barre d'outils disparaît : sans ce rappel,

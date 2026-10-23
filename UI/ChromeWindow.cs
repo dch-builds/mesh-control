@@ -73,14 +73,83 @@ public class ChromeWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        SetRoundedCorners(this, true);
 
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        System.Windows.Interop.HwndSource.FromHwnd(handle)?.AddHook(LimitMaximizeToWorkArea);
+    }
+
+    private const int WmGetMinMaxInfo = 0x0024;
+
+    /// <summary>
+    /// Borne l'agrandissement à la zone de travail du moniteur.
+    ///
+    /// Sans cadre système, une fenêtre agrandie prend par défaut la DALLE
+    /// entière : son bas passe alors sous la barre des tâches, qui reste au
+    /// premier plan — et c'est la dernière barre de l'interface qui disparaît.
+    /// Windows réclame ces dimensions par WM_GETMINMAXINFO ; on lui répond la
+    /// zone de travail.
+    ///
+    /// MaxTrackSize n'est pas touché : il borne le redimensionnement, dont le
+    /// plein écran a besoin pour couvrir la dalle entière.
+    /// </summary>
+    private static IntPtr LimitMaximizeToWorkArea(IntPtr handle, int message, IntPtr wParam,
+                                                  IntPtr lParam, ref bool handled)
+    {
+        if (message != WmGetMinMaxInfo) return IntPtr.Zero;
+        if (!MonitorInterop.TryGetBounds(handle, out var monitor, out var work)) return IntPtr.Zero;
+
+        var info = System.Runtime.InteropServices.Marshal.PtrToStructure<MinMaxInfo>(lParam);
+        // Position relative au coin du moniteur, comme l'attend Windows : sur un
+        // écran secondaire, des coordonnées absolues y placeraient la fenêtre de
+        // travers.
+        info.MaxPosition.X = work.Left - monitor.Left;
+        info.MaxPosition.Y = work.Top - monitor.Top;
+        info.MaxSize.X = work.Width;
+        info.MaxSize.Y = work.Height;
+        System.Runtime.InteropServices.Marshal.StructureToPtr(info, lParam, true);
+
+        // Traité : sans cela, le traitement par défaut réécrirait la structure
+        // avec les dimensions de la dalle.
+        handled = true;
+        return IntPtr.Zero;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(
+        System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X, Y;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(
+        System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MinMaxInfo
+    {
+        public NativePoint Reserved;
+        public NativePoint MaxSize;
+        public NativePoint MaxPosition;
+        public NativePoint MinTrackSize;
+        public NativePoint MaxTrackSize;
+    }
+
+    /// <summary>
+    /// Arrondit ou non les angles de la fenêtre. Le plein écran les redresse :
+    /// une fenêtre qui couvre la dalle entière laisserait sinon voir le bureau
+    /// par ses quatre coins.
+    /// </summary>
+    public static void SetRoundedCorners(Window window, bool rounded)
+    {
         const int CornerPreference = 33;   // DWMWA_WINDOW_CORNER_PREFERENCE
         const int Round = 2;               // DWMWCP_ROUND
+        const int DoNotRound = 1;          // DWMWCP_DONOTROUND
 
         try
         {
-            var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            int preference = Round;
+            var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            if (handle == IntPtr.Zero) return;
+
+            int preference = rounded ? Round : DoNotRound;
             DwmSetWindowAttribute(handle, CornerPreference, ref preference, sizeof(int));
         }
         catch { /* antérieur à Windows 11 : les angles restent carrés */ }

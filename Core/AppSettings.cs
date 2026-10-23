@@ -86,6 +86,12 @@ public sealed class AppSettings
     public bool DefaultDesktopFit { get; set; } = true;
 
     /// <summary>
+    /// Taille de police des terminaux, en points. Réglée par le zoom et retenue
+    /// d'une session à l'autre : c'est une question de vue, pas de machine.
+    /// </summary>
+    public int TerminalFontSize { get; set; } = 13;
+
+    /// <summary>
     /// Regrouper les sessions dans une fenêtre à onglets. Sinon, chaque session
     /// ouvre sa propre fenêtre (comportement historique).
     /// </summary>

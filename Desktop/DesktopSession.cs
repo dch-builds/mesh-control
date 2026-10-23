@@ -436,14 +436,33 @@ public sealed class DesktopSession : IDisposable
     };
     private static byte UpFlag(MouseButton b) => (byte)(DownFlag(b) << 1);
 
+    // Dernière position transmise : un relâchement de secours doit se faire là
+    // où le curseur distant se trouve, et non le téléporter dans un coin.
+    private ushort _lastMouseX, _lastMouseY;
+
     private void SendMouse(byte button, int x, int y)
     {
         var cx = (ushort)Math.Max(0, Math.Min(x, ScreenWidth));
         var cy = (ushort)Math.Max(0, Math.Min(y, ScreenHeight));
+        _lastMouseX = cx;
+        _lastMouseY = cy;
         var payload = new List<byte> { 0, button };
         payload.AppendBE(cx);
         payload.AppendBE(cy);
         SendCommand(Kvm.Mouse, payload.ToArray());
+    }
+
+    /// <summary>
+    /// Relâche les trois boutons à la dernière position connue. Filet de
+    /// sécurité quand le relâchement réel ne nous parvient pas — capture de
+    /// souris perdue, fenêtre désactivée en plein glisser : la machine distante
+    /// garderait sinon le bouton enfoncé, et tout ce qu'elle touche suivrait le
+    /// curseur jusqu'au prochain clic.
+    /// </summary>
+    public void ReleaseMouseButtons()
+    {
+        foreach (var button in new[] { MouseButton.Left, MouseButton.Right, MouseButton.Middle })
+            SendMouse(UpFlag(button), _lastMouseX, _lastMouseY);
     }
 
     /// <summary>Molette : delta positif = vers le haut. Multiple de 120.</summary>

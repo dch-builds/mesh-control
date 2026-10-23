@@ -19,9 +19,16 @@ standard.
 **Bureau à distance**
 - Décodage natif du protocole KVM (tuiles JPEG, trames jumbo)
 - Cadence réglable jusqu'à 60 images/s, trois niveaux de qualité
-- Souris, molette et clavier complet (codes VK Windows)
+- Souris, molette, boutons latéraux et clavier complet (codes VK Windows). La
+  touche Windows n'est pas transmise — le poste local l'intercepte de toute
+  façon — et s'envoie par le menu « Raccourcis »
 - Raccourcis prédéfinis adaptés à Windows ou Linux
+- Raccourcis locaux : Ctrl+Maj+R redemande une image complète, Ctrl+Maj+A
+  bascule l'ajustement à la fenêtre, Ctrl+Maj+D débloque le clavier distant et
+  Ctrl+Maj+Suppr envoie Ctrl+Alt+Suppr
 - Plein écran par Ctrl+Maj+F : barres et bandeau d'onglets masqués
+- Le flux s'interrompt dès que la session n'est plus regardée — onglet passé à
+  l'arrière-plan, fenêtre réduite — et reprend sur une image complète
 - Presse-papiers dans les deux sens. Le collage écrit le presse-papiers de la
   machine distante puis envoie Ctrl+V — instantané, quelle que soit la longueur
   du texte. Si le serveur refuse l'écriture (`clipboardset`) ou si l'agent ne la
@@ -33,6 +40,18 @@ standard.
   un *login shell* demandant identifiant et mot de passe
 - Via SSH lorsque le serveur l'autorise
 - Émulateur ANSI/VT100 intégré (couleurs, curseur, zones de défilement)
+- Historique de 5 000 lignes : molette, Maj+Page précédente et Maj+Page
+  suivante, Ctrl+Maj+Début et Ctrl+Maj+Fin pour aller d'un bout à l'autre. Une
+  glissière paraît sur le bord droit dès que l'on remonte, et toute frappe
+  ramène en bas
+- Sélection à la souris : glisser pour sélectionner, double-clic pour un mot —
+  chemins et adresses compris —, triple-clic pour une ligne. Ctrl+Maj+C copie
+  la sélection, ou tout le terminal à défaut ; clic du milieu pour coller
+- Recherche dans l'historique par Ctrl+Maj+R : les occurrences sont surlignées,
+  Entrée et Maj+Entrée passent de l'une à l'autre, Échap referme
+- Zoom par Ctrl+molette, Ctrl+Maj+Plus et Ctrl+Maj+Moins ; Ctrl+Maj+0 revient à
+  la taille d'origine. La taille choisie vaut pour les terminaux suivants
+- Plein écran par Ctrl+Maj+F, comme le bureau à distance
 
 **Fichiers**
 - Navigation, téléchargement, envoi avec fenêtre de fragments en vol
