@@ -54,6 +54,41 @@
         <!-- ================= Corps ================= -->
         <Grid Grid.Row="1">
 
+            <!-- Vue 0 : choix du serveur (premier démarrage, ou « Changer » depuis
+                 la connexion). Aucune adresse n'est présumée : chacun relie
+                 l'application à son propre serveur. -->
+            <Border x:Name="ServerPanel" Style="{StaticResource Card}" Visibility="Collapsed"
+                    Width="380" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Padding="26,24">
+                <StackPanel>
+                    <TextBlock x:Name="ServerTitle" Text="Bienvenue" FontSize="17" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,0,0,3"/>
+                    <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
+                               Margin="0,0,0,18"
+                               Text="Indiquez l'adresse de votre serveur MeshCentral pour commencer."/>
+
+                    <TextBlock Text="Adresse du serveur" Style="{StaticResource CaptionText}" Margin="0,0,0,5"/>
+                    <TextBox x:Name="ServerHostBox" Margin="0,0,0,5"
+                             KeyDown="ServerHostBox_KeyDown"/>
+                    <TextBlock Style="{StaticResource FieldHint}" TextWrapping="Wrap"
+                               Margin="0,0,0,12"
+                               Text="Par exemple meshcentral.mondomaine.fr, ou 192.168.1.10:4430 si le serveur écoute sur un autre port."/>
+
+                    <CheckBox x:Name="ServerSelfSignedCheck"
+                              Content="Le serveur utilise un certificat auto-signé"
+                              FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"
+                              Margin="0,0,0,18"/>
+
+                    <Button x:Name="ServerContinueButton" Style="{StaticResource PrimaryButton}"
+                            Content="Continuer" Click="ServerContinue_Click"/>
+
+                    <TextBlock x:Name="ServerStatusText" Style="{StaticResource CaptionText}"
+                               Margin="0,14,0,0" TextWrapping="Wrap"
+                               TextAlignment="Center"/>
+                </StackPanel>
+            </Border>
+
             <!-- Vue 1 : connexion (affichée si pas d'identifiants mémorisés) -->
             <Border x:Name="LoginPanel" Style="{StaticResource Card}"
                     Width="380" VerticalAlignment="Center" HorizontalAlignment="Center"
@@ -62,8 +97,14 @@
                     <TextBlock Text="Connexion" FontSize="17" FontWeight="Bold"
                                Foreground="{StaticResource TextPrimaryBrush}"
                                Margin="0,0,0,3"/>
-                    <TextBlock x:Name="LoginServerLabel" Style="{StaticResource CaptionText}"
-                               Margin="0,0,0,18"/>
+                    <DockPanel Margin="0,0,0,18">
+                        <Button x:Name="ChangeServerButton" DockPanel.Dock="Right"
+                                Style="{StaticResource SubtleButton}" Padding="6,0"
+                                Content="Changer" VerticalAlignment="Center"
+                                Click="ChangeServer_Click"/>
+                        <TextBlock x:Name="LoginServerLabel" Style="{StaticResource CaptionText}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    </DockPanel>
 
                     <TextBlock Text="Utilisateur" Style="{StaticResource CaptionText}" Margin="0,0,0,5"/>
                     <TextBox x:Name="UserBox" Margin="0,0,0,12"/>

@@ -23,13 +23,13 @@
     <StartupObject>MeshControl.App</StartupObject>
 
     <!-- Métadonnées visibles dans les propriétés du fichier .exe -->
-    <Version>1.2.5</Version>
-    <FileVersion>1.2.5.0</FileVersion>
-    <AssemblyVersion>1.2.5.0</AssemblyVersion>
-    <Company>Mesh Control</Company>
+    <Version>1.2.6</Version>
+    <FileVersion>1.2.6.0</FileVersion>
+    <AssemblyVersion>1.2.6.0</AssemblyVersion>
+    <Company>David CHIESA</Company>
     <Product>Mesh Control</Product>
     <Description>Contrôle à distance des postes via MeshCentral</Description>
-    <Copyright>© Mesh Control</Copyright>
+    <Copyright>© David CHIESA</Copyright>
 
     <!-- Publication en FICHIERS SÉPARÉS, que Velopack empaquette ensuite.
          On évite volontairement PublishSingleFile : celui-ci réextrait tout le

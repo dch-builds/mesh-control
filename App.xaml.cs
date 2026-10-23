@@ -83,6 +83,12 @@ public partial class App : Application
             AppSettings.FlushToDisk();
             Log.Info("Arrêt de l'application");
         };
+
+        // Pas de StartupUri : elle afficherait la fenêtre d'office, alors qu'un
+        // démarrage réduit ne doit jamais la montrer (voir MainWindow.Start).
+        var main = new UI.MainWindow();
+        MainWindow = main;
+        main.Start();
     }
 
     /// <summary>

@@ -93,8 +93,12 @@ public sealed class MeshWebSocket : IDisposable
         try { _cts.Cancel(); } catch { /* ignore */ }
         try
         {
+            // Le serveur a souvent déjà coupé — refus d'authentification, second
+            // facteur réclamé — sans que l'état ait quitté Open : la fermeture
+            // échoue alors, et son échec doit être lu.
             if (_socket.State == WebSocketState.Open)
-                _ = _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None)
+                       .Forget();
         }
         catch { /* ignore */ }
     }

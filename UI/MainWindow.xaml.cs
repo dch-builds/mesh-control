@@ -59,7 +59,6 @@ public partial class MainWindow : ChromeWindow
             _resyncTimer.Stop();
             _ = ResyncAsync();
         };
-        Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
 
         // Échap referme le volet des réglages : réflexe attendu pour un panneau
@@ -155,8 +154,31 @@ public partial class MainWindow : ChromeWindow
         }
     }
 
-    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Démarre l'application : affiche la fenêtre, ou non, puis se connecte.
+    ///
+    /// Démarrage automatique de session (« --minimized ») ou réglage explicite :
+    /// on se connecte en tâche de fond sans ouvrir la fenêtre. Elle n'est alors
+    /// jamais affichée — seul son handle est créé, dont ont besoin le raccourci
+    /// global et le premier plan. La masquer depuis Loaded, comme auparavant,
+    /// intervenait en plein premier affichage : Windows laissait la fenêtre à
+    /// l'écran tandis que WPF, la croyant masquée, cessait de la dessiner. Elle
+    /// restait noire jusqu'à un passage par la zone de notification.
+    /// </summary>
+    public async void Start()
     {
+        // Sans serveur renseigné, il n'y a rien à faire en tâche de fond : la
+        // fenêtre s'ouvre sur le choix du serveur, quels que soient les réglages.
+        bool hasHost = !string.IsNullOrWhiteSpace(_settings.Host);
+        bool startHidden = hasHost
+            && (_settings.StartMinimized
+                || Environment.GetCommandLineArgs().Any(a =>
+                       a.Equals("--minimized", StringComparison.OrdinalIgnoreCase)));
+        if (startHidden)
+            new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
+        else
+            Show();
+
         Log.MinimumLevel = _settings.VerboseLogging ? LogLevel.Debug : LogLevel.Info;
         // Restaurer les dossiers repliés du lancement précédent.
         _collapsedGroups = new HashSet<string>(_settings.CollapsedGroups,
@@ -167,17 +189,13 @@ public partial class MainWindow : ChromeWindow
         SetupTray();
         SetupResumeWatch();
 
-        // Démarrage automatique de session (« --minimized ») ou réglage explicite :
-        // on se connecte en tâche de fond sans ouvrir la fenêtre.
-        bool startHidden = _settings.StartMinimized
-            || Environment.GetCommandLineArgs().Any(a =>
-                   a.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
         if (startHidden) HideToTray();
 
         // Connexion automatique si des identifiants sont mémorisés : l'utilisateur
         // n'a plus rien à ressaisir au lancement. Un jeton de connexion suffit,
         // même sans mot de passe enregistré.
-        if (_settings.RememberCredentials
+        if (hasHost
+            && _settings.RememberCredentials
             && !string.IsNullOrEmpty(_settings.Username)
             && (!string.IsNullOrEmpty(_settings.Password) || _settings.HasLoginToken))
         {
@@ -198,7 +216,8 @@ public partial class MainWindow : ChromeWindow
     private void ApplySettingsToUi()
     {
         LoginServerLabel.Text = _settings.Host;
-        SubtitleText.Text = _settings.Host;
+        // Sans serveur, l'en-tête garderait sinon un vide à la place du nom.
+        SubtitleText.Text = string.IsNullOrEmpty(_settings.Host) ? "Contrôle à distance" : _settings.Host;
         UserBox.Text = _settings.Username;
         RememberCheck.IsChecked = _settings.RememberCredentials;
         ApplyFolderView();
@@ -453,6 +472,15 @@ public partial class MainWindow : ChromeWindow
 
     private void ShowLogin()
     {
+        // Premier lancement : sans adresse de serveur, se connecter n'a aucun
+        // sens. On commence par la demander.
+        if (string.IsNullOrWhiteSpace(_settings.Host))
+        {
+            ShowServerSetup();
+            return;
+        }
+
+        ServerPanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Visible;
         DevicesPanel.Visibility = Visibility.Collapsed;
         LoadingPanel.Visibility = Visibility.Collapsed;
@@ -464,21 +492,105 @@ public partial class MainWindow : ChromeWindow
         SendCodeButton.Visibility = Visibility.Collapsed;
         TokenBox.Clear();
 
-        // Premier lancement : sans adresse de serveur, se connecter n'a aucun
-        // sens. On le dit, et on renvoie vers les réglages plutôt que de laisser
-        // l'utilisateur buter sur un échec de connexion.
-        bool hasHost = !string.IsNullOrWhiteSpace(_settings.Host);
-        ConnectButton.IsEnabled = hasHost;
-        if (!hasHost)
-        {
-            LoginServerLabel.Text = "Aucun serveur configuré";
-            SetStatus("Renseignez l'adresse du serveur dans les réglages, en haut à droite.");
-            SettingsButton.Focus();
-            return;
-        }
+        LoginServerLabel.Text = _settings.Host;
+        ConnectButton.IsEnabled = true;
 
         if (string.IsNullOrEmpty(UserBox.Text)) UserBox.Focus();
         else PassBox.Focus();
+    }
+
+    /// <summary>
+    /// Choix du serveur : premier démarrage, ou « Changer » depuis l'écran de
+    /// connexion. Plus direct que les réglages, où l'adresse se perd parmi
+    /// une vingtaine d'options qu'un nouvel utilisateur n'a pas à voir.
+    /// </summary>
+    private void ShowServerSetup()
+    {
+        bool firstRun = string.IsNullOrWhiteSpace(_settings.Host);
+        ServerTitle.Text = firstRun ? "Bienvenue" : "Changer de serveur";
+        ServerHostBox.Text = _settings.Host;
+        ServerSelfSignedCheck.IsChecked = _settings.AllowSelfSigned;
+        ServerStatusText.Text = "";
+        ServerContinueButton.IsEnabled = true;
+
+        ServerPanel.Visibility = Visibility.Visible;
+        LoginPanel.Visibility = Visibility.Collapsed;
+        DevicesPanel.Visibility = Visibility.Collapsed;
+        LoadingPanel.Visibility = Visibility.Collapsed;
+        RefreshButton.Visibility = Visibility.Collapsed;
+
+        ServerHostBox.Focus();
+        ServerHostBox.SelectAll();
+    }
+
+    private void ChangeServer_Click(object sender, RoutedEventArgs e) => ShowServerSetup();
+
+    private void ServerHostBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) ServerContinue_Click(sender, e);
+    }
+
+    /// <summary>
+    /// Vérifie que le serveur répond, puis l'enregistre et passe à la connexion.
+    /// </summary>
+    private async void ServerContinue_Click(object sender, RoutedEventArgs e)
+    {
+        if (!ServerContinueButton.IsEnabled) return;
+
+        var profile = new ServerProfile
+        {
+            Host = ServerHostBox.Text.Trim(),
+            AllowSelfSigned = ServerSelfSignedCheck.IsChecked == true,
+        };
+        if (profile.BaseUri is not { } uri)
+        {
+            SetServerStatus(string.IsNullOrEmpty(profile.Host)
+                ? "Renseignez l'adresse du serveur."
+                : "Cette adresse n'est pas valide.", isError: true);
+            ServerHostBox.Focus();
+            return;
+        }
+
+        // Retenue sous sa forme canonique, nom[:port] : le schéma et la barre
+        // finale qu'on colle souvent depuis le navigateur n'ont rien à y faire.
+        profile.Host = uri.Authority;
+
+        ServerContinueButton.IsEnabled = false;
+        SetServerStatus($"Vérification de {profile.Host}…");
+        var error = await MeshServerConnection.ProbeAsync(profile);
+        ServerContinueButton.IsEnabled = true;
+        if (error is not null)
+        {
+            SetServerStatus(error, isError: true);
+            ServerHostBox.Focus();
+            return;
+        }
+
+        // Un autre serveur, c'est un autre compte : ce qui ouvrait une session
+        // sur l'ancien n'a plus cours.
+        if (!string.Equals(profile.Host, _settings.Host, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(_settings.Host))
+        {
+            _settings.ProtectedPassword = null;
+            _settings.ClearDeviceTrust();
+        }
+
+        _settings.Host = profile.Host;
+        _settings.AllowSelfSigned = profile.AllowSelfSigned;
+        _settings.SaveNow();
+        Log.Info($"Serveur choisi : {profile.Host}", "Réglages");
+
+        ApplySettingsToUi();
+        SetStatus("");
+        ShowLogin();
+    }
+
+    private void SetServerStatus(string text, bool isError = false)
+    {
+        ServerStatusText.Text = text;
+        ServerStatusText.Foreground = isError
+            ? (System.Windows.Media.Brush)FindResource("DangerBrush")
+            : (System.Windows.Media.Brush)FindResource("TextSecondaryBrush");
     }
 
     /// <summary>
@@ -548,6 +660,7 @@ public partial class MainWindow : ChromeWindow
 
     private void ShowLoading(string detail = "")
     {
+        ServerPanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Collapsed;
         DevicesPanel.Visibility = Visibility.Collapsed;
         LoadingPanel.Visibility = Visibility.Visible;
@@ -557,6 +670,7 @@ public partial class MainWindow : ChromeWindow
 
     private void ShowDevices()
     {
+        ServerPanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Collapsed;
         LoadingPanel.Visibility = Visibility.Collapsed;
         DevicesPanel.Visibility = Visibility.Visible;

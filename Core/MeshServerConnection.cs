@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 
@@ -197,7 +198,21 @@ public sealed class MeshServerConnection : IDisposable
             }
             else
             {
-                Log.Error($"Connexion à {Profile.Host} échouée : {LastError}", ex, "Serveur");
+                // Refus du serveur et réseau injoignable sont des issues prévues :
+                // une ligne suffit. Pendant une coupure, la reconnexion automatique
+                // les répète chaque minute, et la pile d'appels, toujours la même,
+                // noyait le journal.
+                if (ex is MeshException or OperationCanceledException
+                    or System.Net.WebSockets.WebSocketException)
+                {
+                    var detail = TechnicalDetail(ex);
+                    Log.Warning(detail == LastError
+                                    ? $"Connexion à {Profile.Host} échouée : {LastError}"
+                                    : $"Connexion à {Profile.Host} échouée : {LastError} ({detail})",
+                                "Serveur");
+                }
+                else
+                    Log.Error($"Connexion à {Profile.Host} échouée : {LastError}", ex, "Serveur");
                 SetState(ConnectionState.Failed);
             }
             throw;
@@ -289,10 +304,59 @@ public sealed class MeshServerConnection : IDisposable
     private static string FriendlyMessage(Exception ex) => ex switch
     {
         MeshException me => me.Message,
-        System.Net.WebSockets.WebSocketException => "Impossible de joindre le serveur. Vérifiez l'adresse et, si le serveur utilise un certificat auto-signé, activez l'option correspondante.",
+        // L'échec de l'établissement porte sa cause dans l'HttpRequestException
+        // interne : on ne parle de certificat que lorsqu'il est en cause.
+        System.Net.WebSockets.WebSocketException { InnerException: HttpRequestException http }
+            => Describe(http),
+        HttpRequestException http => Describe(http),
+        System.Net.WebSockets.WebSocketException => "La connexion avec le serveur a été interrompue.",
         OperationCanceledException => "Délai de connexion dépassé.",
         _ => ex.Message,
     };
+
+    private static string Describe(HttpRequestException http) => http.HttpRequestError switch
+    {
+        HttpRequestError.NameResolutionError
+            => "Serveur introuvable. Vérifiez l'adresse et la connexion réseau.",
+        HttpRequestError.SecureConnectionError
+            => "Le certificat du serveur a été refusé. S'il est auto-signé, activez l'option correspondante.",
+        _ => "Impossible de joindre le serveur. Vérifiez la connexion réseau.",
+    };
+
+    /// <summary>
+    /// Vérifie qu'un serveur répond, avant même de présenter des identifiants :
+    /// une faute de frappe dans l'adresse se signale ainsi au moment où on la
+    /// saisit. Toute réponse HTTP suffit — c'est l'adresse et le certificat
+    /// qu'on éprouve, pas le compte. Renvoie null si le serveur répond, sinon
+    /// un message destiné à l'utilisateur.
+    /// </summary>
+    public static async Task<string?> ProbeAsync(ServerProfile profile)
+    {
+        if (profile.BaseUri is not { } uri) return "Adresse invalide.";
+
+        using var handler = new HttpClientHandler();
+        if (profile.AllowSelfSigned)
+            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+        try
+        {
+            using var response = await http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead)
+                                           .ConfigureAwait(false);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"{profile.Host} ne répond pas : {TechnicalDetail(ex)}", "Serveur");
+            return FriendlyMessage(ex);
+        }
+    }
+
+    /// <summary>Cause d'origine, pour le journal : le message affiché la résume.</summary>
+    private static string TechnicalDetail(Exception ex)
+    {
+        while (ex.InnerException is { } inner) ex = inner;
+        return ex.Message;
+    }
 
     public void Disconnect()
     {
@@ -378,7 +442,7 @@ public sealed class MeshServerConnection : IDisposable
         switch (action)
         {
             case "ping":
-                _ = SendJsonAsync(new { action = "pong" });
+                SendJsonAsync(new { action = "pong" }).Forget();
                 break;
             case "meshes":
                 if (json.TryGetProperty("meshes", out var meshesEl) && meshesEl.ValueKind == JsonValueKind.Array)
@@ -589,7 +653,7 @@ public sealed class MeshServerConnection : IDisposable
             case "meshchange":
             case "createmesh":
             case "deletemesh":
-                _ = RefreshDeviceListAsync();
+                RefreshDeviceListAsync().Forget();
                 break;
         }
     }

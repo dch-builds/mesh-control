@@ -40,7 +40,7 @@ $project = Join-Path $PSScriptRoot 'MeshControl.csproj'
 #    « MeshControl » à « MeshControl » a imposé une réinstallation.
 $packId    = 'MeshControl'
 $packTitle = 'Mesh Control'
-$authors   = 'Mesh Control'
+$authors   = 'David CHIESA'
 $channel   = 'win'
 $mainExe   = 'Mesh Control.exe'
 
