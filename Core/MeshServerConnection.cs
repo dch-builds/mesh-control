@@ -183,8 +183,23 @@ public sealed class MeshServerConnection : IDisposable
             _socket = null;
             socket.Dispose();
             LastError = FriendlyMessage(ex);
-            Log.Error($"Connexion à {Profile.Host} échouée : {LastError}", ex, "Serveur");
-            SetState(ConnectionState.Failed);
+
+            // Une demande de second facteur n'est pas un échec : l'authentification
+            // se poursuit, la main revient simplement à l'utilisateur. La marquer
+            // « Failed » déclencherait le traitement d'une connexion perdue, lequel
+            // repart d'un formulaire de connexion vierge — et effacerait le champ du
+            // code que l'interface vient d'afficher, l'événement d'état étant traité
+            // après coup par la file de messages.
+            if (ex is MeshTwoFactorRequiredException)
+            {
+                Log.Info($"{Profile.Host} réclame un code à deux facteurs", "Serveur");
+                SetState(ConnectionState.Disconnected);
+            }
+            else
+            {
+                Log.Error($"Connexion à {Profile.Host} échouée : {LastError}", ex, "Serveur");
+                SetState(ConnectionState.Failed);
+            }
             throw;
         }
 
