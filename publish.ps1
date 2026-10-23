@@ -28,9 +28,16 @@ param(
 $ErrorActionPreference = 'Stop'
 $project = Join-Path $PSScriptRoot 'MeshControl.csproj'
 
-# Identité du paquet. Le packId sert de nom au dossier d'installation
-# (%LOCALAPPDATA%\<packId>) : il ne doit surtout pas valoir « Mesh Control », qui
-# entrerait en collision avec le dossier de journaux utilisé par Log.cs.
+# Identité du paquet. Le packId nomme les fichiers de release et le dossier
+# d'installation (%LOCALAPPDATA%\<packId>).
+#
+# Deux écueils :
+#  - ne pas l'écrire « Mesh Control » : le dossier d'installation entrerait en
+#    collision avec celui des journaux, utilisé par Log.cs ;
+#  - ne plus le changer ensuite. Velopack identifie l'application par lui : une
+#    installation posée sous un autre packId ne verra jamais les releases
+#    publiées sous celui-ci, et restera indéfiniment à sa version. Le passage de
+#    « MeshControl » à « MeshControl » a imposé une réinstallation.
 $packId    = 'MeshControl'
 $packTitle = 'Mesh Control'
 $authors   = 'Mesh Control'

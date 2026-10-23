@@ -16,10 +16,12 @@ namespace MeshControl.Core;
 /// </summary>
 public sealed class AppSettings
 {
-    /// <summary>Serveur MeshCentral par défaut de l'entreprise.</summary>
-    public const string DefaultHost = "meshcentral.example.com";
-
-    public string Host { get; set; } = DefaultHost;
+    /// <summary>
+    /// Adresse du serveur MeshCentral. Vide tant que l'utilisateur ne l'a pas
+    /// renseignée : aucune adresse n'est présumée, celle d'une entreprise
+    /// donnée n'ayant de sens que pour elle.
+    /// </summary>
+    public string Host { get; set; } = "";
     public string Username { get; set; } = "";
     public bool AllowSelfSigned { get; set; }
     public bool RememberCredentials { get; set; } = true;

@@ -464,6 +464,19 @@ public partial class MainWindow : ChromeWindow
         SendCodeButton.Visibility = Visibility.Collapsed;
         TokenBox.Clear();
 
+        // Premier lancement : sans adresse de serveur, se connecter n'a aucun
+        // sens. On le dit, et on renvoie vers les réglages plutôt que de laisser
+        // l'utilisateur buter sur un échec de connexion.
+        bool hasHost = !string.IsNullOrWhiteSpace(_settings.Host);
+        ConnectButton.IsEnabled = hasHost;
+        if (!hasHost)
+        {
+            LoginServerLabel.Text = "Aucun serveur configuré";
+            SetStatus("Renseignez l'adresse du serveur dans les réglages, en haut à droite.");
+            SettingsButton.Focus();
+            return;
+        }
+
         if (string.IsNullOrEmpty(UserBox.Text)) UserBox.Focus();
         else PassBox.Focus();
     }
@@ -558,7 +571,8 @@ public partial class MainWindow : ChromeWindow
             UserBox.Text.Trim(),
             PassBox.Password,
             string.IsNullOrWhiteSpace(TokenBox.Text) ? null : TokenBox.Text.Trim(),
-            RememberCheck.IsChecked == true);
+            RememberCheck.IsChecked == true,
+            manual: true);
     }
 
     private void PassBox_KeyDown(object sender, KeyEventArgs e)
@@ -574,9 +588,19 @@ public partial class MainWindow : ChromeWindow
     /// le jeton de connexion s'il existe, le cookie d'appareil de confiance
     /// à défaut.
     /// </summary>
-    private MeshLogin BuildLogin(string password, string? token)
+    private MeshLogin BuildLogin(string password, string? token, bool manual = false)
     {
-        if (string.IsNullOrEmpty(token) && _settings.HasLoginToken)
+        // Un mot de passe tapé à l'instant l'emporte sur le jeton. Sans cela,
+        // posséder un jeton interdit toute autre connexion : le jeton est
+        // présenté quoi qu'on saisisse, et comme il ne déclenche jamais de
+        // second facteur, le champ du code ne s'affiche plus jamais — on ne peut
+        // donc ni changer de compte, ni réautoriser le poste.
+        //
+        // La reconnexion automatique, elle, continue de préférer le jeton : elle
+        // n'a personne pour saisir un code si le serveur en réclamait un.
+        bool passwordWins = manual && !string.IsNullOrEmpty(password);
+
+        if (string.IsNullOrEmpty(token) && _settings.HasLoginToken && !passwordWins)
         {
             return new MeshLogin
             {
@@ -595,7 +619,12 @@ public partial class MainWindow : ChromeWindow
         };
     }
 
-    private async Task ConnectAsync(string user, string password, string? token, bool remember)
+    /// <param name="manual">
+    /// Vrai quand l'utilisateur vient de remplir le formulaire : sa saisie prime
+    /// alors sur le jeton de connexion mémorisé (voir BuildLogin).
+    /// </param>
+    private async Task ConnectAsync(string user, string password, string? token,
+                                    bool remember, bool manual = false)
     {
         // Le jeton de connexion remplace le mot de passe : il suffit à ouvrir
         // la session, même si le mot de passe du compte n'est pas mémorisé.
@@ -651,7 +680,7 @@ public partial class MainWindow : ChromeWindow
 
         try
         {
-            var login = BuildLogin(password, token);
+            var login = BuildLogin(password, token, manual);
             try
             {
                 await _connection.ConnectAsync(login);
@@ -665,7 +694,7 @@ public partial class MainWindow : ChromeWindow
                 _settings.ClearLoginToken();
                 if (string.IsNullOrEmpty(password)) throw;
 
-                login = BuildLogin(password, token);
+                login = BuildLogin(password, token, manual);
                 await _connection.ConnectAsync(login);
             }
 
