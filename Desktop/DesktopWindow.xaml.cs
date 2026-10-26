@@ -831,7 +831,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         => OpenCompanionSession(new Ssh.TerminalWindow(_connection, _node), "▶", "Terminal");
 
     private void OpenFiles_Click(object sender, RoutedEventArgs e)
-        => OpenCompanionSession(new Files.FilesWindow(_connection, _node), "📁", "Fichiers");
+        => OpenCompanionSession(new Files.FilesWindow(_connection, _node, _settings), "📁", "Fichiers");
 
     private void OpenSystemInfo_Click(object sender, RoutedEventArgs e)
     {

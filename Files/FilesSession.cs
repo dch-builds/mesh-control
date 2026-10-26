@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -19,6 +20,15 @@ public sealed class FileEntry
     public DateTime? Modified { get; init; }
     public string? DriveType { get; init; }
     public long? FreeBytes { get; init; }
+
+    /// <summary>Ordre d'affichage : dossiers et lecteurs d'abord, puis tri alphabétique.</summary>
+    public static int CompareForDisplay(FileEntry x, FileEntry y)
+    {
+        bool xDir = x.Kind != FileKind.File;
+        bool yDir = y.Kind != FileKind.File;
+        if (xDir != yDir) return xDir ? -1 : 1;
+        return string.Compare(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
+    }
 
     public static FileEntry? From(JsonElement json)
     {
@@ -59,7 +69,23 @@ public sealed class TransferProgress
     public long Transferred { get; set; }
     public long Total { get; set; }
     public bool IsUpload { get; init; }
-    public double Fraction => Total > 0 ? (double)Transferred / Total : 0;
+    public DateTime StartedAt { get; } = DateTime.UtcNow;
+    public double Fraction => Total > 0 ? Math.Min(1, (double)Transferred / Total) : 0;
+
+    /// <summary>
+    /// Débit moyen depuis le début du fichier, en octets par seconde. Nul tant
+    /// que la mesure porte sur trop peu de temps pour signifier quelque chose :
+    /// la première fenêtre de fragments part d'un bloc et afficherait un débit
+    /// fantaisiste.
+    /// </summary>
+    public double BytesPerSecond
+    {
+        get
+        {
+            var elapsed = (DateTime.UtcNow - StartedAt).TotalSeconds;
+            return elapsed > 0.5 ? Transferred / elapsed : 0;
+        }
+    }
 }
 
 /// <summary>
@@ -99,13 +125,30 @@ public sealed class FilesSession : IDisposable
     // État de l'envoi. L'agent n'applique pas de contrôle de flux : il écrit ce
     // qui arrive et acquitte chaque fragment. On garde donc une fenêtre de
     // fragments en vol plutôt qu'un aller-retour par fragment.
+    //
+    // Le fichier est lu au fil de l'eau, fragment par fragment : le charger en
+    // entier limitait la taille envoyable à la mémoire disponible, et un même
+    // fichier envoyé à dix machines aurait occupé dix fois sa taille.
     private const int UploadWindow = 16;      // × 64 Ko ≈ 1 Mo en vol
     private const int ChunkSize = 65536;
+    private readonly object _uploadLock = new();
     private int _uploadInFlight;
-    private byte[]? _uploadData;
-    private int _uploadOffset;
+    private FileStream? _uploadStream;
+    private long _uploadLength;
+    private long _uploadOffset;
     private int _uploadReqId;
+    private bool _uploadDoneSent;
     private TaskCompletionSource<bool>? _uploadCompletion;
+
+    /// <summary>
+    /// Lectures de dossier faites pour le compte d'un appelant (création de
+    /// dossiers, téléchargement récursif…), indexées par numéro de requête :
+    /// leur réponse ne doit pas remplacer la liste affichée.
+    /// </summary>
+    private readonly ConcurrentDictionary<int, TaskCompletionSource<List<FileEntry>?>> _probes = new();
+
+    /// <summary>Délai au-delà duquel une lecture de dossier est jugée perdue.</summary>
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(20);
 
     private DateTime _lastProgressUpdate = DateTime.MinValue;
 
@@ -117,7 +160,7 @@ public sealed class FilesSession : IDisposable
     }
 
     /// <summary>Les agents Windows listent les lecteurs au chemin vide ; les autres partent de /.</summary>
-    private bool IsWindows => Node.OsFamily == OSFamily.Windows;
+    public bool IsWindows => Node.OsFamily == OSFamily.Windows;
 
     public string CurrentPath =>
         _pathComponents.Count == 0 ? (IsWindows ? "" : "/") : string.Join("/", _pathComponents);
@@ -125,6 +168,8 @@ public sealed class FilesSession : IDisposable
     public string DisplayPath =>
         _pathComponents.Count == 0 ? (IsWindows ? "Cet ordinateur" : "/")
                                    : string.Join("/", _pathComponents);
+
+    private int NextRequestId() => Interlocked.Increment(ref _requestCounter);
 
     private void SetState(FilesSessionState state)
     {
@@ -134,7 +179,11 @@ public sealed class FilesSession : IDisposable
 
     // MARK: - Cycle de vie
 
-    public async Task StartAsync()
+    /// <param name="listOnStart">
+    /// Lire le dossier racine dès l'ouverture. Inutile pour une session qui ne
+    /// sert qu'à envoyer des fichiers vers un chemin connu.
+    /// </param>
+    public async Task StartAsync(bool listOnStart = true)
     {
         try
         {
@@ -148,7 +197,7 @@ public sealed class FilesSession : IDisposable
             StartReceiveLoop(socket, _cts.Token);
 
             SetState(FilesSessionState.Ready);
-            await ListAsync().ConfigureAwait(false);
+            if (listOnStart) await ListAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -165,6 +214,7 @@ public sealed class FilesSession : IDisposable
         try { _cts?.Cancel(); } catch { }
         _sendQueue.Writer.TryComplete();
         _uploadCompletion?.TrySetCanceled();
+        FailProbes(new OperationCanceledException());
         _socket?.Close();
         _socket?.Dispose();
         _socket = null;
@@ -176,8 +226,7 @@ public sealed class FilesSession : IDisposable
     public Task ListAsync()
     {
         IsLoading = true;
-        _requestCounter++;
-        return SendJsonAsync(new { action = "ls", reqid = _requestCounter, path = CurrentPath });
+        return SendJsonAsync(new { action = "ls", reqid = NextRequestId(), path = CurrentPath });
     }
 
     public Task EnterAsync(FileEntry entry)
@@ -213,27 +262,105 @@ public sealed class FilesSession : IDisposable
         return ListAsync();
     }
 
+    // MARK: - Lecture et création de dossiers à la demande
+
+    /// <summary>
+    /// Lit un dossier sans toucher à la liste affichée.
+    /// </summary>
+    /// <returns>Son contenu, ou null si le dossier n'existe pas ou n'est pas lisible.</returns>
+    public async Task<IReadOnlyList<FileEntry>?> ListDirectoryAsync(string path,
+                                                                   CancellationToken ct = default)
+    {
+        if (State != FilesSessionState.Ready)
+            throw new MeshException(CloseReason ?? "La session de fichiers n'est pas ouverte.");
+
+        var reqid = NextRequestId();
+        var probe = new TaskCompletionSource<List<FileEntry>?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _probes[reqid] = probe;
+
+        try
+        {
+            await SendJsonAsync(new { action = "ls", reqid, path }).ConfigureAwait(false);
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(ProbeTimeout);
+            using (timeout.Token.Register(() => probe.TrySetCanceled()))
+            {
+                return await probe.Task.ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_stopped)
+        {
+            throw new MeshException("La machine ne répond pas.");
+        }
+        finally
+        {
+            _probes.TryRemove(reqid, out _);
+        }
+    }
+
+    /// <summary>
+    /// Garantit l'existence d'un dossier, en créant au besoin ses parents.
+    ///
+    /// « mkdir » n'est pas acquitté par l'agent. Une relecture du dossier en
+    /// tient lieu : l'agent traite les commandes d'un tunnel dans l'ordre, la
+    /// réponse au « ls » arrive donc après la création, et dit si elle a réussi.
+    /// </summary>
+    public async Task EnsureDirectoryAsync(string path, CancellationToken ct = default)
+    {
+        if (IsRootPath(path)) return;
+        if (await ListDirectoryAsync(path, ct).ConfigureAwait(false) is not null) return;
+
+        if (ParentPath(path) is { } parent) await EnsureDirectoryAsync(parent, ct).ConfigureAwait(false);
+
+        await SendJsonAsync(new { action = "mkdir", reqid = NextRequestId(), path }).ConfigureAwait(false);
+
+        if (await ListDirectoryAsync(path, ct).ConfigureAwait(false) is null)
+            throw new MeshException($"Le dossier « {path} » n'a pas pu être créé.");
+    }
+
+    /// <summary>
+    /// Racine d'un système de fichiers : « / », « C: » ou « C:\ ». On ne cherche
+    /// jamais à la créer.
+    /// </summary>
+    private static bool IsRootPath(string path)
+    {
+        var trimmed = path.TrimEnd('/', '\\');
+        return trimmed.Length == 0
+               || (trimmed.Length == 2 && trimmed[1] == ':' && char.IsLetter(trimmed[0]));
+    }
+
+    /// <summary>Dossier parent, ou null pour une racine.</summary>
+    private static string? ParentPath(string path)
+    {
+        var trimmed = path.TrimEnd('/', '\\');
+        var index = trimmed.LastIndexOfAny(['/', '\\']);
+        if (index < 0) return null;
+
+        var parent = trimmed[..index];
+        // « /home » a pour parent « / », pas la chaîne vide.
+        if (parent.Length == 0) return "/";
+        return IsRootPath(parent) ? null : parent;
+    }
+
     // MARK: - Opérations sur les fichiers
 
     public Task CreateFolderAsync(string name)
     {
-        _requestCounter++;
         var path = CombinePath(CurrentPath, name);
-        return SendJsonAsync(new { action = "mkdir", reqid = _requestCounter, path });
+        return SendJsonAsync(new { action = "mkdir", reqid = NextRequestId(), path });
     }
 
     public Task DeleteAsync(IEnumerable<string> names, bool recursive)
-    {
-        _requestCounter++;
-        return SendJsonAsync(new
+        => SendJsonAsync(new
         {
             action = "rm",
-            reqid = _requestCounter,
+            reqid = NextRequestId(),
             path = CurrentPath,
             delfiles = names.ToArray(),
             rec = recursive,
         });
-    }
 
     public Task RenameAsync(string oldName, string newName)
         => SendJsonAsync(new
@@ -247,7 +374,7 @@ public sealed class FilesSession : IDisposable
     /// <summary>
     /// Assemble un chemin en respectant le séparateur de la plateforme distante.
     /// </summary>
-    private string CombinePath(string basePath, string name)
+    public string CombinePath(string basePath, string name)
     {
         if (string.IsNullOrEmpty(basePath)) return name;
         var separator = IsWindows ? "\\" : "/";
@@ -295,6 +422,7 @@ public sealed class FilesSession : IDisposable
             FileName = entry.Name, Total = entry.Size, IsUpload = false,
         });
 
+        var completed = false;
         try
         {
             using var handler = new HttpClientHandler();
@@ -308,20 +436,28 @@ public sealed class FilesSession : IDisposable
 
             var total = response.Content.Headers.ContentLength ?? entry.Size;
             await using var source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            await using var target = File.Create(destination);
-
-            var buffer = new byte[81920];
-            long received = 0;
-            int read;
-            while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+            await using (var target = File.Create(destination))
             {
-                await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-                received += read;
-                UpdateProgress(received, total);
+                var buffer = new byte[81920];
+                long received = 0;
+                int read;
+                while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                {
+                    await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                    received += read;
+                    UpdateProgress(received, total);
+                }
             }
+            completed = true;
         }
         finally
         {
+            // Un fichier à moitié reçu ressemble à s'y méprendre au bon : on ne
+            // le laisse pas traîner derrière une annulation ou une erreur.
+            if (!completed)
+            {
+                try { File.Delete(destination); } catch { }
+            }
             SetTransfer(null);
         }
     }
@@ -349,21 +485,33 @@ public sealed class FilesSession : IDisposable
     {
         if (Transfer is not null)
             throw new MeshException("Un transfert est déjà en cours.");
+        if (State != FilesSessionState.Ready)
+            throw new MeshException(CloseReason ?? "La session de fichiers n'est pas ouverte.");
 
-        var data = await File.ReadAllBytesAsync(localPath, ct).ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+
+        var stream = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                                    ChunkSize, FileOptions.SequentialScan);
         var name = Path.GetFileName(localPath);
-
-        _requestCounter++;
-        _uploadReqId = _requestCounter;
-        _uploadData = data;
-        _uploadOffset = 0;
-        _uploadInFlight = 0;
-        _uploadCompletion = new TaskCompletionSource<bool>(
+        var completion = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        int reqid;
+
+        lock (_uploadLock)
+        {
+            reqid = NextRequestId();
+            _uploadReqId = reqid;
+            _uploadStream = stream;
+            _uploadLength = stream.Length;
+            _uploadOffset = 0;
+            _uploadInFlight = 0;
+            _uploadDoneSent = false;
+            _uploadCompletion = completion;
+        }
 
         SetTransfer(new TransferProgress
         {
-            FileName = name, Total = data.LongLength, IsUpload = true,
+            FileName = name, Total = stream.Length, IsUpload = true,
         });
 
         try
@@ -371,22 +519,28 @@ public sealed class FilesSession : IDisposable
             await SendJsonAsync(new
             {
                 action = "upload",
-                reqid = _uploadReqId,
+                reqid,
                 path = remotePath,
                 name,
-                size = data.Length,
+                size = stream.Length,
                 append = false,
             }).ConfigureAwait(false);
 
             using (ct.Register(() => CancelTransfer()))
             {
-                await _uploadCompletion.Task.ConfigureAwait(false);
+                await completion.Task.ConfigureAwait(false);
             }
         }
         finally
         {
-            _uploadData = null;
-            _uploadCompletion = null;
+            lock (_uploadLock)
+            {
+                if (ReferenceEquals(_uploadStream, stream)) _uploadStream = null;
+                if (ReferenceEquals(_uploadCompletion, completion)) _uploadCompletion = null;
+            }
+            // Hors du verrou : PumpUpload ne lit le flux que sous ce verrou, et
+            // ne peut donc plus s'en servir une fois la référence effacée.
+            stream.Dispose();
             SetTransfer(null);
         }
     }
@@ -397,45 +551,82 @@ public sealed class FilesSession : IDisposable
     /// </summary>
     private void PumpUpload()
     {
-        var data = _uploadData;
-        if (data is null) return;
+        long acknowledged;
+        long length;
 
-        while (_uploadInFlight < UploadWindow && _uploadOffset < data.Length)
+        lock (_uploadLock)
         {
-            int size = Math.Min(ChunkSize, data.Length - _uploadOffset);
-            var chunk = new byte[size];
-            Array.Copy(data, _uploadOffset, chunk, 0, size);
-            _uploadOffset += size;
-            _uploadInFlight++;
+            var stream = _uploadStream;
+            if (stream is null) return;
 
-            // Un fragment commençant par '{' ou 0x00 serait confondu avec une
-            // commande JSON : on le préfixe d'un octet d'échappement 0x00.
-            if (chunk.Length > 0 && (chunk[0] == 0x7B || chunk[0] == 0x00))
+            try
             {
-                var escaped = new byte[chunk.Length + 1];
-                escaped[0] = 0x00;
-                Array.Copy(chunk, 0, escaped, 1, chunk.Length);
-                chunk = escaped;
+                while (_uploadInFlight < UploadWindow && _uploadOffset < _uploadLength)
+                {
+                    int size = (int)Math.Min(ChunkSize, _uploadLength - _uploadOffset);
+                    var chunk = new byte[size];
+                    int read = stream.ReadAtLeast(chunk, size, throwOnEndOfStream: false);
+                    if (read == 0)
+                    {
+                        // Fichier raccourci pendant l'envoi : on clôt sur ce qui a été lu.
+                        _uploadLength = _uploadOffset;
+                        break;
+                    }
+                    if (read < size) chunk = chunk[..read];
+
+                    _uploadOffset += read;
+                    _uploadInFlight++;
+
+                    // Un fragment commençant par '{' ou 0x00 serait confondu avec une
+                    // commande JSON : on le préfixe d'un octet d'échappement 0x00.
+                    if (chunk[0] == 0x7B || chunk[0] == 0x00)
+                    {
+                        var escaped = new byte[chunk.Length + 1];
+                        escaped[0] = 0x00;
+                        Array.Copy(chunk, 0, escaped, 1, chunk.Length);
+                        chunk = escaped;
+                    }
+                    _sendQueue.Writer.TryWrite(chunk);
+                }
             }
-            _sendQueue.Writer.TryWrite(chunk);
+            catch (Exception ex)
+            {
+                // Fichier devenu illisible en cours de route (support retiré,
+                // verrou posé par une autre application) : l'agent doit effacer
+                // ce qu'il a déjà écrit.
+                _ = SendJsonAsync(new { action = "uploadcancel", reqid = _uploadReqId });
+                _uploadCompletion?.TrySetException(
+                    new MeshException($"Lecture du fichier impossible : {ex.Message}"));
+                _uploadCompletion = null;
+                _uploadStream = null;
+                return;
+            }
+
+            // Progression approximative : octets effectivement acquittés par l'agent.
+            acknowledged = Math.Max(0, _uploadOffset - (long)_uploadInFlight * ChunkSize);
+            length = _uploadLength;
+
+            if (_uploadOffset >= _uploadLength && _uploadInFlight == 0 && !_uploadDoneSent)
+            {
+                _uploadDoneSent = true;
+                _ = SendJsonAsync(new { action = "uploaddone", reqid = _uploadReqId });
+            }
         }
 
-        // Progression approximative : octets effectivement acquittés par l'agent.
-        long acknowledged = Math.Max(0, _uploadOffset - (long)_uploadInFlight * ChunkSize);
-        UpdateProgress(acknowledged, data.LongLength);
-
-        if (_uploadOffset >= data.Length && _uploadInFlight == 0)
-            _ = SendJsonAsync(new { action = "uploaddone", reqid = _uploadReqId });
+        UpdateProgress(acknowledged, length);
     }
 
     public void CancelTransfer()
     {
-        if (_uploadCompletion is not null)
+        lock (_uploadLock)
         {
-            _ = SendJsonAsync(new { action = "uploadcancel", reqid = _uploadReqId });
-            _uploadCompletion.TrySetCanceled();
-            _uploadCompletion = null;
-            _uploadData = null;
+            if (_uploadCompletion is not null)
+            {
+                _ = SendJsonAsync(new { action = "uploadcancel", reqid = _uploadReqId });
+                _uploadCompletion.TrySetCanceled();
+                _uploadCompletion = null;
+                _uploadStream = null;
+            }
         }
         SetTransfer(null);
     }
@@ -452,14 +643,14 @@ public sealed class FilesSession : IDisposable
     /// </summary>
     private void UpdateProgress(long transferred, long total)
     {
-        if (Transfer is null) return;
+        if (Transfer is not { } transfer) return;
         var now = DateTime.UtcNow;
         bool finished = transferred >= total;
         if (!finished && (now - _lastProgressUpdate).TotalMilliseconds < 100) return;
 
         _lastProgressUpdate = now;
-        Transfer.Transferred = transferred;
-        if (total > 0) Transfer.Total = total;
+        transfer.Transferred = transferred;
+        if (total > 0) transfer.Total = total;
         _ui.BeginInvoke(() => TransferChanged?.Invoke());
     }
 
@@ -492,9 +683,14 @@ public sealed class FilesSession : IDisposable
                 catch
                 {
                     // Libérer un envoi en cours pour ne pas laisser l'interface figée.
-                    _uploadCompletion?.TrySetException(
-                        new MeshException("La connexion a été perdue pendant le transfert."));
-                    _uploadCompletion = null;
+                    var lost = new MeshException("La connexion a été perdue pendant le transfert.");
+                    lock (_uploadLock)
+                    {
+                        _uploadCompletion?.TrySetException(lost);
+                        _uploadCompletion = null;
+                        _uploadStream = null;
+                    }
+                    FailProbes(lost);
                     SetTransfer(null);
                     if (State != FilesSessionState.Closed)
                     {
@@ -527,6 +723,25 @@ public sealed class FilesSession : IDisposable
         }, ct);
     }
 
+    private void FailProbes(Exception reason)
+    {
+        foreach (var probe in _probes.Values)
+        {
+            if (reason is OperationCanceledException) probe.TrySetCanceled();
+            else probe.TrySetException(reason);
+        }
+    }
+
+    private static List<FileEntry> ParseEntries(JsonElement dir)
+    {
+        var entries = new List<FileEntry>();
+        foreach (var item in dir.EnumerateArray())
+            if (FileEntry.From(item) is { } entry) entries.Add(entry);
+
+        entries.Sort(FileEntry.CompareForDisplay);
+        return entries;
+    }
+
     private void HandleText(string text)
     {
         if (string.IsNullOrEmpty(text) || text[0] != '{') return;
@@ -544,20 +759,18 @@ public sealed class FilesSession : IDisposable
         // Réponse à un « ls » : la charge utile est dans « dir ».
         if (json.TryGetProperty("dir", out var dir))
         {
+            // Lecture demandée par un appelant : elle ne concerne pas l'affichage.
+            if (json.TryGetProperty("reqid", out var r) && r.ValueKind == JsonValueKind.Number
+                && r.TryGetInt32(out var reqid) && _probes.TryRemove(reqid, out var probe))
+            {
+                probe.TrySetResult(dir.ValueKind == JsonValueKind.Array ? ParseEntries(dir) : null);
+                return;
+            }
+
             _entries.Clear();
             if (dir.ValueKind == JsonValueKind.Array)
             {
-                foreach (var item in dir.EnumerateArray())
-                    if (FileEntry.From(item) is { } entry) _entries.Add(entry);
-
-                // Dossiers et lecteurs d'abord, puis tri alphabétique.
-                _entries.Sort((x, y) =>
-                {
-                    bool xDir = x.Kind != FileKind.File;
-                    bool yDir = y.Kind != FileKind.File;
-                    if (xDir != yDir) return xDir ? -1 : 1;
-                    return string.Compare(x.Name, y.Name, StringComparison.OrdinalIgnoreCase);
-                });
+                _entries.AddRange(ParseEntries(dir));
                 LastError = null;
             }
             else
@@ -578,19 +791,28 @@ public sealed class FilesSession : IDisposable
                 break;
 
             case "uploadack":
-                if (_uploadInFlight > 0) _uploadInFlight--;
+                lock (_uploadLock)
+                {
+                    if (_uploadInFlight > 0) _uploadInFlight--;
+                }
                 PumpUpload();
                 break;
 
             case "uploaddone":
-                _uploadCompletion?.TrySetResult(true);
-                _uploadCompletion = null;
+                lock (_uploadLock)
+                {
+                    _uploadCompletion?.TrySetResult(true);
+                    _uploadCompletion = null;
+                }
                 break;
 
             case "uploaderror":
-                _uploadCompletion?.TrySetException(
-                    new MeshException("L'envoi a été refusé par la machine distante."));
-                _uploadCompletion = null;
+                lock (_uploadLock)
+                {
+                    _uploadCompletion?.TrySetException(
+                        new MeshException("L'envoi a été refusé par la machine distante."));
+                    _uploadCompletion = null;
+                }
                 break;
 
             case "refresh":

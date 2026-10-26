@@ -1617,6 +1617,55 @@ public partial class MainWindow : ChromeWindow
         }
     }
 
+    // MARK: - Envoi de fichiers vers plusieurs machines
+
+    private void SendFiles_Click(object sender, RoutedEventArgs e)
+        => OpenSendFiles(SelectedNode is { IsOnline: true, HasAgent: true } node ? [node] : []);
+
+    /// <summary>
+    /// Ouvre la fenêtre d'envoi, ces machines déjà cochées et, le cas échéant,
+    /// ces fichiers déjà choisis.
+    /// </summary>
+    private void OpenSendFiles(IReadOnlyList<MeshNode> nodes, IEnumerable<string>? files = null)
+    {
+        if (_connection is null) return;
+
+        new Files.SendFilesWindow(_connection, _settings, nodes, files) { Owner = ActionOwner }.Show();
+    }
+
+    /// <summary>
+    /// Survol d'un dépôt de fichiers sur la liste : la machine visée se
+    /// sélectionne, pour qu'on sache où les fichiers vont partir.
+    /// </summary>
+    private void DeviceList_DragOver(object sender, DragEventArgs e)
+    {
+        var row = DeviceRowAt(e.OriginalSource);
+        var acceptable = e.Data.GetDataPresent(DataFormats.FileDrop)
+                         && row?.Node is { IsOnline: true, HasAgent: true };
+
+        e.Effects = acceptable ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+        if (acceptable) DeviceList.SelectedItem = row;
+    }
+
+    /// <summary>
+    /// Fichiers lâchés sur une machine : la fenêtre d'envoi s'ouvre, prête à
+    /// partir, et l'on peut encore y cocher d'autres machines.
+    /// </summary>
+    private void DeviceList_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } paths) return;
+        if (DeviceRowAt(e.OriginalSource)?.Node is not { IsOnline: true, HasAgent: true } node) return;
+
+        OpenSendFiles([node], paths);
+    }
+
+    private DeviceRow? DeviceRowAt(object source)
+        => source is DependencyObject element
+           && ItemsControl.ContainerFromElement(DeviceList, element) is ListBoxItem { DataContext: DeviceRow row }
+            ? row : null;
+
     // MARK: - Actions : clic droit = menu contextuel
 
     /// <summary>Sélectionne la ligne sous le curseur avant d'ouvrir le menu.</summary>
@@ -1638,6 +1687,7 @@ public partial class MainWindow : ChromeWindow
         // bureau à distance.
         MenuTerminal.IsEnabled = reachable;
         MenuFiles.IsEnabled = reachable;
+        MenuSendFiles.IsEnabled = reachable;
         // SSH passe par le serveur (c'est lui le client SSH) : l'agent n'est pas
         // requis, une machine sans agent mais joignable en réseau fonctionne.
         MenuSsh.IsEnabled = node is not null
@@ -1677,7 +1727,7 @@ public partial class MainWindow : ChromeWindow
         {
             // Ces quatre passent par l'agent installé sur la machine.
             DeviceAction.Desktop or DeviceAction.Terminal
-                or DeviceAction.Files or DeviceAction.Processes
+                or DeviceAction.Files or DeviceAction.SendFiles or DeviceAction.Processes
                 or DeviceAction.OpenUrl => reachable,
 
             DeviceAction.Reboot or DeviceAction.Sleep
@@ -1718,7 +1768,11 @@ public partial class MainWindow : ChromeWindow
 
             case DeviceAction.Files:
                 RememberRecent(node);
-                OpenSession(new Files.FilesWindow(_connection, node), node.Name, "📁");
+                OpenSession(new Files.FilesWindow(_connection, node, _settings), node.Name, "📁");
+                break;
+
+            case DeviceAction.SendFiles:
+                OpenSendFiles([node]);
                 break;
 
             case DeviceAction.Ssh:
@@ -1853,6 +1907,7 @@ public partial class MainWindow : ChromeWindow
     private void MenuDesktop_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Desktop);
     private void MenuTerminal_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Terminal);
     private void MenuFiles_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Files);
+    private void MenuSendFiles_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.SendFiles);
     private void MenuSsh_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Ssh);
     private void MenuWake_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Wake);
     private void MenuReboot_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Reboot);

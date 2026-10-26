@@ -97,6 +97,21 @@ public sealed class AppSettings
     /// </summary>
     public bool UseTabbedSessions { get; set; } = true;
 
+    /// <summary>
+    /// Dernières destinations d'un envoi vers plusieurs machines, une par
+    /// famille de système : les chemins Windows et Unix ne s'écrivent pas pareil.
+    /// </summary>
+    public string? TransferWindowsFolder { get; set; }
+    public string? TransferUnixFolder { get; set; }
+
+    /// <summary>
+    /// Fenêtre de fichiers en double volet : ce poste à gauche, la machine
+    /// distante à droite. Retenu d'une session à l'autre, comme le dernier
+    /// dossier local ouvert.
+    /// </summary>
+    public bool FilesDualPane { get; set; }
+    public string? FilesLocalFolder { get; set; }
+
     /// <summary>Identifiants des machines épinglées en favoris.</summary>
     public List<string> FavoriteNodeIds { get; set; } = new();
 

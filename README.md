@@ -54,13 +54,24 @@ standard.
 - Plein écran par Ctrl+Maj+F, comme le bureau à distance
 
 **Fichiers**
-- Navigation, téléchargement, envoi avec fenêtre de fragments en vol
+- Navigation par fil d'Ariane cliquable, pastilles par type de fichier
+- Vue double volet, retenue d'une session à l'autre : ce poste à gauche, la
+  machine à droite. On glisse d'un volet à l'autre, ou l'on passe par les
+  boutons → et ← ; un téléchargement arrive alors directement dans le dossier
+  local affiché, sans boîte de dialogue
+- Envoi avec fenêtre de fragments en vol, le fichier étant lu au fil de l'eau :
+  ni plafond de taille, ni chargement complet en mémoire
 - Glisser-déposer depuis l'Explorateur, envoi et téléchargement de plusieurs
   fichiers à la fois : les transferts s'enchaînent dans une file d'attente,
-  annulable d'un bloc. Les doublons locaux sont numérotés plutôt que remplacés
-- Les dossiers ne s'envoient pas d'un bloc — le protocole transfère fichier par
-  fichier — et un envoi est plafonné à 1 Go, le fichier étant chargé en mémoire
-  avant découpage
+  avec débit et temps restant. Chaque ligne s'annule ou se relance seule ; les
+  doublons locaux sont numérotés plutôt que remplacés
+- Les dossiers s'envoient et se téléchargent avec toute leur arborescence. Le
+  protocole ne transfère que des fichiers : les sous-dossiers sont recréés un à
+  un, chaque création étant confirmée par une relecture du dossier
+- Envoi vers plusieurs machines à la fois (menu contextuel, palette, bouton
+  « Envoyer des fichiers », ou fichiers glissés sur une machine de la liste) :
+  une session par machine, quatre en parallèle, une destination par famille de
+  système, et une relance qui reprend après les fichiers déjà reçus
 - Création de dossier, renommage, suppression
 
 **Administration**

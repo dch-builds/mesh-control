@@ -213,6 +213,17 @@
                                 VerticalAlignment="Center">
                         <TextBlock x:Name="CountText" Style="{StaticResource CaptionText}"
                                    VerticalAlignment="Center"/>
+                        <!-- Envoi groupé : choisir des fichiers et plusieurs machines -->
+                        <Button x:Name="SendFilesButton" Style="{StaticResource AccentToolButton}"
+                                Click="SendFiles_Click" Margin="12,0,0,0" Padding="10,5"
+                                ToolTip="Envoyer des fichiers vers une ou plusieurs machines — ou glissez-les sur une machine de la liste">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE898;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                           VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                <TextBlock Text="Envoyer des fichiers" FontSize="11.5"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                         <!-- Bascule entre la liste groupée et la vue à deux volets -->
                         <Button x:Name="ToggleViewButton" Style="{StaticResource ToolButton}"
                                 Click="ToggleView_Click" Margin="12,0,0,0"
@@ -287,7 +298,9 @@
                              Style="{StaticResource DeviceListBoxStyle}"
                              ItemContainerStyle="{StaticResource DeviceItemStyle}"
                              MouseDoubleClick="DeviceList_MouseDoubleClick"
-                             PreviewMouseRightButtonDown="DeviceList_PreviewMouseRightButtonDown">
+                             PreviewMouseRightButtonDown="DeviceList_PreviewMouseRightButtonDown"
+                             AllowDrop="True" DragOver="DeviceList_DragOver"
+                             Drop="DeviceList_Drop">
                         <!-- Clic droit : actions sur la machine (le clic gauche/double
                              ouvre directement le bureau à distance). -->
                         <ListBox.ContextMenu>
@@ -300,6 +313,9 @@
                                 <MenuItem x:Name="MenuFiles" Header="Fichiers"
                                           Click="MenuFiles_Click"
                                           ToolTip="Parcourir et transférer des fichiers"/>
+                                <MenuItem x:Name="MenuSendFiles" Header="Envoyer des fichiers…"
+                                          Click="MenuSendFiles_Click"
+                                          ToolTip="Vers cette machine et d'autres, en parallèle"/>
                                 <MenuItem x:Name="MenuSsh" Header="Terminal SSH"
                                           Click="MenuSsh_Click"
                                           ToolTip="Nécessite SSH activé sur le serveur MeshCentral"/>
