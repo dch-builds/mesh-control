@@ -341,6 +341,10 @@
                                 <MenuItem x:Name="MenuShare" Header="Partager un lien…"
                                           Click="MenuShare_Click"
                                           ToolTip="Créer un lien public temporaire (et son code iframe)"/>
+                                <MenuItem x:Name="MenuRename" Header="Renommer…"
+                                          InputGestureText="F2"
+                                          Click="MenuRename_Click"
+                                          ToolTip="Changer le nom affiché dans MeshCentral"/>
                                 <MenuItem x:Name="MenuCopyName" Header="Copier le nom"
                                           Click="MenuCopyName_Click"/>
                                 <MenuItem x:Name="MenuInfo" Header="Informations système…"

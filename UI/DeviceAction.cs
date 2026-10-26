@@ -20,6 +20,7 @@ public enum DeviceAction
     OpenUrl,
     ToggleFavorite,
     Share,
+    Rename,
     CopyName,
     SystemInfo,
     WebPage,
@@ -71,6 +72,8 @@ public sealed record DeviceActionInfo(
             "Épingler ou retirer des favoris"),
         new DeviceActionInfo(DeviceAction.Share, "🔑", "Partager un lien",
             "Créer un lien public temporaire"),
+        new DeviceActionInfo(DeviceAction.Rename, "✏", "Renommer",
+            "Changer le nom affiché dans MeshCentral"),
         new DeviceActionInfo(DeviceAction.CopyName, "📋", "Copier le nom",
             "Copier le nom de la machine"),
     };
@@ -96,6 +99,7 @@ public sealed record DeviceActionInfo(
         DeviceAction.PowerOff => "eteindre éteindre arreter arrêter shutdown poweroff",
         DeviceAction.ToggleFavorite => "favori favoris epingler épingler etoile étoile",
         DeviceAction.Share => "partager partage lien public iframe",
+        DeviceAction.Rename => "renommer nom changer modifier rename libelle libellé",
         DeviceAction.CopyName => "copier nom presse-papiers",
         _ => "",
     };

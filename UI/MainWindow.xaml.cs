@@ -84,6 +84,14 @@ public partial class MainWindow : ChromeWindow
                 RunSelected(DeviceAction.WebPage);
                 args.Handled = true;
             }
+
+            // F2 renomme la machine sélectionnée, comme un fichier dans
+            // l'Explorateur — sauf pendant une saisie, où F2 n'a rien à faire.
+            if (args.Key == Key.F2 && !IsSettingsOpen && Keyboard.FocusedElement is not TextBox)
+            {
+                RunSelected(DeviceAction.Rename);
+                args.Handled = true;
+            }
         };
         Closed += (_, _) =>
         {
@@ -1708,6 +1716,8 @@ public partial class MainWindow : ChromeWindow
         // Le partage se crée côté serveur : la machine n'a pas besoin d'être en
         // ligne au moment où on génère le lien.
         MenuShare.IsEnabled = node is not null;
+        // Le nom vit sur le serveur : on renomme aussi une machine hors ligne.
+        MenuRename.IsEnabled = node is not null;
         MenuCopyName.IsEnabled = node is not null;
         MenuInfo.IsEnabled = node is not null;
         // La page web est servie par MeshCentral : elle s'ouvre même pour une
@@ -1823,6 +1833,10 @@ public partial class MainWindow : ChromeWindow
                 new ShareWindow(_connection, node) { Owner = ActionOwner }.ShowDialog();
                 break;
 
+            case DeviceAction.Rename:
+                await RenameDeviceAsync(node);
+                break;
+
             case DeviceAction.CopyName:
                 try
                 {
@@ -1879,6 +1893,45 @@ public partial class MainWindow : ChromeWindow
         }
     }
 
+    /// <summary>
+    /// Renomme une machine dans MeshCentral. Le nouveau nom vaut pour tous les
+    /// utilisateurs du serveur ; le nom réseau de la machine, lui, ne change pas.
+    /// </summary>
+    private async Task RenameDeviceAsync(MeshNode node)
+    {
+        if (_connection is null) return;
+
+        // Saisie libre : un nom d'appareil n'est pas un nom de fichier, et les
+        // « / » y servent souvent de séparateurs (site / service / poste).
+        var dialog = new TextPromptDialog(
+            "Renommer l'appareil",
+            $"Nouveau nom de « {node.Name} » :",
+            node.Name, "Renommer", allowAnyCharacter: true) { Owner = ActionOwner };
+        if (dialog.ShowDialog() != true || dialog.Value is not { } name) return;
+        if (name == node.Name) return;
+
+        // Limite imposée par le serveur, qui refuserait sans dire pourquoi.
+        if (name.Length > 256)
+        {
+            MessageBox.Show("Le nom ne peut pas dépasser 256 caractères.", "Mesh Control",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var previous = node.Name;
+        try
+        {
+            await _connection.RenameDeviceAsync(node.Id, name);
+            Log.Info($"Appareil renommé : « {previous} » → « {name} »", "Appareil");
+            ShowToast($"« {previous} » s'appelle désormais « {name} ».");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Renommer l'appareil",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private async Task OpenRemoteUrlAsync(MeshNode node)
     {
         if (_connection is null) return;
@@ -1916,6 +1969,7 @@ public partial class MainWindow : ChromeWindow
     private void MenuProcesses_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Processes);
     private void MenuOpenUrl_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.OpenUrl);
     private void MenuShare_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Share);
+    private void MenuRename_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Rename);
     private void MenuCopyName_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.CopyName);
     private void MenuInfo_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.SystemInfo);
     private void MenuWebPage_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.WebPage);

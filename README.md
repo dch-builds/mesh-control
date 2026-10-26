@@ -79,6 +79,9 @@ standard.
 - Liste et arrêt des processus distants
 - Informations système : processeur, mémoire, disques, BIOS
 - Ouverture d'une URL sur la machine distante
+- Renommage d'un appareil (F2, menu contextuel ou palette) : le nom affiché
+  dans MeshCentral change pour tous les utilisateurs, le nom réseau de la
+  machine reste le sien
 - Génération de liens de partage publics temporaires, avec code d'intégration
 
 **Application**

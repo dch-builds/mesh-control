@@ -802,6 +802,68 @@ public sealed class MeshServerConnection : IDisposable
     public Task PowerActionAsync(string nodeId, PowerActionType action) =>
         SendJsonAsync(new { action = "poweraction", nodeids = new[] { nodeId }, actiontype = (int)action });
 
+    /// <summary>
+    /// Renomme un appareil dans MeshCentral. Seul le nom affiché change : le nom
+    /// réseau de la machine reste celui que lui donne son système.
+    ///
+    /// Le serveur exige le droit « gérer les appareils » sur le groupe. Il
+    /// répond « ok » ou la raison du refus, puis diffuse un « changenode » que
+    /// tous les clients connectés appliquent — cette application comprise.
+    /// </summary>
+    public async Task RenameDeviceAsync(string nodeId, string newName)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+
+        var responseId = RandomHex(10);
+        var tcs = new TaskCompletionSource<JsonElement>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingResponses[responseId] = tcs;
+
+        try
+        {
+            await SendJsonAsync(new
+            {
+                action = "changedevice",
+                nodeid = nodeId,
+                name = newName,
+                responseid = responseId,
+            }).ConfigureAwait(false);
+
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var registration = timeout.Token.Register(() => tcs.TrySetCanceled());
+
+            JsonElement response;
+            try
+            {
+                response = await tcs.Task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Certaines versions du serveur n'acquittent pas un changement
+                // réussi : l'événement « changenode » arrivé entre-temps en tient lieu.
+                if (_nodes.TryGetValue(nodeId, out var current) && current.Name == newName) return;
+                throw new MeshException("Le serveur n'a pas confirmé le changement de nom.");
+            }
+
+            var result = GetString(response, "result");
+            if (result is not null && !result.Equals("ok", StringComparison.OrdinalIgnoreCase))
+                throw new MeshException(result.Equals("Access denied", StringComparison.OrdinalIgnoreCase)
+                    ? "Vous n'avez pas le droit de modifier les appareils de ce groupe."
+                    : $"Renommage refusé par le serveur : {result}");
+
+            // Sans attendre l'événement du serveur : la liste suit tout de suite.
+            if (_nodes.TryGetValue(nodeId, out var node) && node.Name != newName)
+            {
+                node.Name = newName;
+                DevicesChanged?.Invoke();
+            }
+        }
+        finally
+        {
+            _pendingResponses.TryRemove(responseId, out _);
+        }
+    }
+
     // MARK: - Cookies relais & tunnels
 
     private void StartCookieRefresh(CancellationToken ct)
