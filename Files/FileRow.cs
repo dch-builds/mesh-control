@@ -93,8 +93,14 @@ public sealed class FileRow(FileEntry entry)
 /// contenu. Reconnaître une image ou une archive d'un coup d'œil évite de lire
 /// chaque extension dans une longue liste.
 /// </summary>
-public sealed record FileIcon(string Glyph, string Color, string Background)
+/// <param name="LightColor">Teinte du pictogramme, en thème clair.</param>
+/// <param name="LightBackground">Fond de la pastille, en thème clair.</param>
+public sealed record FileIcon(string Glyph, string LightColor, string LightBackground)
 {
+    /// <summary>Teintes du thème courant (voir Palette.Adapt).</summary>
+    public string Color => MeshControl.UI.Palette.Adapt(LightColor);
+    public string Background => MeshControl.UI.Palette.Adapt(LightBackground);
+
     public static readonly FileIcon Drive = new("\uEDA2", "#636366", "#EFEFF4");
     public static readonly FileIcon Folder = new("\uF12B", "#E89B0C", "#FEF3DC");
 

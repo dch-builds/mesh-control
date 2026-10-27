@@ -106,6 +106,8 @@ public partial class MainWindow
         VerboseLogCheck.IsChecked = _settings.VerboseLogging;
         CheckUpdatesCheck.IsChecked = _settings.CheckForUpdates;
         DensityCombo.SelectedIndex = Math.Clamp(_settings.ListDensity, 0, 2);
+        DarkModeCheck.IsChecked = _settings.DarkMode;
+        UpdateThemeRestartHint();
 
         SettingsSubtitle.Text = _settings.Host;
         VersionText.Text = $"Mesh Control {App.Version}";
@@ -516,6 +518,71 @@ public partial class MainWindow
         var previous = _settings.ListDensity;
         _settings.ListDensity = Math.Clamp(DensityCombo.SelectedIndex, 0, 2);
         if (_settings.ListDensity != previous) ApplyListDensity();
+    }
+
+    // MARK: - Thème
+
+    /// <summary>
+    /// Enregistré tout de suite, sans attendre « Enregistrer » : le choix ne
+    /// prend effet qu'au redémarrage, que l'on peut lancer d'ici même.
+    /// </summary>
+    private void DarkMode_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded) return;
+
+        _settings.DarkMode = DarkModeCheck.IsChecked == true;
+        _settings.Save();
+        UpdateThemeRestartHint();
+    }
+
+    /// <summary>Propose le redémarrage tant que le thème affiché n'est pas celui choisi.</summary>
+    private void UpdateThemeRestartHint()
+    {
+        var pending = _settings.DarkMode != Palette.IsDark;
+        RestartForThemeButton.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
+        DarkModeHint.Text = pending
+            ? "Le nouveau thème s'appliquera au prochain démarrage de l'application."
+            : "Pour toutes les fenêtres de l'application. S'applique au prochain démarrage.";
+    }
+
+    /// <summary>
+    /// Relance l'application pour appliquer le thème. Les couleurs sont figées
+    /// au chargement de chaque fenêtre : seul un nouveau démarrage les change
+    /// toutes d'un coup.
+    /// </summary>
+    private void RestartForTheme_Click(object sender, RoutedEventArgs e)
+    {
+        if (System.Windows.Application.Current.Windows.OfType<Window>().Any(w => w != this && w.IsVisible)
+            && MessageBox.Show("Les sessions et fenêtres ouvertes seront fermées. Redémarrer maintenant ?",
+                   "Mesh Control", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+            return;
+
+        if (Environment.ProcessPath is not { } exe) return;
+
+        _settings.SaveNow();
+        // Le raccourci global est libéré avant le départ de la nouvelle
+        // instance : elle le trouverait sinon encore pris.
+        _hotkey?.Dispose();
+        _hotkey = null;
+
+        try
+        {
+            // --show : la fenêtre doit réapparaître, même si le démarrage réduit est activé.
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exe, "--show")
+            {
+                UseShellExecute = false,
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Redémarrage impossible : {ex.Message}", "Réglages");
+            MessageBox.Show($"Le redémarrage a échoué : {ex.Message}\n\nRelancez l'application à la main.",
+                "Mesh Control", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        _exiting = true;
+        Close();
     }
 
     // MARK: - Densité de la liste

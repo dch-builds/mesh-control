@@ -11,7 +11,16 @@ standard.
 
 **Appareils**
 - Liste groupée par dossier, repliable, avec état en ligne en temps réel
-- Recherche instantanée et filtre « en ligne uniquement »
+- Recherche instantanée (nom, dossier, système, adresse IP, utilisateur
+  MeshCentral connecté) et filtre « en ligne uniquement »
+- Tri retenu d'une session à l'autre : par nom, en ligne d'abord, dernière
+  présence ou système, à l'intérieur de chaque dossier
+- Chaque ligne montre l'adresse IP et l'utilisateur MeshCentral connecté à la
+  machine (« vous » pour ses propres sessions, détail par type de session en
+  info-bulle) ; au survol, bureau, terminal et fichiers en un clic, ou le
+  réveil d'une machine hors ligne
+- Thème clair ou sombre pour toute l'application, au choix dans les réglages
+  (appliqué au redémarrage, proposé d'un clic)
 - Favoris épinglés et machines récemment utilisées
 - Palette de recherche rapide par raccourci clavier global, utilisable même
   lorsque l'application est en arrière-plan
@@ -26,6 +35,8 @@ standard.
 - Raccourcis locaux : Ctrl+Maj+R redemande une image complète, Ctrl+Maj+A
   bascule l'ajustement à la fenêtre, Ctrl+Maj+D débloque le clavier distant et
   Ctrl+Maj+Suppr envoie Ctrl+Alt+Suppr
+- Autres outils de la machine sans quitter le bureau : terminal (Ctrl+Maj+T),
+  fichiers (Ctrl+Maj+E), processus (Ctrl+Maj+P), page web (Ctrl+Maj+W)
 - Plein écran par Ctrl+Maj+F : barres et bandeau d'onglets masqués
 - Le flux s'interrompt dès que la session n'est plus regardée — onglet passé à
   l'arrière-plan, fenêtre réduite — et reprend sur une image complète

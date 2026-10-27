@@ -178,10 +178,13 @@ public partial class MainWindow : ChromeWindow
         // Sans serveur renseigné, il n'y a rien à faire en tâche de fond : la
         // fenêtre s'ouvre sur le choix du serveur, quels que soient les réglages.
         bool hasHost = !string.IsNullOrWhiteSpace(_settings.Host);
-        bool startHidden = hasHost
+        // « --show » vient d'un redémarrage demandé par l'utilisateur (changement
+        // de thème) : il attend la fenêtre, quel que soit le démarrage réduit.
+        var args = Environment.GetCommandLineArgs();
+        bool forceShow = args.Any(a => a.Equals("--show", StringComparison.OrdinalIgnoreCase));
+        bool startHidden = hasHost && !forceShow
             && (_settings.StartMinimized
-                || Environment.GetCommandLineArgs().Any(a =>
-                       a.Equals("--minimized", StringComparison.OrdinalIgnoreCase)));
+                || args.Any(a => a.Equals("--minimized", StringComparison.OrdinalIgnoreCase)));
         if (startHidden)
             new System.Windows.Interop.WindowInteropHelper(this).EnsureHandle();
         else
@@ -229,6 +232,7 @@ public partial class MainWindow : ChromeWindow
         UserBox.Text = _settings.Username;
         RememberCheck.IsChecked = _settings.RememberCredentials;
         ApplyFolderView();
+        UpdateSortButton();
 
         // Rappel visuel du raccourci de recherche rapide. On le reformate au
         // passage : un réglage enregistré avant la francisation contiendrait
@@ -850,6 +854,7 @@ public partial class MainWindow : ChromeWindow
             }
 
             SubtitleText.Text = $"{_settings.Host} · {_connection.UserInfo?.Name ?? user}";
+            DeviceRow.CurrentUserName = _connection.UserInfo?.Name ?? user;
             ShowDevices();
         }
         catch (MeshTwoFactorRequiredException ex)
@@ -1019,6 +1024,7 @@ public partial class MainWindow : ChromeWindow
 
                     Log.Info("Reconnexion réussie", "Serveur");
                     SubtitleText.Text = $"{_settings.Host} · {connection.UserInfo?.Name ?? _sessionUser}";
+                    DeviceRow.CurrentUserName = connection.UserInfo?.Name ?? _sessionUser;
                     ShowDevices();
                     SetStatus("");
                     UpdateTrayTooltip();
@@ -1159,10 +1165,11 @@ public partial class MainWindow : ChromeWindow
                 // changement sur ces valeurs impose de recomposer la vue.
                 // La comparaison porte sur l'état AFFICHÉ, car existing.Node est
                 // la même instance que node — déjà mise à jour par la connexion.
-                // L'ordre d'affichage ne dépend PAS de l'état en ligne (voir le
-                // tri plus bas) : un passage en ligne ne recompose donc pas la
-                // vue, seul le badge se met à jour. C'est ce qui évite que la
-                // liste bouge sous le curseur à chaque événement du serveur.
+                // Par défaut, l'ordre d'affichage ne dépend PAS de l'état en
+                // ligne (voir SortRows) : un passage en ligne ne recompose donc
+                // pas la vue, seul le badge se met à jour. C'est ce qui évite que
+                // la liste bouge sous le curseur à chaque événement du serveur —
+                // sauf si l'utilisateur a choisi un tri qui en dépend.
                 if (existing.NameChanged
                     || !string.Equals(existing.RealGroupName, groupName, StringComparison.Ordinal))
                 {
@@ -1172,6 +1179,10 @@ public partial class MainWindow : ChromeWindow
                 // la vue doit être recomposée, sinon une machine qui se connecte
                 // n'apparaîtrait jamais dans la liste filtrée.
                 if (existing.OnlineStateChanged && OnlineOnlyCheck.IsChecked == true)
+                    structureChanged = true;
+                // Même chose quand le tri choisi repose sur l'état en ligne :
+                // l'utilisateur a demandé que la liste suive les connexions.
+                if (existing.OnlineStateChanged && SortFollowsConnectivity)
                     structureChanged = true;
                 // Rafraîchit badge, libellé et icône sans toucher à la vue.
                 existing.RefreshFromNode();
@@ -1203,9 +1214,10 @@ public partial class MainWindow : ChromeWindow
             return;
         }
 
-        // Tri volontairement indépendant de l'état en ligne : sinon chaque
-        // machine qui se connecte changerait l'ordre, et la liste sauterait sous
-        // le curseur. Le badge et la pastille signalent l'état, c'est suffisant.
+        // Ordre de base, par dossier puis par nom. L'ordre affiché est celui que
+        // l'utilisateur a choisi, appliqué au filtrage (SortRows) ; le tri par
+        // nom, par défaut, reste indépendant de l'état en ligne pour que la
+        // liste ne saute pas sous le curseur à chaque connexion.
         _allRows = _rowsById.Values
             .OrderBy(r => r.RealGroupName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
@@ -1484,6 +1496,66 @@ public partial class MainWindow : ChromeWindow
 
     private void OnlineOnly_Changed(object sender, RoutedEventArgs e) => ApplyFilter();
 
+    // MARK: - Tri
+
+    private static readonly string[] SortLabels = ["Nom", "En ligne d'abord", "Dernière présence", "Système"];
+
+    /// <summary>Le tri choisi dépend-il de l'état en ligne des machines ?</summary>
+    private bool SortFollowsConnectivity => _settings.DeviceSort is 1 or 2;
+
+    /// <summary>
+    /// Ordonne les machines selon le tri choisi, le nom départageant toujours.
+    /// Les dossiers restent groupés : le tri s'applique à l'intérieur de chacun.
+    /// </summary>
+    private IEnumerable<DeviceRow> SortRows(IEnumerable<DeviceRow> rows, bool byGroup)
+    {
+        var ordered = byGroup
+            ? rows.OrderBy(r => r.RealGroupName, StringComparer.OrdinalIgnoreCase)
+            : rows.OrderBy(_ => 0);
+
+        ordered = _settings.DeviceSort switch
+        {
+            1 => ordered.ThenByDescending(r => r.IsOnline),
+            // Les machines en ligne d'abord, « vues à l'instant » ; puis les
+            // autres, de la plus récemment vue à la plus ancienne.
+            2 => ordered.ThenByDescending(r => r.IsOnline)
+                        .ThenByDescending(r => r.Node.LastConnect ?? DateTime.MinValue),
+            // Par famille, puis par version : Windows 10 et 11 se suivent.
+            3 => ordered.ThenBy(r => r.Node.OsFamily)
+                        .ThenBy(r => r.Node.OsDescription is null)
+                        .ThenBy(r => r.Node.OsDescription ?? "", StringComparer.OrdinalIgnoreCase),
+            _ => ordered,
+        };
+        return ordered.ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void SortButton_Click(object sender, RoutedEventArgs e)
+    {
+        SortMenu.PlacementTarget = SortButton;
+        SortMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        UpdateSortButton();
+        SortMenu.IsOpen = true;
+    }
+
+    private void SortChoice_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string tag } || !int.TryParse(tag, out var mode)) return;
+
+        _settings.DeviceSort = mode;
+        _settings.Save();
+        UpdateSortButton();
+        ApplyFilter();
+    }
+
+    /// <summary>Libellé du bouton et coche du menu, d'après le tri retenu.</summary>
+    private void UpdateSortButton()
+    {
+        var mode = Math.Clamp(_settings.DeviceSort, 0, SortLabels.Length - 1);
+        SortLabel.Text = SortLabels[mode];
+        foreach (var item in SortMenu.Items.OfType<MenuItem>())
+            item.IsChecked = item.Tag is string tag && tag == mode.ToString();
+    }
+
     private void ApplyFilter()
     {
         var query = SearchBox.Text?.Trim() ?? "";
@@ -1496,9 +1568,12 @@ public partial class MainWindow : ChromeWindow
             source = source.Where(r =>
                 r.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
                 || r.GroupName.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || (r.Node.OsDescription?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+                || (r.Node.OsDescription?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                // Retrouver un poste par son adresse, ou par le collègue connecté dessus.
+                || (r.Node.Ip?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (r.IsOnline && r.Node.Sessions.Any(s => s.UserName.Contains(query, StringComparison.OrdinalIgnoreCase))));
 
-        var rows = source.ToList();
+        var rows = SortRows(source, byGroup: true).ToList();
 
         // Vue à deux volets : restreindre au dossier choisi. Une recherche en
         // cours reprend la main sur le dossier — sinon le champ paraîtrait ne
@@ -1524,9 +1599,9 @@ public partial class MainWindow : ChromeWindow
         // dossier-là, pas un florilège.
         if (string.IsNullOrEmpty(query) && !folderFiltered)
         {
-            // Ordre stable, indépendant de l'état en ligne (voir RebuildDeviceList).
-            var favorites = rows.Where(r => r.IsFavorite)
-                                .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            // Même ordre que les dossiers, mais les favoris de tous les
+            // dossiers mêlés en une seule section.
+            var favorites = SortRows(rows.Where(r => r.IsFavorite), byGroup: false)
                                 .Select(r => Clone(r, FavoritesGroup));
             display.AddRange(favorites);
 
@@ -1581,7 +1656,37 @@ public partial class MainWindow : ChromeWindow
 
     private void DeviceList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        // Le double-clic d'un bouton de la ligne (action rapide, étoile)
+        // remonte jusqu'ici : il ne doit pas ouvrir en plus le bureau.
+        if (IsInsideButton(e.OriginalSource as DependencyObject)) return;
         if (DeviceList.SelectedItem is DeviceRow row) OpenDesktop(row.Node);
+    }
+
+    private bool IsInsideButton(DependencyObject? element)
+    {
+        for (var current = element; current is not null && current != DeviceList;
+             current = current is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                 ? System.Windows.Media.VisualTreeHelper.GetParent(current)
+                 : LogicalTreeHelper.GetParent(current))
+        {
+            if (current is System.Windows.Controls.Primitives.ButtonBase) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Action rapide d'une ligne, montrée au survol. Passe par le même
+    /// dispatcheur que le menu contextuel et la palette.
+    /// </summary>
+    private void RowAction_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: DeviceRow row, CommandParameter: string name }) return;
+        if (!Enum.TryParse<DeviceAction>(name, out var action)) return;
+
+        // La ligne devient la sélection : c'est sur elle que portera un F2 ou
+        // un clic droit juste après.
+        DeviceList.SelectedItem = row;
+        RunAction(row.Node, action);
     }
 
     /// <summary>Ouvre le bureau à distance, en signalant les cas impossibles.</summary>

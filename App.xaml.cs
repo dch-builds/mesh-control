@@ -31,6 +31,9 @@ public partial class App : Application
 
         var app = new App();
         app.InitializeComponent();
+        // Le thème doit être en place avant la première fenêtre : ses couleurs
+        // sont figées au chargement de chacune.
+        UI.Palette.Apply(app, AppSettings.Load().DarkMode);
         app.Run();
     }
 

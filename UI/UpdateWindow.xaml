@@ -29,7 +29,7 @@
                        Margin="0,0,0,6"/>
             <ProgressBar x:Name="ProgressBarControl" Height="5" Minimum="0" Maximum="1"
                          Foreground="{StaticResource AccentBrush}"
-                         Background="#EFEFF4" BorderThickness="0"/>
+                         Background="{StaticResource SubtleFillBrush}" BorderThickness="0"/>
         </StackPanel>
 
         <TextBlock x:Name="ErrorText" Style="{StaticResource CaptionText}"

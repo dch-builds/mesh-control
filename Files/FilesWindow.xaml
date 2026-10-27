@@ -10,7 +10,7 @@
         <!-- Bouton de l'en-tête : posé sur fond blanc, il lui faut un fond
              propre pour se lire comme un bouton avant même d'être survolé. -->
         <Style x:Key="HeaderButton" TargetType="Button">
-            <Setter Property="Background" Value="#F2F2F7"/>
+            <Setter Property="Background" Value="{StaticResource SubtleFillBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Padding" Value="11,7"/>
@@ -25,7 +25,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#E5E5EA"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SubtleFillHoverBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
@@ -40,7 +40,7 @@
         <!-- Bouton rond entre les deux volets : fait passer la sélection d'un
              côté à l'autre. -->
         <Style x:Key="PaneTransferButton" TargetType="Button">
-            <Setter Property="Background" Value="White"/>
+            <Setter Property="Background" Value="{StaticResource ControlBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
             <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
             <Setter Property="FontSize" Value="14"/>
@@ -88,7 +88,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="White"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlBrush}"/>
                                 <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -139,7 +139,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#F2F2F7"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter TargetName="Bd" Property="Background"
@@ -204,9 +204,9 @@
 
                 <StackPanel Orientation="Horizontal">
                     <Border Width="36" Height="36" CornerRadius="10"
-                            Background="#FEF3DC" VerticalAlignment="Center">
+                            Background="{StaticResource FolderSoftBrush}" VerticalAlignment="Center">
                         <TextBlock Text="&#xF12B;" FontFamily="Segoe MDL2 Assets"
-                                   FontSize="16" Foreground="#E89B0C"
+                                   FontSize="16" Foreground="{StaticResource FolderBrush}"
                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
@@ -336,7 +336,7 @@
                                                            FontSize="13" Foreground="{Binding GlyphColor}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                             </Border>
-                                            <Border Width="15" Height="15" CornerRadius="7.5" Background="White"
+                                            <Border Width="15" Height="15" CornerRadius="7.5" Background="{StaticResource CardBrush}"
                                                     BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1"
                                                     HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                                     Margin="0,0,-4,-4">
@@ -419,7 +419,7 @@
                                         ToolTip="Actualiser">
                                     <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12"/>
                                 </Button>
-                                <Border Grid.Column="2" Background="#F2F2F7" CornerRadius="8"
+                                <Border Grid.Column="2" Background="{StaticResource SubtleFillBrush}" CornerRadius="8"
                                         Padding="4,0" Height="32">
                                     <ScrollViewer x:Name="LocalBreadcrumbScroller"
                                                   HorizontalScrollBarVisibility="Hidden"
@@ -467,7 +467,7 @@
                             <StackPanel x:Name="LocalEmptyState" VerticalAlignment="Center"
                                         HorizontalAlignment="Center" IsHitTestVisible="False"
                                         Margin="0,30,0,0" Visibility="Collapsed">
-                                <Border Width="52" Height="52" CornerRadius="15" Background="#F2F2F7"
+                                <Border Width="52" Height="52" CornerRadius="15" Background="{StaticResource SubtleFillBrush}"
                                         HorizontalAlignment="Center">
                                     <TextBlock Text="&#xF12B;" FontFamily="Segoe MDL2 Assets" FontSize="22"
                                                Foreground="{StaticResource TextSecondaryBrush}"
@@ -483,7 +483,7 @@
 
                     <!-- Voile : fichiers distants glissés vers ce poste -->
                     <Grid x:Name="LocalDropOverlay" Visibility="Collapsed" IsHitTestVisible="False">
-                        <Rectangle RadiusX="12" RadiusY="12" Fill="#EBF4FF"
+                        <Rectangle RadiusX="12" RadiusY="12" Fill="{StaticResource DropZoneBrush}"
                                    Stroke="{StaticResource AccentBrush}" StrokeThickness="2"
                                    StrokeDashArray="5 3"/>
                         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -550,7 +550,7 @@
                                     <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12"/>
                                 </Button>
 
-                                <Border Grid.Column="2" Background="#F2F2F7" CornerRadius="8"
+                                <Border Grid.Column="2" Background="{StaticResource SubtleFillBrush}" CornerRadius="8"
                                         Padding="4,0" Height="32">
                                     <!-- Défilement horizontal sans barre : un chemin trop long
                                          reste ancré sur son dernier dossier, le plus utile. -->
@@ -608,7 +608,7 @@
                             <StackPanel x:Name="EmptyState" VerticalAlignment="Center"
                                         HorizontalAlignment="Center" IsHitTestVisible="False"
                                         Margin="0,30,0,0" Visibility="Collapsed">
-                                <Border Width="58" Height="58" CornerRadius="16" Background="#F2F2F7"
+                                <Border Width="58" Height="58" CornerRadius="16" Background="{StaticResource SubtleFillBrush}"
                                         HorizontalAlignment="Center">
                                     <TextBlock x:Name="EmptyGlyph" Text="&#xF12B;"
                                                FontFamily="Segoe MDL2 Assets" FontSize="24"
@@ -633,7 +633,7 @@
                 <!-- Repère visuel du dépôt : sans lui, rien ne dirait que la fenêtre
                      accepte les fichiers glissés depuis l'Explorateur. -->
                 <Grid x:Name="DropOverlay" Visibility="Collapsed" IsHitTestVisible="False">
-                    <Rectangle RadiusX="12" RadiusY="12" Fill="#EBF4FF"
+                    <Rectangle RadiusX="12" RadiusY="12" Fill="{StaticResource DropZoneBrush}"
                                Stroke="{StaticResource AccentBrush}" StrokeThickness="2"
                                StrokeDashArray="5 3"/>
                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">

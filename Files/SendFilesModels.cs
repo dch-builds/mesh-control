@@ -245,20 +245,20 @@ public sealed class TargetDevice : INotifyPropertyChanged
         }
     }
 
-    public string StatusColor => State switch
+    public string StatusColor => Palette.Adapt(State switch
     {
         DeviceSendState.Failed => "#C0392B",
         DeviceSendState.Done => "#248A3D",
         _ => "#8A8A8E",
-    };
+    });
 
-    public string BarColor => State switch
+    public string BarColor => Palette.Adapt(State switch
     {
         DeviceSendState.Failed => "#FF9F0A",
         DeviceSendState.Done => "#34C759",
         DeviceSendState.Cancelled => "#C7C7CC",
         _ => "#0A84FF",
-    };
+    });
 
     public bool IsIndeterminate => State == DeviceSendState.Connecting;
 

@@ -634,6 +634,16 @@ public sealed class MeshServerConnection : IDisposable
                     DevicesChanged?.Invoke();
                 }
                 break;
+            case "devicesessions":
+                // Session MeshCentral ouverte ou refermée sur la machine.
+                if (GetString(ev, "nodeid") is { } sessionNodeId
+                    && _nodes.TryGetValue(sessionNodeId, out var sessionNode))
+                {
+                    sessionNode.Sessions = ev.TryGetProperty("sessions", out var sessions)
+                        ? MeshNode.ParseSessions(sessions) : [];
+                    DevicesChanged?.Invoke();
+                }
+                break;
             case "addnode":
                 if (ev.TryGetProperty("node", out var addJson))
                 {

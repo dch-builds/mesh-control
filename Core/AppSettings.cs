@@ -56,6 +56,18 @@ public sealed class AppSettings
     /// </summary>
     public bool FolderView { get; set; }
 
+    /// <summary>
+    /// Ordre des machines dans chaque dossier : 0 = nom, 1 = en ligne d'abord,
+    /// 2 = dernière présence, 3 = système.
+    /// </summary>
+    public int DeviceSort { get; set; }
+
+    /// <summary>
+    /// Thème sombre pour toute l'application. Lu au démarrage seulement (voir
+    /// UI/Palette.cs) : le changer demande un redémarrage.
+    /// </summary>
+    public bool DarkMode { get; set; }
+
     /// <summary>Dossier retenu d'une session à l'autre dans la vue à deux volets.</summary>
     public string? SelectedFolder { get; set; }
 

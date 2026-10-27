@@ -74,6 +74,7 @@ public class ChromeWindow : Window
     {
         base.OnSourceInitialized(e);
         SetRoundedCorners(this, true);
+        if (Palette.IsDark) UseDarkFrame(this);
 
         var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
         System.Windows.Interop.HwndSource.FromHwnd(handle)?.AddHook(LimitMaximizeToWorkArea);
@@ -153,6 +154,26 @@ public class ChromeWindow : Window
             DwmSetWindowAttribute(handle, CornerPreference, ref preference, sizeof(int));
         }
         catch { /* antérieur à Windows 11 : les angles restent carrés */ }
+    }
+
+    /// <summary>
+    /// Bordure et ombre de fenêtre sombres. Windows 11 trace un fin liseré
+    /// autour des fenêtres ; clair par défaut, il cernerait d'un trait blanc
+    /// une interface sombre. Sans effet avant Windows 10 20H1.
+    /// </summary>
+    private static void UseDarkFrame(Window window)
+    {
+        const int ImmersiveDarkMode = 20;   // DWMWA_USE_IMMERSIVE_DARK_MODE
+
+        try
+        {
+            var handle = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+            if (handle == IntPtr.Zero) return;
+
+            int enabled = 1;
+            DwmSetWindowAttribute(handle, ImmersiveDarkMode, ref enabled, sizeof(int));
+        }
+        catch { /* système trop ancien : bordure claire, sans conséquence */ }
     }
 
     [System.Runtime.InteropServices.DllImport("dwmapi.dll")]

@@ -28,7 +28,7 @@
                 <!-- Rappel du raccourci de recherche rapide. Posé à côté du nom
                      du serveur plutôt qu'en dessous : seul sur sa ligne, il
                      flottait sans rien pour l'ancrer. -->
-                <Border x:Name="HotkeyHintBadge" Background="#EBEBF0" CornerRadius="6"
+                <Border x:Name="HotkeyHintBadge" Background="{StaticResource SubtleFillBrush}" CornerRadius="6"
                         Padding="8,3" VerticalAlignment="Center" Margin="13,3,0,0">
                     <TextBlock x:Name="HotkeyHintText" FontSize="10.5"
                                Foreground="{StaticResource TextSecondaryBrush}"/>
@@ -163,7 +163,7 @@
                              cadre, dont la hauteur est fixée pour s'aligner sur les
                              autres contrôles de la barre. -->
                         <Border Width="300" Height="34" CornerRadius="8"
-                                Background="White"
+                                Background="{StaticResource ControlBrush}"
                                 BorderBrush="{StaticResource SeparatorBrush}"
                                 BorderThickness="1">
                             <Grid>
@@ -175,7 +175,7 @@
 
                                 <TextBlock Grid.Column="0" Text="&#xE721;"
                                            FontFamily="Segoe MDL2 Assets" FontSize="12"
-                                           Foreground="#AEAEB2" Margin="12,0,0,0"
+                                           Foreground="{StaticResource PlaceholderBrush}" Margin="12,0,0,0"
                                            VerticalAlignment="Center" IsHitTestVisible="False"/>
 
                                 <Grid Grid.Column="1" Margin="8,0,0,0">
@@ -186,7 +186,7 @@
                                              VerticalContentAlignment="Center"/>
                                     <TextBlock x:Name="SearchPlaceholder"
                                                Text="Rechercher un appareil…" FontSize="13"
-                                               Foreground="#AEAEB2"
+                                               Foreground="{StaticResource PlaceholderBrush}"
                                                VerticalAlignment="Center"
                                                IsHitTestVisible="False"/>
                                 </Grid>
@@ -223,6 +223,27 @@
                                 <TextBlock Text="Envoyer des fichiers" FontSize="11.5"
                                            VerticalAlignment="Center"/>
                             </StackPanel>
+                        </Button>
+                        <!-- Ordre des machines dans chaque dossier -->
+                        <Button x:Name="SortButton" Style="{StaticResource ToolButton}"
+                                Click="SortButton_Click" Margin="12,0,0,0" Padding="9,5"
+                                ToolTip="Trier les machines">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8CB;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock x:Name="SortLabel" Text="Nom" FontSize="11.5"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <Button.ContextMenu>
+                                <ContextMenu x:Name="SortMenu">
+                                    <MenuItem Header="Nom" Tag="0" IsCheckable="True" Click="SortChoice_Click"/>
+                                    <MenuItem Header="En ligne d'abord" Tag="1" IsCheckable="True" Click="SortChoice_Click"/>
+                                    <MenuItem Header="Dernière présence" Tag="2" IsCheckable="True" Click="SortChoice_Click"/>
+                                    <MenuItem Header="Système" Tag="3" IsCheckable="True" Click="SortChoice_Click"/>
+                                </ContextMenu>
+                            </Button.ContextMenu>
                         </Button>
                         <!-- Bascule entre la liste groupée et la vue à deux volets -->
                         <Button x:Name="ToggleViewButton" Style="{StaticResource ToolButton}"
@@ -422,7 +443,7 @@
                                                    VerticalAlignment="Center"/>
                                         <Ellipse Width="11" Height="11"
                                                  Fill="{Binding StatusBrush}"
-                                                 Stroke="White" StrokeThickness="2"
+                                                 Stroke="{StaticResource CardBrush}" StrokeThickness="2"
                                                  HorizontalAlignment="Right"
                                                  VerticalAlignment="Bottom"
                                                  Margin="0,0,-1,-1"/>
@@ -441,9 +462,57 @@
                                                    Margin="0,1,0,0"/>
                                     </StackPanel>
 
-                                    <!-- Badge de statut + étoile de favori -->
+                                    <!-- Actions au survol, utilisateur connecté, badge
+                                         de statut et étoile de favori -->
                                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                                 VerticalAlignment="Center">
+                                        <!-- Actions rapides : sans elles, tout ce qui n'est
+                                             pas le bureau à distance passait par le clic droit.
+                                             Masquées au repos pour ne pas charger la liste. -->
+                                        <StackPanel x:Name="HoverActions" Orientation="Horizontal"
+                                                    Visibility="Collapsed" Margin="0,0,6,0">
+                                            <StackPanel Orientation="Horizontal"
+                                                        Visibility="{Binding RemoteActionsVisibility}">
+                                                <Button Style="{StaticResource RowActionButton}"
+                                                        Content="&#xE7F4;" Tag="{Binding}"
+                                                        CommandParameter="Desktop" Click="RowAction_Click"
+                                                        ToolTip="Bureau à distance"/>
+                                                <Button Style="{StaticResource RowActionButton}"
+                                                        Content="&#xE756;" Tag="{Binding}"
+                                                        CommandParameter="Terminal" Click="RowAction_Click"
+                                                        ToolTip="Terminal"/>
+                                                <Button Style="{StaticResource RowActionButton}"
+                                                        Content="&#xF12B;" Tag="{Binding}"
+                                                        CommandParameter="Files" Click="RowAction_Click"
+                                                        ToolTip="Fichiers"/>
+                                            </StackPanel>
+                                            <Button Style="{StaticResource RowActionButton}"
+                                                    Content="&#xE7E8;" Tag="{Binding}"
+                                                    CommandParameter="Wake" Click="RowAction_Click"
+                                                    Visibility="{Binding WakeActionVisibility}"
+                                                    ToolTip="Réveiller (Wake-on-LAN)"/>
+                                        </StackPanel>
+
+                                        <!-- Utilisateur MeshCentral connecté à la machine :
+                                             à savoir avant de prendre la main. -->
+                                        <Border Background="{StaticResource ChipBrush}" CornerRadius="7"
+                                                Padding="7,2,8,2"
+                                                BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1"
+                                                Margin="0,0,8,0" VerticalAlignment="Center"
+                                                Visibility="{Binding SessionVisibility}"
+                                                ToolTip="{Binding SessionTooltip}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE77B;" FontFamily="Segoe MDL2 Assets"
+                                                           FontSize="10" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource AccentBrush}"
+                                                           Margin="0,0,5,0"/>
+                                                <TextBlock Text="{Binding SessionLabel}" FontSize="11"
+                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                           MaxWidth="140" TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Border>
+
                                         <!-- Dernière présence : vide pour une machine
                                              en ligne, le badge le dit déjà. -->
                                         <TextBlock Text="{Binding LastSeenLabel}"
@@ -467,6 +536,13 @@
                                                 ToolTip="Épingler / retirer des favoris"/>
                                     </StackPanel>
                                 </Grid>
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding IsMouseOver,
+                                                          RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                                                 Value="True">
+                                        <Setter TargetName="HoverActions" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -628,6 +704,19 @@
                             </ComboBox>
                             <TextBlock Style="{StaticResource FieldHint}"
                                        Text="Le mode compact affiche davantage de machines à l'écran."/>
+
+                            <Border Height="1" Background="{StaticResource SeparatorBrush}"
+                                    Margin="0,14,0,14"/>
+
+                            <CheckBox x:Name="DarkModeCheck" Content="Thème sombre"
+                                      Checked="DarkMode_Changed" Unchecked="DarkMode_Changed"/>
+                            <TextBlock x:Name="DarkModeHint" Style="{StaticResource FieldHint}"
+                                       Margin="24,4,0,0"
+                                       Text="Pour toutes les fenêtres de l'application. S'applique au prochain démarrage."/>
+                            <Button x:Name="RestartForThemeButton" Style="{StaticResource SubtleButton}"
+                                    Content="Redémarrer maintenant" HorizontalAlignment="Left"
+                                    Margin="18,4,0,0" Visibility="Collapsed"
+                                    Click="RestartForTheme_Click"/>
                         </StackPanel>
                     </Border>
 

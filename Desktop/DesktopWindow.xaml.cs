@@ -467,7 +467,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
             return;
         }
 
-        if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.W
+        if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.P or Key.W
                                or Key.F or Key.R or Key.D or Key.A or Key.Delete)
         {
             e.Handled = true;
@@ -483,6 +483,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
                 case Key.S: Screenshot_Click(this, new RoutedEventArgs()); break;
                 case Key.T: OpenTerminal_Click(this, new RoutedEventArgs()); break;
                 case Key.E: OpenFiles_Click(this, new RoutedEventArgs()); break;
+                case Key.P: OpenProcesses_Click(this, new RoutedEventArgs()); break;
                 case Key.W: OpenWebPage_Click(this, new RoutedEventArgs()); break;
                 case Key.F: ToggleFullscreen(); break;
                 case Key.R: Refresh_Click(this, new RoutedEventArgs()); break;
@@ -832,6 +833,19 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
     private void OpenFiles_Click(object sender, RoutedEventArgs e)
         => OpenCompanionSession(new Files.FilesWindow(_connection, _node, _settings), "📁", "Fichiers");
+
+    /// <summary>
+    /// Processus de la machine : l'application qui fige l'écran distant se
+    /// repère et s'arrête sans quitter le bureau à distance.
+    /// </summary>
+    private void OpenProcesses_Click(object sender, RoutedEventArgs e)
+    {
+        var window = new UI.ProcessWindow(_connection, _node);
+        // Même règle que les informations système : pas de propriétaire invisible.
+        if (DialogOwner is { IsVisible: true } owner) window.Owner = owner;
+        window.Show();
+        StatsText.Text = "Processus ouverts.";
+    }
 
     private void OpenSystemInfo_Click(object sender, RoutedEventArgs e)
     {

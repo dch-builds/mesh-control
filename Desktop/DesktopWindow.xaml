@@ -13,7 +13,7 @@
                PreviewKeyDown="Content_PreviewKeyDown"
                PreviewKeyUp="Content_PreviewKeyUp">
         <!-- Barre d'outils claire -->
-        <Border x:Name="Toolbar" DockPanel.Dock="Top" Background="White" Padding="14,10">
+        <Border x:Name="Toolbar" DockPanel.Dock="Top" Background="{StaticResource CardBrush}" Padding="14,10">
             <Border.Effect>
                 <DropShadowEffect Color="#18000000" BlurRadius="8" ShadowDepth="1"
                                   Direction="270" Opacity="0.6"/>
@@ -150,13 +150,15 @@
                     <Button x:Name="MoreButton" Content="⋯"
                             Style="{StaticResource ToolButton}"
                             Click="More_Click" Padding="9,5"
-                            ToolTip="Autres outils : terminal (Ctrl+Maj+T), fichiers (Ctrl+Maj+E), page web (Ctrl+Maj+W)">
+                            ToolTip="Autres outils : terminal (Ctrl+Maj+T), fichiers (Ctrl+Maj+E), processus (Ctrl+Maj+P), page web (Ctrl+Maj+W)">
                         <Button.ContextMenu>
                             <ContextMenu x:Name="MoreMenu" Placement="Bottom">
                                 <MenuItem Header="Terminal" InputGestureText="Ctrl+Maj+T"
                                           Click="OpenTerminal_Click"/>
                                 <MenuItem Header="Fichiers" InputGestureText="Ctrl+Maj+E"
                                           Click="OpenFiles_Click"/>
+                                <MenuItem Header="Processus…" InputGestureText="Ctrl+Maj+P"
+                                          Click="OpenProcesses_Click"/>
                                 <Separator/>
                                 <MenuItem Header="Page web MeshCentral" InputGestureText="Ctrl+Maj+W"
                                           Click="OpenWebPage_Click"/>
@@ -195,7 +197,7 @@
 
         <!-- Barre d'état persistante : latence, débit, résolution. Remplace le
              compteur de tuiles, qui relevait du débogage. -->
-        <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Background="#F7F7F9"
+        <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Background="{StaticResource SurfaceAltBrush}"
                 BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="0,1,0,0"
                 Padding="14,5">
             <Grid>

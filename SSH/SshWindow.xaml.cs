@@ -165,7 +165,7 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
     }
 
     private static SolidColorBrush MakeBrush(string hex) =>
-        new((Color)ColorConverter.ConvertFromString(hex));
+        new((Color)ColorConverter.ConvertFromString(MeshControl.UI.Palette.Adapt(hex)));
 
     // MARK: - Authentification
 

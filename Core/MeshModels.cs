@@ -100,6 +100,26 @@ public sealed class Mesh
     }
 }
 
+/// <summary>Une session MeshCentral ouverte sur une machine.</summary>
+/// <param name="User">
+/// Utilisateur tel que l'agent le rapporte : son nom, ou son identifiant
+/// complet (« user/domaine/nom ») selon la version du serveur.
+/// </param>
+/// <param name="Kind">kvm, terminal ou files.</param>
+public sealed record RemoteSession(string User, string Kind)
+{
+    /// <summary>Nom affichable : le dernier segment d'un identifiant complet.</summary>
+    public string UserName => User.Contains('/') ? User[(User.LastIndexOf('/') + 1)..] : User;
+
+    public string KindLabel => Kind switch
+    {
+        "kvm" => "bureau à distance",
+        "terminal" => "terminal",
+        "files" => "fichiers",
+        _ => Kind,
+    };
+}
+
 /// <summary>Un appareil géré ("node").</summary>
 public sealed class MeshNode
 {
@@ -117,6 +137,47 @@ public sealed class MeshNode
     public string? Desc { get; set; }
     public int? SshPort { get; set; }
     public int? RdpPort { get; set; }
+
+    /// <summary>
+    /// Sessions MeshCentral ouvertes sur la machine — bureau, terminal,
+    /// fichiers… — avec l'utilisateur qui les tient. L'agent les rapporte au
+    /// serveur, qui les joint à l'inventaire puis diffuse chaque changement.
+    /// </summary>
+    public IReadOnlyList<RemoteSession> Sessions { get; set; } = [];
+
+    /// <summary>
+    /// Types de session tenus par un utilisateur MeshCentral. L'objet
+    /// « sessions » porte aussi d'autres catégories — l'état de MeshCentral
+    /// Assistant (« app »), la messagerie… — dont les clés ne sont pas des
+    /// utilisateurs : les lire comme tels affichait « state » sur les postes
+    /// équipés de l'Assistant.
+    /// </summary>
+    private static readonly HashSet<string> UserSessionKinds = ["kvm", "terminal", "files"];
+
+    /// <summary>
+    /// Lit l'objet « sessions » : { kvm: { "&lt;utilisateur&gt;": nombre }, terminal: {…}, … }.
+    /// </summary>
+    public static List<RemoteSession> ParseSessions(JsonElement sessions)
+    {
+        var list = new List<RemoteSession>();
+        if (sessions.ValueKind != JsonValueKind.Object) return list;
+
+        foreach (var kind in sessions.EnumerateObject())
+        {
+            if (!UserSessionKinds.Contains(kind.Name) || kind.Value.ValueKind != JsonValueKind.Object)
+                continue;
+
+            foreach (var user in kind.Value.EnumerateObject())
+            {
+                // Une session d'utilisateur se compte : toute autre valeur
+                // n'en est pas une, et zéro ne laisse que la trace d'une
+                // session refermée.
+                if (user.Value.ValueKind != JsonValueKind.Number || user.Value.GetInt32() <= 0) continue;
+                list.Add(new RemoteSession(user.Name, kind.Name));
+            }
+        }
+        return list;
+    }
 
     /// <summary>
     /// Date de dernière connexion. Absente de la réponse « nodes » : le serveur
@@ -155,6 +216,7 @@ public sealed class MeshNode
     private static string? StrOrNull(JsonElement o, string key) =>
         o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
+
     public static MeshNode? From(JsonElement json, string meshId)
     {
         if (!json.TryGetProperty("_id", out var idEl) || idEl.ValueKind != JsonValueKind.String)
@@ -175,6 +237,7 @@ public sealed class MeshNode
             Desc = StrOrNull(json, "desc"),
             SshPort = IntOrNull(json, "sshport"),
             RdpPort = IntOrNull(json, "rdpport"),
+            Sessions = json.TryGetProperty("sessions", out var sessions) ? ParseSessions(sessions) : [],
         };
         return node;
     }
@@ -201,6 +264,7 @@ public sealed class MeshNode
         Desc = fresh.Desc;
         SshPort = fresh.SshPort;
         RdpPort = fresh.RdpPort;
+        Sessions = fresh.Sessions;
         LastConnect = fresh.LastConnect ?? LastConnect;
     }
 
@@ -217,6 +281,10 @@ public sealed class MeshNode
         if (StrOrNull(json, "ip") is { } ip) Ip = ip;
         if (StrOrNull(json, "desc") is { } d) Desc = d;
         if (IntOrNull(json, "sshport") is { } sp) SshPort = sp;
+
+        // Les sessions ont leur propre événement (« devicesessions ») : une
+        // fiche qui ne les porte pas ne dit rien à leur sujet.
+        if (json.TryGetProperty("sessions", out var sessions)) Sessions = ParseSessions(sessions);
     }
 
     /// <summary>Famille d'OS déduite de la description serveur, sinon du nom.</summary>

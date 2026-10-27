@@ -90,10 +90,10 @@
                           Checked="DisplayOption_Changed" Unchecked="DisplayOption_Changed"/>
 
                 <!-- Le seul levier réellement efficace sur l'interface -->
-                <Border x:Name="SingleAccessHint" Background="#E8F2FE" CornerRadius="8"
+                <Border x:Name="SingleAccessHint" Background="{StaticResource AccentSoftBrush}" CornerRadius="8"
                         Padding="11,9" Margin="0,0,0,14">
                     <TextBlock x:Name="SingleAccessText" Style="{StaticResource CaptionText}"
-                               TextWrapping="Wrap" Foreground="#0A5BC4"/>
+                               TextWrapping="Wrap" Foreground="{StaticResource InfoTextBrush}"/>
                 </Border>
 
                 <Button x:Name="CreateButton" Content="Créer le lien"
@@ -146,9 +146,9 @@
                                 VerticalAlignment="Top"/>
                     </Grid>
 
-                    <Border Background="#FFF4E5" CornerRadius="8" Padding="11,9" Margin="0,12,0,0">
+                    <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="8" Padding="11,9" Margin="0,12,0,0">
                         <TextBlock Style="{StaticResource CaptionText}" TextWrapping="Wrap"
-                                   Foreground="#B25E09"
+                                   Foreground="{StaticResource WarningTextBrush}"
                                    Text="L'iframe ne s'affichera que si votre serveur MeshCentral l'autorise : ajoutez &quot;allowFraming&quot;: true et &quot;allowedFramingOrigins&quot; dans son config.json. Sans cela, le navigateur bloque l'affichage (protection anti-clickjacking) — le lien direct fonctionne dans tous les cas."/>
                     </Border>
                 </StackPanel>

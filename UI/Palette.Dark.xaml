@@ -1,0 +1,54 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ============================================================
+         Palette sombre — mêmes clés que Palette.Light.xaml. Trois niveaux de
+         gris superposés (fenêtre, carte, contrôle) remplacent les ombres, peu
+         lisibles sur fond sombre ; l'accent garde sa teinte, les couleurs
+         d'état sont éclaircies pour garder leur contraste.
+         ============================================================ -->
+    <Color x:Key="AccentColor">#0A84FF</Color>
+    <SolidColorBrush x:Key="AccentBrush" Color="#0A84FF"/>
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#16304D"/>
+    <SolidColorBrush x:Key="AccentSoftHoverBrush" Color="#1E3F66"/>
+
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#1C1C1E"/>
+    <SolidColorBrush x:Key="CardBrush" Color="#2C2C2E"/>
+    <SolidColorBrush x:Key="SeparatorBrush" Color="#3A3A3C"/>
+    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#262628"/>
+
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F2F2F7"/>
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#98989D"/>
+    <SolidColorBrush x:Key="PlaceholderBrush" Color="#6C6C70"/>
+
+    <SolidColorBrush x:Key="OnlineBrush" Color="#30D158"/>
+    <SolidColorBrush x:Key="OnlineSoftBrush" Color="#1D3B24"/>
+    <SolidColorBrush x:Key="OfflineBrush" Color="#636366"/>
+    <SolidColorBrush x:Key="DangerBrush" Color="#FF453A"/>
+
+    <SolidColorBrush x:Key="ControlBrush" Color="#3A3A3C"/>
+    <SolidColorBrush x:Key="ControlHoverBrush" Color="#48484A"/>
+    <SolidColorBrush x:Key="SubtleFillBrush" Color="#3A3A3C"/>
+    <SolidColorBrush x:Key="SubtleFillHoverBrush" Color="#48484A"/>
+    <SolidColorBrush x:Key="ChipBrush" Color="#3A3A3C"/>
+    <SolidColorBrush x:Key="RowHoverBrush" Color="#3A3A3C"/>
+
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#5A5A5E"/>
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#7C7C80"/>
+
+    <SolidColorBrush x:Key="WindowButtonHoverBrush" Color="#3A3A3C"/>
+    <SolidColorBrush x:Key="WindowButtonPressedBrush" Color="#48484A"/>
+
+    <SolidColorBrush x:Key="DropZoneBrush" Color="#13283F"/>
+    <SolidColorBrush x:Key="DropZoneSubtleBrush" Color="#242A33"/>
+    <SolidColorBrush x:Key="DropZoneStrokeBrush" Color="#3B4E68"/>
+
+    <SolidColorBrush x:Key="InfoTextBrush" Color="#64B5FF"/>
+    <SolidColorBrush x:Key="WarningSoftBrush" Color="#3D2E14"/>
+    <SolidColorBrush x:Key="WarningTextBrush" Color="#FFB340"/>
+
+    <SolidColorBrush x:Key="FolderSoftBrush" Color="#3D3115"/>
+    <SolidColorBrush x:Key="FolderBrush" Color="#FFB340"/>
+
+    <Color x:Key="CardShadowColor">#66000000</Color>
+</ResourceDictionary>

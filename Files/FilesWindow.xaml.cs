@@ -166,7 +166,7 @@ public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.I
     }
 
     private static SolidColorBrush MakeBrush(string hex) =>
-        new((Color)ColorConverter.ConvertFromString(hex));
+        new((Color)ColorConverter.ConvertFromString(MeshControl.UI.Palette.Adapt(hex)));
 
     private static string Plural(int count, string singular, string plural)
         => $"{count} {(count > 1 ? plural : singular)}";

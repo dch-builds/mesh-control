@@ -155,7 +155,7 @@ public sealed class TransferItem : INotifyPropertyChanged
         return string.Join(" · ", parts);
     }
 
-    public string DetailColor => State == TransferState.Failed ? "#C0392B" : "#8A8A8E";
+    public string DetailColor => MeshControl.UI.Palette.Adapt(State == TransferState.Failed ? "#C0392B" : "#8A8A8E");
 
     /// <summary>Où va le fichier, pour l'info-bulle.</summary>
     public string Tooltip => IsUpload ? $"{LocalPath}\n→ {RemotePath}" : $"{RemotePath}\n→ {LocalPath}";
@@ -171,7 +171,7 @@ public sealed class TransferItem : INotifyPropertyChanged
         _ => "",
     };
 
-    public string StateColor => State == TransferState.Failed ? "#E5383B" : "#34C759";
+    public string StateColor => MeshControl.UI.Palette.Adapt(State == TransferState.Failed ? "#E5383B" : "#34C759");
 
     /// <summary>
     /// Action proposée sur la ligne : annuler ce qui attend ou tourne, relancer

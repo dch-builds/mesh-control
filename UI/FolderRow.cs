@@ -19,7 +19,7 @@ public sealed class FolderRow
         Key = key;
         Name = name;
         Glyph = glyph;
-        GlyphColor = glyphColor;
+        GlyphColor = Palette.Adapt(glyphColor);
         Total = total;
         Online = online;
     }

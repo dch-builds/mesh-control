@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows;
 using MeshControl.Core;
 
 namespace MeshControl.UI;
@@ -63,6 +64,8 @@ public sealed class DeviceRow : INotifyPropertyChanged
     private string _shownName = "";
     private string? _shownOsDescription;
     private DateTime? _shownLastConnect;
+    private string? _shownIp;
+    private string _shownSessions = "";
 
     /// <summary>Mémorise l'état courant comme étant celui affiché.</summary>
     public void CaptureState()
@@ -71,7 +74,11 @@ public sealed class DeviceRow : INotifyPropertyChanged
         _shownName = Node.Name;
         _shownOsDescription = Node.OsDescription;
         _shownLastConnect = Node.LastConnect;
+        _shownIp = Node.Ip;
+        _shownSessions = SessionsSignature();
     }
+
+    private string SessionsSignature() => string.Join("|", Node.Sessions.Select(s => $"{s.User}:{s.Kind}"));
 
     /// <summary>Vrai si l'état en ligne a changé depuis le dernier affichage.</summary>
     public bool OnlineStateChanged => _shownOnline != Node.IsOnline;
@@ -95,6 +102,9 @@ public sealed class DeviceRow : INotifyPropertyChanged
             Notify(nameof(BadgeForeground));
             // Le libellé dépend aussi de l'état : « Connecté » quand en ligne.
             Notify(nameof(LastSeenLabel));
+            // Les actions proposées au survol aussi : se connecter ou réveiller.
+            Notify(nameof(RemoteActionsVisibility));
+            Notify(nameof(WakeActionVisibility));
         }
         if (_shownLastConnect != Node.LastConnect) Notify(nameof(LastSeenLabel));
         if (NameChanged) Notify(nameof(Name));
@@ -105,13 +115,20 @@ public sealed class DeviceRow : INotifyPropertyChanged
             Notify(nameof(OsGlyphColor));
             Notify(nameof(OsGlyphBackground));
         }
+        if (!string.Equals(_shownIp, Node.Ip, StringComparison.Ordinal)) Notify(nameof(Subtitle));
+        if (OnlineStateChanged || _shownSessions != SessionsSignature())
+        {
+            Notify(nameof(SessionLabel));
+            Notify(nameof(SessionTooltip));
+            Notify(nameof(SessionVisibility));
+        }
 
         CaptureState();
     }
 
     /// <summary>Étoile affichée à droite : pleine si favori, creuse sinon.</summary>
     public string FavoriteGlyph => IsFavorite ? "★" : "☆";
-    public string FavoriteColor => IsFavorite ? "#FFB300" : "#C7C7CC";
+    public string FavoriteColor => Palette.Adapt(IsFavorite ? "#FFB300" : "#C7C7CC");
 
     /// <summary>Nom du dossier préfixé de son pictogramme, pour l'affichage.</summary>
     public string GroupLabel => $"📁 {RealGroupName}";
@@ -132,14 +149,14 @@ public sealed class DeviceRow : INotifyPropertyChanged
     };
 
     /// <summary>Teinte de la pastille d'icône, pour distinguer les OS d'un coup d'œil.</summary>
-    public string OsGlyphColor => Node.OsFamily switch
+    public string OsGlyphColor => Palette.Adapt(Node.OsFamily switch
     {
         OSFamily.Windows => "#0A84FF",
         OSFamily.Linux => "#F0883E",
         OSFamily.MacOS => "#8E8E93",
         OSFamily.Mobile => "#30B0C7",
         _ => "#8A8A8E",
-    };
+    });
 
     /// <summary>
     /// Fond de la pastille, dans la même teinte que le pictogramme mais très
@@ -148,16 +165,16 @@ public sealed class DeviceRow : INotifyPropertyChanged
     /// lecture, et reste assez pâle pour ne pas disputer l'attention au nom de
     /// la machine.
     /// </summary>
-    public string OsGlyphBackground => Node.OsFamily switch
+    public string OsGlyphBackground => Palette.Adapt(Node.OsFamily switch
     {
         OSFamily.Windows => "#E8F2FE",
         OSFamily.Linux => "#FDF0E6",
         OSFamily.MacOS => "#F0F0F2",
         OSFamily.Mobile => "#E3F5F8",
         _ => "#F0F0F2",
-    };
+    });
 
-    public string StatusBrush => IsOnline ? "#34C759" : "#C7C7CC";
+    public string StatusBrush => Palette.Adapt(IsOnline ? "#34C759" : "#C7C7CC");
     public string StatusLabel => IsOnline ? "En ligne" : "Hors ligne";
 
     /// <summary>
@@ -165,11 +182,87 @@ public sealed class DeviceRow : INotifyPropertyChanged
     /// le badge « En ligne » le dit déjà, et le répéter alourdirait la ligne.
     /// </summary>
     public string LastSeenLabel => IsOnline ? "" : Node.LastSeenLabel;
-    public string BadgeBackground => IsOnline ? "#E4F8E8" : "#EFEFF4";
-    public string BadgeForeground => IsOnline ? "#248A3D" : "#8A8A8E";
+    public string BadgeBackground => Palette.Adapt(IsOnline ? "#E4F8E8" : "#EFEFF4");
+    public string BadgeForeground => Palette.Adapt(IsOnline ? "#248A3D" : "#8A8A8E");
 
-    public string Subtitle =>
-        string.IsNullOrEmpty(Node.OsDescription) ? "Système non renseigné" : Node.OsDescription!;
+    /// <summary>
+    /// Système, puis adresse IP : celle-ci sert à reconnaître un poste d'un
+    /// coup d'œil, ou à le joindre par d'autres moyens.
+    /// </summary>
+    public string Subtitle
+    {
+        get
+        {
+            var system = string.IsNullOrEmpty(Node.OsDescription) ? "Système non renseigné" : Node.OsDescription!;
+            return string.IsNullOrEmpty(Node.Ip) ? system : $"{system} · {Node.Ip}";
+        }
+    }
+
+    // MARK: - Utilisateurs MeshCentral connectés
+
+    /// <summary>
+    /// Nom de l'utilisateur connecté à MeshCentral avec cette application.
+    /// Ses propres sessions s'affichent « vous » : on reconnaît d'un coup d'œil
+    /// une machine déjà ouverte, et on distingue celles où un collègue travaille.
+    /// </summary>
+    public static string? CurrentUserName { get; set; }
+
+    /// <summary>Utilisateurs ayant une session ouverte, chacun avec ses types de session.</summary>
+    private List<(string Name, List<string> Kinds)> SessionUsers()
+        => Node.Sessions
+            .GroupBy(s => s.UserName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => (Name: DisplayName(g.Key), Kinds: g.Select(s => s.KindLabel).Distinct().ToList()))
+            // Les collègues avant soi : c'est leur présence qu'il importe de voir.
+            .OrderBy(u => u.Name == "vous")
+            .ThenBy(u => u.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static string DisplayName(string user)
+        => CurrentUserName is { } me && string.Equals(user, me, StringComparison.OrdinalIgnoreCase)
+            ? "vous" : user;
+
+    /// <summary>
+    /// Premier utilisateur MeshCentral connecté, suivi du nombre des autres.
+    /// On le regarde avant de prendre la main : un collègue est-il déjà dessus ?
+    /// </summary>
+    public string SessionLabel
+    {
+        get
+        {
+            var users = SessionUsers();
+            if (users.Count == 0) return "";
+            return users.Count > 1 ? $"{users[0].Name} +{users.Count - 1}" : users[0].Name;
+        }
+    }
+
+    public string SessionTooltip
+    {
+        get
+        {
+            var users = SessionUsers();
+            return users.Count == 0
+                ? ""
+                : "Connecté via MeshCentral :\n"
+                  + string.Join("\n", users.Select(u => $"{u.Name} — {string.Join(", ", u.Kinds)}"));
+        }
+    }
+
+    /// <summary>
+    /// Seulement en ligne : les sessions d'une machine éteinte sont forcément
+    /// refermées, même si le serveur n'en a pas encore reçu la fin.
+    /// </summary>
+    public Visibility SessionVisibility =>
+        IsOnline && Node.Sessions.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    // MARK: - Actions au survol
+
+    /// <summary>Bureau, terminal et fichiers passent par l'agent : machine joignable requise.</summary>
+    public Visibility RemoteActionsVisibility =>
+        Node is { IsOnline: true, HasAgent: true } ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>Une machine éteinte n'a qu'une action utile : la réveiller.</summary>
+    public Visibility WakeActionVisibility =>
+        IsOnline ? Visibility.Collapsed : Visibility.Visible;
 
     // MARK: - Notification de changement
 

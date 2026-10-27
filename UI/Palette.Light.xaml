@@ -1,0 +1,61 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ============================================================
+         Palette claire — thème adapté à Windows, adapté aux
+         codes du desktop Windows. Palette.Dark.xaml porte exactement les
+         mêmes clés : Theme.xaml et les fenêtres ne référencent que celles-ci,
+         jamais une couleur en dur, pour que les deux thèmes restent complets.
+         ============================================================ -->
+    <Color x:Key="AccentColor">#0A84FF</Color>
+    <SolidColorBrush x:Key="AccentBrush" Color="#0A84FF"/>
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#E8F2FE"/>
+    <SolidColorBrush x:Key="AccentSoftHoverBrush" Color="#D6E8FD"/>
+
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F2F2F7"/>
+    <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SeparatorBrush" Color="#E5E5EA"/>
+    <!-- Fond secondaire : barre d'état, pied de palette -->
+    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#FAFAFC"/>
+
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1C1C1E"/>
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#8A8A8E"/>
+    <SolidColorBrush x:Key="PlaceholderBrush" Color="#AEAEB2"/>
+
+    <SolidColorBrush x:Key="OnlineBrush" Color="#34C759"/>
+    <SolidColorBrush x:Key="OnlineSoftBrush" Color="#E4F8E8"/>
+    <SolidColorBrush x:Key="OfflineBrush" Color="#C7C7CC"/>
+    <SolidColorBrush x:Key="DangerBrush" Color="#FF3B30"/>
+
+    <!-- Champs, cases et boutons d'outil posés sur une carte -->
+    <SolidColorBrush x:Key="ControlBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="ControlHoverBrush" Color="#EFEFF4"/>
+    <!-- Aplats discrets : boutons d'en-tête, fil d'Ariane, pastilles vides -->
+    <SolidColorBrush x:Key="SubtleFillBrush" Color="#F2F2F7"/>
+    <SolidColorBrush x:Key="SubtleFillHoverBrush" Color="#E5E5EA"/>
+    <SolidColorBrush x:Key="ChipBrush" Color="#F7F7F9"/>
+    <!-- Survol d'une ligne de liste -->
+    <SolidColorBrush x:Key="RowHoverBrush" Color="#EFEFF4"/>
+
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#C7C7CC"/>
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#A8A8AE"/>
+
+    <SolidColorBrush x:Key="WindowButtonHoverBrush" Color="#EBEBF0"/>
+    <SolidColorBrush x:Key="WindowButtonPressedBrush" Color="#DEDEE4"/>
+
+    <!-- Zones de dépôt de fichiers -->
+    <SolidColorBrush x:Key="DropZoneBrush" Color="#EBF4FF"/>
+    <SolidColorBrush x:Key="DropZoneSubtleBrush" Color="#F7F9FC"/>
+    <SolidColorBrush x:Key="DropZoneStrokeBrush" Color="#C7D7EE"/>
+
+    <!-- Encadrés d'information et d'avertissement -->
+    <SolidColorBrush x:Key="InfoTextBrush" Color="#0A5BC4"/>
+    <SolidColorBrush x:Key="WarningSoftBrush" Color="#FFF4E5"/>
+    <SolidColorBrush x:Key="WarningTextBrush" Color="#B25E09"/>
+
+    <!-- Pastille de dossier -->
+    <SolidColorBrush x:Key="FolderSoftBrush" Color="#FEF3DC"/>
+    <SolidColorBrush x:Key="FolderBrush" Color="#E89B0C"/>
+
+    <Color x:Key="CardShadowColor">#22000000</Color>
+</ResourceDictionary>

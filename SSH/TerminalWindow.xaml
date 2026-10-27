@@ -37,7 +37,7 @@
                               SelectionChanged="ShellCombo_SelectionChanged"/>
 
                     <!-- Compte réellement utilisé par le shell (résultat de whoami) -->
-                    <Border x:Name="IdentityBadge" Background="#EFEFF4" CornerRadius="6"
+                    <Border x:Name="IdentityBadge" Background="{StaticResource SubtleFillBrush}" CornerRadius="6"
                             Padding="7,3" VerticalAlignment="Center" Margin="10,0,0,0"
                             Visibility="Collapsed">
                         <TextBlock x:Name="IdentityText" FontSize="10"

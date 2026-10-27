@@ -37,7 +37,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#F2F2F7"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -60,7 +60,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#F2F2F7"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
                             </Trigger>
                             <DataTrigger Binding="{Binding IsSelected}" Value="True">
                                 <Setter TargetName="Bd" Property="Background"
@@ -253,8 +253,8 @@
                             <Grid>
                                 <!-- Zone de dépôt, tant que rien n'est choisi -->
                                 <Grid x:Name="FilesDropZone" Margin="14,0,14,14">
-                                    <Rectangle RadiusX="12" RadiusY="12" Fill="#F7F9FC"
-                                               Stroke="#C7D7EE" StrokeThickness="1.5"
+                                    <Rectangle RadiusX="12" RadiusY="12" Fill="{StaticResource DropZoneSubtleBrush}"
+                                               Stroke="{StaticResource DropZoneStrokeBrush}" StrokeThickness="1.5"
                                                StrokeDashArray="5 3"/>
                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
                                                 Margin="20">
@@ -333,7 +333,7 @@
                             </Grid>
 
                             <!-- Recherche -->
-                            <Border DockPanel.Dock="Top" Height="34" CornerRadius="8" Background="White"
+                            <Border DockPanel.Dock="Top" Height="34" CornerRadius="8" Background="{StaticResource ControlBrush}"
                                     BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1"
                                     Margin="14,0,14,8">
                                 <Grid>
@@ -342,7 +342,7 @@
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="12"
-                                               Foreground="#AEAEB2" Margin="12,0,0,0"
+                                               Foreground="{StaticResource PlaceholderBrush}" Margin="12,0,0,0"
                                                VerticalAlignment="Center" IsHitTestVisible="False"/>
                                     <Grid Grid.Column="1" Margin="8,0,8,0">
                                         <TextBox x:Name="DeviceSearchBox" BorderThickness="0"
@@ -351,7 +351,7 @@
                                                  TextChanged="DeviceSearch_TextChanged"/>
                                         <TextBlock x:Name="DeviceSearchPlaceholder"
                                                    Text="Rechercher un appareil ou un dossier…"
-                                                   FontSize="13" Foreground="#AEAEB2"
+                                                   FontSize="13" Foreground="{StaticResource PlaceholderBrush}"
                                                    VerticalAlignment="Center" IsHitTestVisible="False"/>
                                     </Grid>
                                 </Grid>
@@ -504,7 +504,7 @@
                                                        Visibility="{Binding StateGlyphVisibility}"
                                                        VerticalAlignment="Center" Margin="0,0,4,0"/>
                                             <Button Grid.Column="2" Style="{StaticResource ToolButton}"
-                                                    Background="#F2F2F7" Padding="10,6"
+                                                    Background="{StaticResource SubtleFillBrush}" Padding="10,6"
                                                     Visibility="{Binding RetryVisibility}"
                                                     Tag="{Binding}" Click="RetryDevice_Click"
                                                     VerticalAlignment="Center">
@@ -527,7 +527,7 @@
 
         <!-- Voile de dépôt -->
         <Grid x:Name="DropOverlay" Visibility="Collapsed" IsHitTestVisible="False" Margin="10">
-            <Rectangle RadiusX="14" RadiusY="14" Fill="#EBF4FF"
+            <Rectangle RadiusX="14" RadiusY="14" Fill="{StaticResource DropZoneBrush}"
                        Stroke="{StaticResource AccentBrush}" StrokeThickness="2"
                        StrokeDashArray="5 3"/>
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">

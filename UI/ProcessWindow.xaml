@@ -29,14 +29,14 @@
 
         <!-- Recherche -->
         <Border DockPanel.Dock="Top" Width="300" HorizontalAlignment="Left" Height="34"
-                CornerRadius="8" Background="White" Margin="0,0,0,12"
+                CornerRadius="8" Background="{StaticResource ControlBrush}" Margin="0,0,0,12"
                 BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1">
             <Grid>
                 <TextBox x:Name="FilterBox" BorderThickness="0" Background="Transparent"
                          Padding="11,0" FontSize="13" VerticalContentAlignment="Center"
                          TextChanged="FilterBox_TextChanged"/>
                 <TextBlock x:Name="FilterPlaceholder" Text="Filtrer par nom…" FontSize="13"
-                           Foreground="#AEAEB2" Margin="12,0,0,0"
+                           Foreground="{StaticResource PlaceholderBrush}" Margin="12,0,0,0"
                            VerticalAlignment="Center" IsHitTestVisible="False"/>
             </Grid>
         </Border>

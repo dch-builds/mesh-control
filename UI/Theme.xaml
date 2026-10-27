@@ -4,25 +4,10 @@
                     xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
                     xmlns:ui="clr-namespace:MeshControl.UI">
 
-    <!-- ============================================================
-         Palette — thème clair adapté à Windows,
-         adapté aux codes du desktop Windows.
-         ============================================================ -->
-    <Color x:Key="AccentColor">#0A84FF</Color>
-    <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}"/>
-    <SolidColorBrush x:Key="AccentSoftBrush" Color="#E8F2FE"/>
-
-    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F2F2F7"/>
-    <SolidColorBrush x:Key="CardBrush" Color="#FFFFFF"/>
-    <SolidColorBrush x:Key="SeparatorBrush" Color="#E5E5EA"/>
-
-    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1C1C1E"/>
-    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#8A8A8E"/>
-
-    <SolidColorBrush x:Key="OnlineBrush" Color="#34C759"/>
-    <SolidColorBrush x:Key="OnlineSoftBrush" Color="#E4F8E8"/>
-    <SolidColorBrush x:Key="OfflineBrush" Color="#C7C7CC"/>
-    <SolidColorBrush x:Key="DangerBrush" Color="#FF3B30"/>
+    <!-- Les couleurs viennent de Palette.Light.xaml ou Palette.Dark.xaml,
+         chargée avant ce dictionnaire (voir UI/Palette.cs). Aucune couleur
+         d'interface ne doit être écrite en dur ici : elle ne changerait pas
+         avec le thème. -->
 
     <!-- ============================================================
          Typographie
@@ -94,7 +79,7 @@
         <Setter Property="Padding" Value="0"/>
         <Setter Property="Effect">
             <Setter.Value>
-                <DropShadowEffect Color="#22000000" BlurRadius="10" ShadowDepth="1"
+                <DropShadowEffect Color="{StaticResource CardShadowColor}" BlurRadius="10" ShadowDepth="1"
                                   Direction="270" Opacity="0.5"/>
             </Setter.Value>
         </Setter>
@@ -108,8 +93,9 @@
         <Setter Property="Padding" Value="9,7"/>
         <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Background" Value="White"/>
+        <Setter Property="Background" Value="{StaticResource ControlBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="CaretBrush" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
@@ -138,7 +124,7 @@
                         <Border x:Name="Box" Width="16" Height="16" CornerRadius="4"
                                 BorderThickness="1.5"
                                 BorderBrush="{StaticResource SeparatorBrush}"
-                                Background="White" VerticalAlignment="Center">
+                                Background="{StaticResource ControlBrush}" VerticalAlignment="Center">
                             <Path x:Name="Check" Stretch="Uniform" Margin="3"
                                   Data="M 0,5 L 4,9 L 11,1"
                                   Stroke="White" StrokeThickness="2"
@@ -175,7 +161,9 @@
         <Setter Property="Padding" Value="9,7"/>
         <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Background" Value="White"/>
+        <Setter Property="Background" Value="{StaticResource ControlBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="CaretBrush" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="PasswordBox">
@@ -247,7 +235,7 @@
 
     <!-- Bouton de barre d'outils (fond blanc, arrondi) -->
     <Style x:Key="ToolButton" TargetType="Button">
-        <Setter Property="Background" Value="White"/>
+        <Setter Property="Background" Value="{StaticResource ControlBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="Padding" Value="10,6"/>
@@ -262,7 +250,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#EFEFF4"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource ControlHoverBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
@@ -290,7 +278,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#D6E8FD"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftHoverBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
@@ -319,8 +307,39 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#E5E5EA"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SubtleFillHoverBrush}"/>
                             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Action rapide d'une ligne d'appareil (bureau, terminal, fichiers),
+         montrée au survol : discrète au repos, pleine sous le curseur. -->
+    <Style x:Key="RowActionButton" TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource ControlBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Width" Value="30"/>
+        <Setter Property="Height" Value="30"/>
+        <Setter Property="Margin" Value="0,0,5,0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                            BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentBrush}"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            <Setter Property="Foreground" Value="White"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -338,7 +357,7 @@
         <Setter Property="Minimum" Value="0"/>
         <Setter Property="Maximum" Value="1"/>
         <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
-        <Setter Property="Background" Value="#E5E5EA"/>
+        <Setter Property="Background" Value="{StaticResource SubtleFillHoverBrush}"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -392,7 +411,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#F5F5F7"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
@@ -465,7 +484,7 @@
                              #F5F5F7, l'écart au fond blanc était si faible qu'il
                              passait inaperçu. -->
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#EFEFF4"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
                         </Trigger>
                         <!-- La sélection prime sur le survol : sans cet ordre, pointer
                              la ligne sélectionnée la ferait virer au gris. -->
@@ -513,7 +532,7 @@
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Bd" Property="Background" Value="#F2F2F7"/>
+                                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SubtleFillBrush}"/>
                                         </Trigger>
                                         <Trigger Property="IsChecked" Value="True">
                                             <Setter TargetName="Chevron" Property="Text" Value="&#xE70E;"/>
@@ -527,6 +546,254 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsExpanded" Value="True">
                             <Setter TargetName="Body" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ============================================================
+         Menus, info-bulles, listes déroulantes et listes à colonnes.
+         Laissés à Windows, ils resteraient blancs en thème sombre : ces
+         styles sans clé s'appliquent partout où ce dictionnaire est chargé,
+         menu de la zone de notification compris.
+         ============================================================ -->
+    <Style TargetType="ContextMenu">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{StaticResource CardBrush}" CornerRadius="8" Padding="4"
+                            BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1">
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Ligne de menu : coche, libellé, raccourci, flèche de sous-menu. Le
+         sous-menu s'ouvre dans sa propre fenêtre surgissante, PART_Popup. -->
+    <Style TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="6,6,10,6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="24"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="16"/>
+                            </Grid.ColumnDefinitions>
+                            <ContentPresenter ContentSource="Icon" VerticalAlignment="Center"
+                                              HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="Check" Text="&#xE73E;" FontFamily="Segoe MDL2 Assets"
+                                       FontSize="11" Foreground="{StaticResource AccentBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Visibility="Collapsed"/>
+                            <ContentPresenter Grid.Column="1" ContentSource="Header"
+                                              RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" Margin="28,0,0,0"/>
+                            <TextBlock x:Name="Arrow" Grid.Column="3" Text="&#xE76C;"
+                                       FontFamily="Segoe MDL2 Assets" FontSize="9"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       Visibility="Collapsed"/>
+                            <Popup x:Name="PART_Popup" Placement="Right" HorizontalOffset="8"
+                                   VerticalOffset="-5" AllowsTransparency="True" Focusable="False"
+                                   PopupAnimation="Fade" IsOpen="{TemplateBinding IsSubmenuOpen}">
+                                <Border Background="{StaticResource CardBrush}" CornerRadius="8" Padding="4"
+                                        BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1">
+                                    <StackPanel IsItemsHost="True"
+                                                KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="Role" Value="SubmenuHeader">
+                            <Setter TargetName="Arrow" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Separator">
+                    <Border Height="1" Margin="8,4" Background="{StaticResource SeparatorBrush}"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ToolTip">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{StaticResource CardBrush}" CornerRadius="6" Padding="9,6"
+                            BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1">
+                        <ContentPresenter/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Liste déroulante non éditable (la seule employée ici) : un bouton qui
+         montre le choix courant, et une liste surgissante arrondie. -->
+    <Style TargetType="ComboBox">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Background" Value="{StaticResource ControlBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}"/>
+        <Setter Property="MinHeight" Value="30"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton Focusable="False" ClickMode="Press"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay,
+                                                  RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="Bd" CornerRadius="8" BorderThickness="1"
+                                            Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                            BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}">
+                                        <TextBlock Text="&#xE70D;" FontFamily="Segoe MDL2 Assets" FontSize="9"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                   Margin="0,0,10,0"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="BorderBrush"
+                                                    Value="{StaticResource AccentBrush}"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+                        </ToggleButton>
+                        <ContentPresenter IsHitTestVisible="False" Margin="10,0,28,0"
+                                          Content="{TemplateBinding SelectionBoxItem}"
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                          HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        <Popup x:Name="PART_Popup" Placement="Bottom" VerticalOffset="4"
+                               AllowsTransparency="True" Focusable="False" PopupAnimation="Fade"
+                               IsOpen="{TemplateBinding IsDropDownOpen}">
+                            <Border Background="{StaticResource CardBrush}" CornerRadius="8" Padding="4"
+                                    BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1"
+                                    MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                    MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                <ScrollViewer>
+                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                </ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ComboBoxItem">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBoxItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="8,6">
+                        <ContentPresenter/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Listes à colonnes (GridView) : en-têtes plats, lignes arrondies. Le
+         gabarit de ligne suppose une GridView, seule vue employée ici ; la
+         fenêtre de fichiers pose ses propres variantes par clé. -->
+    <Style TargetType="ListView">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <Style TargetType="GridViewColumnHeader">
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GridViewColumnHeader">
+                    <Grid Background="Transparent">
+                        <Border BorderBrush="{StaticResource SeparatorBrush}"
+                                BorderThickness="0,0,0,1" Padding="10,9,8,7">
+                            <ContentPresenter TextElement.FontSize="11"
+                                              TextElement.FontWeight="SemiBold"
+                                              TextElement.Foreground="{StaticResource TextSecondaryBrush}"/>
+                        </Border>
+                        <Thumb x:Name="PART_HeaderGripper" HorizontalAlignment="Right"
+                               Width="8" Margin="0,0,-4,0" Cursor="SizeWE">
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="Thumb">
+                                    <Border Background="Transparent"/>
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ListViewItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListViewItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="6"
+                            Margin="4,1" Padding="0,4">
+                        <GridViewRowPresenter Columns="{TemplateBinding GridView.ColumnCollection}"
+                                              Content="{TemplateBinding Content}"
+                                              VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoftBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -549,6 +816,9 @@
     <Style x:Key="AppWindow" TargetType="Window">
         <Setter Property="WindowStyle" Value="None"/>
         <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}"/>
+        <!-- Couleur héritée par tout texte qui n'en précise pas : le noir par
+             défaut de Windows disparaîtrait sur le fond sombre. -->
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
         <Setter Property="shell:WindowChrome.WindowChrome">
             <Setter.Value>
                 <shell:WindowChrome CaptionHeight="44" ResizeBorderThickness="6"
@@ -650,7 +920,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#EFEFF4"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBrush}"/>
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Bd" Property="Background"
@@ -672,10 +942,10 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Border x:Name="Bd" Background="#C7C7CC" CornerRadius="3" Margin="2"/>
+                    <Border x:Name="Bd" Background="{StaticResource ScrollThumbBrush}" CornerRadius="3" Margin="2"/>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#A8A8AE"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource ScrollThumbHoverBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -771,10 +1041,10 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#EBEBF0"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource WindowButtonHoverBrush}"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#DEDEE4"/>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource WindowButtonPressedBrush}"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

@@ -125,7 +125,7 @@ public partial class SendFilesWindow : MeshControl.UI.ChromeWindow
         => $"{count} {(count > 1 ? plural : singular)}";
 
     private static SolidColorBrush MakeBrush(string hex) =>
-        new((Color)ColorConverter.ConvertFromString(hex));
+        new((Color)ColorConverter.ConvertFromString(MeshControl.UI.Palette.Adapt(hex)));
 
     // MARK: - Étape 1 : les fichiers
 

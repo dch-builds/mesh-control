@@ -214,7 +214,7 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
     }
 
     private static SolidColorBrush MakeBrush(string hex) =>
-        new((Color)ColorConverter.ConvertFromString(hex));
+        new((Color)ColorConverter.ConvertFromString(MeshControl.UI.Palette.Adapt(hex)));
 
     // MARK: - Barre d'outils
 
