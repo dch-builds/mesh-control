@@ -133,6 +133,16 @@
                             Click="Screenshot_Click" Padding="9,5" Margin="0,0,6,0"
                             ToolTip="Capturer l'écran distant (Ctrl+Maj+S)"/>
 
+                    <!-- Loupe : on trace un rectangle sur l'écran pour l'agrandir.
+                         Un second clic revient à la vue entière. -->
+                    <Button x:Name="ZoomButton"
+                            Style="{StaticResource ToolButton}"
+                            Click="Zoom_Click" Padding="9,5" Margin="0,0,6,0"
+                            ToolTip="Agrandir une zone : tracer un rectangle sur l'écran (Ctrl+Maj+Z)">
+                        <TextBlock x:Name="ZoomButtonGlyph" Text="&#xE8A3;"
+                                   FontFamily="Segoe MDL2 Assets" FontSize="13"/>
+                    </Button>
+
                     <!-- Secours : débloque un modificateur resté enfoncé côté distant -->
                     <Button Content="⌨" Style="{StaticResource ToolButton}"
                             Click="ReleaseModifiers_Click" Padding="9,5" Margin="0,0,6,0"
@@ -144,6 +154,24 @@
                             Style="{StaticResource ToolButton}"
                             Click="Fullscreen_Click" Padding="9,5" Margin="0,0,6,0"
                             ToolTip="Plein écran (Ctrl+Maj+F)"/>
+
+                    <!-- Alimentation, à portée de main : redémarrer la machine
+                         sans repasser par la liste. La session reprend seule au
+                         retour de la machine. -->
+                    <Button x:Name="PowerButton"
+                            Style="{StaticResource ToolButton}"
+                            Click="Power_Click" Padding="9,5" Margin="0,0,6,0"
+                            ToolTip="Redémarrer, mettre en veille ou éteindre la machine (redémarrage : Ctrl+Maj+B)">
+                        <TextBlock Text="&#xE7E8;" FontFamily="Segoe MDL2 Assets" FontSize="13"/>
+                        <Button.ContextMenu>
+                            <ContextMenu x:Name="PowerMenu" Placement="Bottom">
+                                <MenuItem Header="Redémarrer…" InputGestureText="Ctrl+Maj+B"
+                                          Click="Reboot_Click"/>
+                                <MenuItem Header="Mettre en veille…" Click="Sleep_Click"/>
+                                <MenuItem Header="Éteindre…" Click="PowerOff_Click"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
 
                     <!-- Accès aux autres outils de la machine. Un seul bouton
                          plutôt que trois : la barre est déjà dense. -->
@@ -215,6 +243,22 @@
                     <TextBlock x:Name="StatusResolution" Style="{StaticResource CaptionText}"
                                VerticalAlignment="Center"
                                ToolTip="Résolution de l'écran distant"/>
+
+                    <!-- Envoi de fichiers déposés sur l'écran : visible le temps
+                         du transfert seulement. -->
+                    <StackPanel x:Name="TransferPanel" Orientation="Horizontal"
+                                Visibility="Collapsed">
+                        <Border Width="1" Background="{StaticResource SeparatorBrush}"
+                                Margin="10,1,10,1"/>
+                        <TextBlock x:Name="StatusTransfer" Style="{StaticResource CaptionText}"
+                                   Foreground="{StaticResource InfoTextBrush}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" MaxWidth="420"/>
+                        <Button Content="Annuler" Style="{StaticResource ToolButton}"
+                                Click="CancelDrop_Click" Padding="7,1" FontSize="11"
+                                Margin="8,0,0,0"
+                                ToolTip="Interrompre l'envoi des fichiers déposés"/>
+                    </StackPanel>
                 </StackPanel>
 
                 <TextBlock x:Name="StatusTotal" Style="{StaticResource CaptionText}"
@@ -229,8 +273,14 @@
              - FitHost (Grid)      : mode « Ajuster » — WPF met l'image à l'échelle
                                      automatiquement et suit la fenêtre nativement.
              - Scroller (ScrollViewer) : mode 1:1 — taille native + défilement. -->
-        <Grid Background="#1B1D21">
-            <Grid x:Name="FitHost">
+        <!-- AllowDrop : des fichiers glissés depuis l'Explorateur sur l'écran
+             distant partent vers la machine (dossier de transfert habituel). -->
+        <Grid x:Name="DisplayArea" Background="#1B1D21" AllowDrop="True"
+              DragEnter="DisplayArea_DragOver" DragOver="DisplayArea_DragOver"
+              DragLeave="DisplayArea_DragLeave" Drop="DisplayArea_Drop">
+            <!-- ClipToBounds : agrandie par la loupe, l'image déborde de son
+                 hôte ; sans découpe, elle recouvrirait les barres. -->
+            <Grid x:Name="FitHost" ClipToBounds="True">
                 <!-- StretchDirection="Both" : agrandit aussi les petites
                      résolutions, qui restaient sinon minuscules au centre d'une
                      grande fenêtre. Uniform conserve le ratio dans les deux sens. -->
@@ -271,6 +321,74 @@
                 <TextBlock Text="Plein écran — Ctrl+Maj+F pour revenir"
                            Foreground="#E4E6EA" FontSize="12"/>
             </Border>
+
+            <!-- Tracé de la zone à agrandir. Fond transparent mais présent :
+                 c'est lui qui reçoit la souris, qui ne part donc pas vers la
+                 machine distante pendant le tracé. -->
+            <Canvas x:Name="ZoomOverlay" Visibility="Collapsed"
+                    Background="Transparent" Cursor="Cross"
+                    MouseLeftButtonDown="ZoomOverlay_MouseLeftButtonDown"
+                    MouseMove="ZoomOverlay_MouseMove"
+                    MouseLeftButtonUp="ZoomOverlay_MouseLeftButtonUp"
+                    MouseRightButtonDown="ZoomOverlay_MouseRightButtonDown">
+                <Rectangle x:Name="ZoomBand" Visibility="Collapsed"
+                           Stroke="{StaticResource AccentBrush}" StrokeThickness="1.5"
+                           Fill="#260A84FF"/>
+            </Canvas>
+
+            <Border x:Name="ZoomHint" Visibility="Collapsed"
+                    IsHitTestVisible="False" Background="#D9000000"
+                    CornerRadius="8" Padding="14,8"
+                    VerticalAlignment="Top" HorizontalAlignment="Center"
+                    Margin="0,18,0,0">
+                <TextBlock Text="Tracez la zone à agrandir — Échap ou clic droit pour annuler"
+                           Foreground="#E4E6EA" FontSize="12"/>
+            </Border>
+
+            <!-- Rappel du zoom en cours, cliquable pour revenir à la vue entière. -->
+            <Button x:Name="ZoomBadge" Visibility="Collapsed"
+                    Click="ZoomBadge_Click" Cursor="Hand" Focusable="False"
+                    VerticalAlignment="Top" HorizontalAlignment="Right"
+                    Margin="0,14,14,0"
+                    ToolTip="Revenir à la vue entière (Ctrl+Maj+Z)">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Chip" Background="#D9000000" CornerRadius="8"
+                                Padding="12,6">
+                            <StackPanel Orientation="Horizontal">
+                                <ContentPresenter TextElement.Foreground="#E4E6EA"
+                                                  TextElement.FontSize="12"
+                                                  VerticalAlignment="Center"/>
+                                <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets"
+                                           FontSize="10" Foreground="#E4E6EA"
+                                           VerticalAlignment="Center" Margin="10,1,0,0"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="#F2000000"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <!-- Fichiers glissés au-dessus de l'écran : rappelle où ils iront. -->
+            <Grid x:Name="DropOverlay" Visibility="Collapsed" IsHitTestVisible="False"
+                  Background="#B3101215">
+                <Rectangle Margin="18" RadiusX="12" RadiusY="12"
+                           Stroke="{StaticResource AccentBrush}" StrokeThickness="2"
+                           StrokeDashArray="6 4"/>
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock Text="&#xE898;" FontFamily="Segoe MDL2 Assets" FontSize="34"
+                               Foreground="#E4E6EA" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Déposer pour envoyer à la machine"
+                               FontSize="16" FontWeight="SemiBold" Foreground="#E4E6EA"
+                               HorizontalAlignment="Center" Margin="0,12,0,4"/>
+                    <TextBlock x:Name="DropDestinationText" FontSize="12"
+                               Foreground="#A0A4AB" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
         </Grid>
     </DockPanel>
 </ui:ChromeWindow>

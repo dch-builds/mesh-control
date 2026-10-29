@@ -38,6 +38,20 @@ standard.
 - Autres outils de la machine sans quitter le bureau : terminal (Ctrl+Maj+T),
   fichiers (Ctrl+Maj+E), processus (Ctrl+Maj+P), page web (Ctrl+Maj+W)
 - Plein écran par Ctrl+Maj+F : barres et bandeau d'onglets masqués
+- Loupe (bouton ou Ctrl+Maj+Z) : on trace un rectangle sur l'écran distant et
+  la zone remplit la fenêtre, la souris restant utilisable. Le même geste
+  revient à la vue entière ; Maj+clic sur la loupe agrandit encore
+- Redémarrage, veille ou extinction depuis la barre d'outils (redémarrage :
+  Ctrl+Maj+B). Après un redémarrage, la session reprend d'elle-même au retour
+  de la machine, même au-delà de la reprise automatique
+- Fichiers et dossiers glissés depuis l'Explorateur sur l'écran distant : une
+  boîte demande le dossier d'arrivée et propose les emplacements courants de
+  la machine — bureau (OneDrive compris), téléchargements et documents de
+  chaque utilisateur, bureau public, disques ; sous Linux, les dossiers
+  personnels, `/tmp` et `/`. « Parcourir… » permet de naviguer dans les
+  dossiers de la machine pour en choisir un autre ; le chemin reste aussi
+  modifiable à la main, et le dernier dossier choisi est reproposé.
+  Progression dans la barre d'état
 - Le flux s'interrompt dès que la session n'est plus regardée — onglet passé à
   l'arrière-plan, fenêtre réduite — et reprend sur une image complète
 - Presse-papiers dans les deux sens. Le collage écrit le presse-papiers de la

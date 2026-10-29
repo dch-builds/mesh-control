@@ -119,6 +119,17 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // Fermer la session en plein écran laisserait la fenêtre hôte sans
         // bordure ni barre d'onglets, y compris pour les autres sessions.
         Closed += (_, _) => _fullscreen.Exit();
+
+        // La loupe est exprimée en fraction de l'image : elle se recalcule quand
+        // la fenêtre ou l'image changent de taille.
+        FitHost.SizeChanged += (_, _) => ApplyZoom();
+        ScreenImage.SizeChanged += (_, _) => ApplyZoom();
+
+        Closed += (_, _) =>
+        {
+            StopWatchingReboot();
+            _dropCts?.Cancel();
+        };
     }
 
     /// <summary>Cadence de rafraîchissement de la barre d'état.</summary>
@@ -322,7 +333,17 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         }
     }
 
-    private void Fit_Changed(object sender, RoutedEventArgs e) => ApplyFitMode();
+    private void Fit_Changed(object sender, RoutedEventArgs e)
+    {
+        // La loupe ne vit que dans la vue ajustée ; en taille réelle, le
+        // défilement en tient lieu.
+        if (FitCheck.IsChecked != true)
+        {
+            CancelZoomSelection();
+            ResetZoom(quiet: true);
+        }
+        ApplyFitMode();
+    }
 
     /// <summary>Bascule entre l'image ajustée à la fenêtre et la taille réelle.</summary>
     private void ToggleFit()
@@ -456,6 +477,16 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         var ctrlShift = Keyboard.Modifiers.HasFlag(ModifierKeys.Control)
                         && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
+        // Échap n'est capté que pendant le tracé de la loupe : le reste du
+        // temps, il appartient à la machine distante.
+        if (_zoomSelecting && e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            CancelZoomSelection();
+            StatsText.Text = "Zoom annulé.";
+            return;
+        }
+
         // Bascule d'écran : uniquement quand la machine en a plusieurs, sinon
         // Ctrl+Maj+flèches doit rester disponible côté distant (sélection de
         // texte par mot, par exemple).
@@ -468,7 +499,8 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         }
 
         if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.P or Key.W
-                               or Key.F or Key.R or Key.D or Key.A or Key.Delete)
+                               or Key.F or Key.R or Key.D or Key.A or Key.Z or Key.B
+                               or Key.Delete)
         {
             e.Handled = true;
             // Ctrl et Maj ont déjà été transmis « enfoncés » par leurs propres
@@ -489,6 +521,8 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
                 case Key.R: Refresh_Click(this, new RoutedEventArgs()); break;
                 case Key.D: ReleaseModifiers_Click(this, new RoutedEventArgs()); break;
                 case Key.A: ToggleFit(); break;
+                case Key.Z: ToggleZoom(); break;
+                case Key.B: Reboot_Click(this, new RoutedEventArgs()); break;
 
                 // Ctrl+Maj+Suppr pour Ctrl+Alt+Suppr : la vraie combinaison est
                 // confisquée par Windows en local. On passe par la commande KVM
@@ -762,6 +796,8 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
             return;
         }
 
+        // Une zone agrandie sur un écran n'a pas de sens sur le suivant.
+        ResetZoom(quiet: true);
         _session.SelectDisplay(display.Id);
         UpdateDisplayButton();
         StatsText.Text = display.Id == RemoteDisplay.AllDisplays
@@ -1179,5 +1215,541 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         {
             PasteButton.IsEnabled = true;
         }
+    }
+
+    // MARK: - Alimentation
+
+    /// <summary>
+    /// Vrai entre un redémarrage demandé d'ici et le retour de la machine : la
+    /// session est alors relancée d'elle-même, même si la reprise automatique a
+    /// abandonné entre-temps (mises à jour Windows, démarrage lent).
+    /// </summary>
+    private bool _rebootPending;
+
+    /// <summary>La machine a été vue hors ligne depuis l'ordre de redémarrage.</summary>
+    private bool _rebootSawOffline;
+
+    private void Power_Click(object sender, RoutedEventArgs e)
+    {
+        PowerMenu.PlacementTarget = PowerButton;
+        PowerMenu.IsOpen = true;
+    }
+
+    private async void Reboot_Click(object sender, RoutedEventArgs e)
+        => await RunPowerActionAsync(PowerActionType.Reboot);
+
+    private async void Sleep_Click(object sender, RoutedEventArgs e)
+        => await RunPowerActionAsync(PowerActionType.Sleep);
+
+    private async void PowerOff_Click(object sender, RoutedEventArgs e)
+        => await RunPowerActionAsync(PowerActionType.PowerOff);
+
+    /// <summary>
+    /// Envoie un ordre d'alimentation après confirmation. Une seule boîte, dont
+    /// le bouton par défaut est OK : Entrée suffit à confirmer.
+    /// </summary>
+    private async Task RunPowerActionAsync(PowerActionType action)
+    {
+        var (title, detail, done) = action switch
+        {
+            PowerActionType.Reboot => (
+                $"Redémarrer « {_node.Name} » ?",
+                "La machine va redémarrer. Les travaux non enregistrés seront perdus.\n\n"
+                + "La session de bureau reprendra d'elle-même au retour de la machine.",
+                "Redémarrage demandé."),
+            PowerActionType.Sleep => (
+                $"Mettre « {_node.Name} » en veille ?",
+                "La machine sera suspendue et ne répondra plus jusqu'à son réveil.",
+                "Mise en veille demandée."),
+            _ => (
+                $"Éteindre « {_node.Name} » ?",
+                "La machine sera arrêtée. Il faudra un réveil Wake-on-LAN ou une action "
+                + "physique pour la rallumer.",
+                "Extinction demandée."),
+        };
+
+        if (MessageBox.Show(DialogOwner, detail, title, MessageBoxButton.OKCancel,
+                            MessageBoxImage.Warning, MessageBoxResult.OK) != MessageBoxResult.OK)
+        {
+            RootPanel.Focus();
+            return;
+        }
+        RootPanel.Focus();
+
+        try
+        {
+            await _connection.PowerActionAsync(_node.Id, action);
+            StatsText.Text = done;
+            Log.Info($"{done} ({_node.Name}, depuis le bureau à distance)", "Bureau");
+
+            if (action == PowerActionType.Reboot) WatchForReboot();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Ordre d'alimentation refusé pour {_node.Name} : {ex.Message}", "Bureau");
+            MessageBox.Show(DialogOwner, $"L'ordre n'a pas pu être envoyé : {ex.Message}",
+                "Mesh Control", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Suit l'état de la machine jusqu'à son retour. La reprise automatique de
+    /// la session couvre environ deux minutes ; au-delà, c'est le retour de
+    /// l'agent auprès du serveur qui relance la connexion.
+    /// </summary>
+    private void WatchForReboot()
+    {
+        if (_rebootPending) return;
+        _rebootPending = true;
+        _rebootSawOffline = false;
+        _connection.DevicesChanged += OnDevicesChangedDuringReboot;
+    }
+
+    private void StopWatchingReboot()
+    {
+        if (!_rebootPending) return;
+        _rebootPending = false;
+        _connection.DevicesChanged -= OnDevicesChangedDuringReboot;
+    }
+
+    // Levé hors du thread UI : la connexion laisse le marshaling à l'appelant.
+    private void OnDevicesChangedDuringReboot() => Dispatcher.BeginInvoke(CheckRebootReturn);
+
+    private void CheckRebootReturn()
+    {
+        if (!_rebootPending) return;
+        if (!_connection.Nodes.TryGetValue(_node.Id, out var node)) return;
+
+        // Tant que la machine n'a pas disparu, elle n'a pas encore redémarré :
+        // la voir « en ligne » juste après l'ordre ne dit rien.
+        if (!node.IsOnline)
+        {
+            _rebootSawOffline = true;
+            return;
+        }
+        if (!_rebootSawOffline) return;
+
+        StopWatchingReboot();
+        StatsText.Text = "Machine redémarrée.";
+        if (_session.State == DesktopSessionState.Closed) _session.RetryNow();
+    }
+
+    // MARK: - Loupe
+
+    /// <summary>
+    /// Zone agrandie, en fraction de l'image (0 à 1) : elle survit ainsi au
+    /// redimensionnement de la fenêtre comme à un changement de résolution.
+    /// Null quand l'écran est affiché en entier.
+    /// </summary>
+    private Rect? _zoomRect;
+
+    /// <summary>Vrai pendant le tracé du rectangle : la souris reste locale.</summary>
+    private bool _zoomSelecting;
+
+    private Point _zoomStart;
+
+    /// <summary>Agrandissement maximal : au-delà, on ne voit plus que des pixels.</summary>
+    private const double MaxZoom = 12;
+
+    /// <summary>Côté minimal du rectangle tracé, en pixels de la fenêtre.</summary>
+    private const double MinZoomBand = 12;
+
+    private void Zoom_Click(object sender, RoutedEventArgs e)
+    {
+        // Maj+clic pendant un zoom : nouveau tracé dans la zone déjà agrandie.
+        ToggleZoom(refine: Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+        RootPanel.Focus();
+    }
+
+    private void ZoomBadge_Click(object sender, RoutedEventArgs e)
+    {
+        ResetZoom(quiet: false);
+        RootPanel.Focus();
+    }
+
+    /// <summary>
+    /// Un même geste pour tout : annule un tracé en cours, sinon revient à la
+    /// vue entière, sinon commence un tracé.
+    /// </summary>
+    /// <param name="refine">
+    /// Pendant un zoom, tracer une nouvelle zone dans la vue agrandie plutôt
+    /// que revenir à la vue entière.
+    /// </param>
+    private void ToggleZoom(bool refine = false)
+    {
+        if (_zoomSelecting)
+        {
+            CancelZoomSelection();
+            StatsText.Text = "Zoom annulé.";
+        }
+        else if (_zoomRect is not null && !refine)
+        {
+            ResetZoom(quiet: false);
+        }
+        else
+        {
+            BeginZoomSelection();
+        }
+    }
+
+    private void BeginZoomSelection()
+    {
+        if (_session.Framebuffer.Bitmap is null)
+        {
+            StatsText.Text = "Aucune image à agrandir.";
+            return;
+        }
+
+        // La loupe s'appuie sur la vue ajustée.
+        if (FitCheck.IsChecked != true) FitCheck.IsChecked = true;
+
+        _zoomSelecting = true;
+        ZoomBand.Visibility = Visibility.Collapsed;
+        ZoomOverlay.Visibility = Visibility.Visible;
+        ZoomHint.Visibility = Visibility.Visible;
+        UpdateZoomButton();
+        StatsText.Text = "Tracez la zone à agrandir.";
+    }
+
+    private void CancelZoomSelection()
+    {
+        if (!_zoomSelecting) return;
+        _zoomSelecting = false;
+        if (ZoomOverlay.IsMouseCaptured) ZoomOverlay.ReleaseMouseCapture();
+        ZoomOverlay.Visibility = Visibility.Collapsed;
+        ZoomHint.Visibility = Visibility.Collapsed;
+        ZoomBand.Visibility = Visibility.Collapsed;
+        UpdateZoomButton();
+    }
+
+    private void ResetZoom(bool quiet)
+    {
+        if (_zoomRect is null) return;
+        _zoomRect = null;
+        ApplyZoom();
+        if (!quiet) StatsText.Text = "Vue entière.";
+    }
+
+    private void ZoomOverlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        _zoomStart = e.GetPosition(ZoomOverlay);
+        ZoomOverlay.CaptureMouse();
+        UpdateZoomBand(_zoomStart);
+        ZoomBand.Visibility = Visibility.Visible;
+    }
+
+    private void ZoomOverlay_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (ZoomOverlay.IsMouseCaptured) UpdateZoomBand(e.GetPosition(ZoomOverlay));
+    }
+
+    private void ZoomOverlay_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!ZoomOverlay.IsMouseCaptured) return;
+        e.Handled = true;
+        ZoomOverlay.ReleaseMouseCapture();
+
+        var end = e.GetPosition(ZoomOverlay);
+        if (Math.Abs(end.X - _zoomStart.X) < MinZoomBand || Math.Abs(end.Y - _zoomStart.Y) < MinZoomBand)
+        {
+            // Simple clic ou rectangle minuscule : on reste en mode tracé.
+            ZoomBand.Visibility = Visibility.Collapsed;
+            StatsText.Text = "Zone trop petite : faites glisser pour tracer un rectangle.";
+            return;
+        }
+
+        // Coins ramenés dans le repère de l'image, transformation actuelle
+        // comprise : tracer pendant un zoom affine la zone déjà agrandie.
+        var a = ZoomOverlay.TranslatePoint(_zoomStart, ScreenImage);
+        var b = ZoomOverlay.TranslatePoint(end, ScreenImage);
+        double w = ScreenImage.ActualWidth, h = ScreenImage.ActualHeight;
+        CancelZoomSelection();
+        if (w <= 0 || h <= 0) return;
+
+        double x1 = Math.Clamp(Math.Min(a.X, b.X), 0, w), x2 = Math.Clamp(Math.Max(a.X, b.X), 0, w);
+        double y1 = Math.Clamp(Math.Min(a.Y, b.Y), 0, h), y2 = Math.Clamp(Math.Max(a.Y, b.Y), 0, h);
+        if (x2 - x1 < 1 || y2 - y1 < 1)
+        {
+            StatsText.Text = "La zone tracée est hors de l'écran distant.";
+            return;
+        }
+
+        _zoomRect = new Rect(x1 / w, y1 / h, (x2 - x1) / w, (y2 - y1) / h);
+        ApplyZoom();
+    }
+
+    private void ZoomOverlay_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        CancelZoomSelection();
+        StatsText.Text = "Zoom annulé.";
+    }
+
+    private void UpdateZoomBand(Point current)
+    {
+        Canvas.SetLeft(ZoomBand, Math.Min(_zoomStart.X, current.X));
+        Canvas.SetTop(ZoomBand, Math.Min(_zoomStart.Y, current.Y));
+        ZoomBand.Width = Math.Abs(current.X - _zoomStart.X);
+        ZoomBand.Height = Math.Abs(current.Y - _zoomStart.Y);
+    }
+
+    /// <summary>
+    /// Agrandit l'image pour que la zone retenue remplisse la vue, en gardant
+    /// ses proportions. Tout passe par une transformation de rendu : les
+    /// coordonnées de souris, relevées dans le repère de l'image, restent donc
+    /// justes sans aucun calcul supplémentaire.
+    /// </summary>
+    private void ApplyZoom()
+    {
+        if (!_uiReady) return;
+
+        double iw = ScreenImage.ActualWidth, ih = ScreenImage.ActualHeight;
+        double hw = FitHost.ActualWidth, hh = FitHost.ActualHeight;
+
+        if (_zoomRect is not { } r || iw <= 0 || ih <= 0 || hw <= 0 || hh <= 0)
+        {
+            ScreenImage.RenderTransform = System.Windows.Media.Transform.Identity;
+            ZoomBadge.Visibility = Visibility.Collapsed;
+            UpdateZoomButton();
+            return;
+        }
+
+        // Position de l'image dans son hôte, hors transformation : le Grid la centre.
+        double ox = (hw - iw) / 2, oy = (hh - ih) / 2;
+
+        double scale = Math.Min(hw / (r.Width * iw), hh / (r.Height * ih));
+        scale = Math.Clamp(scale, 1, MaxZoom);
+
+        double cx = (r.X + r.Width / 2) * iw, cy = (r.Y + r.Height / 2) * ih;
+        double tx = ClampOffset(hw / 2 - ox - scale * cx, ox, scale * iw, hw);
+        double ty = ClampOffset(hh / 2 - oy - scale * cy, oy, scale * ih, hh);
+
+        ScreenImage.RenderTransform = new System.Windows.Media.MatrixTransform(scale, 0, 0, scale, tx, ty);
+
+        ZoomBadge.Content = $"Zoom ×{scale:0.#}";
+        ZoomBadge.Visibility = Visibility.Visible;
+        UpdateZoomButton();
+    }
+
+    /// <summary>
+    /// Décalage le long d'un axe : l'image agrandie ne laisse pas de bande vide
+    /// quand elle déborde de la vue, et reste centrée quand elle y tient.
+    /// </summary>
+    private static double ClampOffset(double offset, double origin, double size, double host)
+    {
+        if (size <= host) return (host - size) / 2 - origin;
+        return Math.Clamp(offset, host - size - origin, -origin);
+    }
+
+    private void UpdateZoomButton()
+    {
+        // Loupe « moins » quand un clic ramène à la vue entière.
+        var zoomed = _zoomRect is not null && !_zoomSelecting;
+        ZoomButtonGlyph.Text = zoomed ? "" : "";
+        ZoomButton.ToolTip = zoomed
+            ? "Revenir à la vue entière (Ctrl+Maj+Z) — Maj+clic pour agrandir encore"
+            : "Agrandir une zone : tracer un rectangle sur l'écran (Ctrl+Maj+Z)";
+    }
+
+    // MARK: - Fichiers déposés sur l'écran
+
+    /// <summary>
+    /// Fichiers en attente d'envoi, chacun avec son dossier d'arrivée. Un dépôt
+    /// fait pendant un envoi s'ajoute à la file plutôt que d'ouvrir un second
+    /// tunnel.
+    /// </summary>
+    private readonly Queue<(Files.OutgoingFile File, string Root)> _dropQueue = new();
+    private CancellationTokenSource? _dropCts;
+    private bool _dropRunning;
+    private int _dropIndex;
+    private int _dropTotal;
+    private string? _dropCurrentName;
+
+    private void DisplayArea_DragOver(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            e.Effects = DragDropEffects.None;
+            return;
+        }
+
+        e.Effects = DragDropEffects.Copy;
+        if (DropOverlay.Visibility != Visibility.Visible)
+        {
+            DropDestinationText.Text = _dropRunning
+                ? "Ils rejoindront l'envoi en cours, dans le dossier de votre choix"
+                : "Vous choisirez ensuite le dossier de destination";
+            DropOverlay.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void DisplayArea_DragLeave(object sender, DragEventArgs e)
+    {
+        // Passer de l'image au fond de la zone lève aussi DragLeave : on ne
+        // masque que si la souris a réellement quitté la zone d'affichage.
+        var p = e.GetPosition(DisplayArea);
+        if (new Rect(DisplayArea.RenderSize).Contains(p)) return;
+        DropOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private async void DisplayArea_Drop(object sender, DragEventArgs e)
+    {
+        DropOverlay.Visibility = Visibility.Collapsed;
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] { Length: > 0 } paths) return;
+        e.Effects = DragDropEffects.Copy;
+        e.Handled = true;
+
+        // Hors du thread UI : un dossier peut compter des milliers de fichiers.
+        // L'attente rend aussi la main à l'Explorateur, que la boîte de
+        // dialogue figerait sinon jusqu'à sa fermeture.
+        var files = await Task.Run(() => paths
+            .Select(Files.OutgoingEntry.From)
+            .OfType<Files.OutgoingEntry>()
+            .SelectMany(entry => entry.Files)
+            .ToList());
+
+        if (files.Count == 0)
+        {
+            StatsText.Text = "Rien à envoyer : fichiers introuvables ou dossiers vides.";
+            return;
+        }
+
+        var dialog = new DropDestinationDialog(_connection, _node, DescribeFiles(files));
+        if (DialogOwner is { IsVisible: true } owner) dialog.Owner = owner;
+        var confirmed = dialog.ShowDialog() == true;
+        RootPanel.Focus();
+
+        if (!confirmed || dialog.Destination is not { } root)
+        {
+            StatsText.Text = "Envoi annulé.";
+            return;
+        }
+
+        foreach (var file in files) _dropQueue.Enqueue((file, root));
+        _dropTotal += files.Count;
+
+        if (_dropRunning)
+        {
+            UpdateDropStatus(null);
+            return;
+        }
+
+        _dropCts = new CancellationTokenSource();
+        TransferPanel.Visibility = Visibility.Visible;
+        try
+        {
+            await RunDropQueueAsync(_dropCts.Token);
+        }
+        finally
+        {
+            _dropQueue.Clear();
+            _dropTotal = 0;
+            _dropIndex = 0;
+            _dropCurrentName = null;
+            _dropCts.Dispose();
+            _dropCts = null;
+            TransferPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>« « rapport.pdf » · 1,2 Mo », ou « 3 fichiers · 12,4 Mo ».</summary>
+    private static string DescribeFiles(IReadOnlyList<Files.OutgoingFile> files)
+    {
+        var size = Files.FileRow.FormatBytes(files.Sum(f => f.Size));
+        return files.Count == 1
+            ? $"« {Path.GetFileName(files[0].LocalPath)} » · {size}"
+            : $"{files.Count} fichiers · {size}";
+    }
+
+    private void CancelDrop_Click(object sender, RoutedEventArgs e)
+    {
+        _dropCts?.Cancel();
+        RootPanel.Focus();
+    }
+
+    /// <summary>
+    /// Envoie la file sur un tunnel de fichiers ouvert pour l'occasion, refermé
+    /// une fois la file vide. Les dossiers glissés gardent leur arborescence.
+    /// </summary>
+    private async Task RunDropQueueAsync(CancellationToken ct)
+    {
+        _dropRunning = true;
+        var sent = 0;
+        var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var session = new Files.FilesSession(_connection, _node, Dispatcher);
+        void OnProgress() => UpdateDropStatus(session.Transfer);
+        session.TransferChanged += OnProgress;
+
+        StatusTransfer.Text = "Connexion pour l'envoi…";
+
+        try
+        {
+            await session.StartAsync(listOnStart: false);
+            if (session.State != Files.FilesSessionState.Ready)
+                throw new MeshException(session.CloseReason ?? "Connexion à la machine impossible.");
+
+            var ensured = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            while (_dropQueue.Count > 0)
+            {
+                ct.ThrowIfCancellationRequested();
+                var (file, root) = _dropQueue.Dequeue();
+
+                if (ensured.Add(root)) await session.EnsureDirectoryAsync(root, ct);
+                var directory = root;
+                foreach (var segment in file.RelativeDirectory)
+                    directory = session.CombinePath(directory, segment);
+                if (ensured.Add(directory)) await session.EnsureDirectoryAsync(directory, ct);
+
+                _dropIndex++;
+                _dropCurrentName = Path.GetFileName(file.LocalPath);
+                UpdateDropStatus(null);
+
+                await session.UploadAsync(file.LocalPath, directory, ct);
+                sent++;
+                roots.Add(root);
+            }
+
+            var where = roots.Count == 1 ? $" dans {roots.First()}" : "";
+            StatsText.Text = sent == 1 ? $"Fichier reçu{where}" : $"{sent} fichiers reçus{where}";
+            Log.Info($"{sent} fichier(s) déposé(s) sur {_node.Name} ({string.Join(", ", roots)})", "Bureau");
+        }
+        catch (OperationCanceledException)
+        {
+            StatsText.Text = sent > 0 ? $"Envoi annulé ({sent} fichier(s) reçu(s))." : "Envoi annulé.";
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Dépôt de fichiers sur {_node.Name} : {ex.Message}", "Bureau");
+            StatsText.Text = "Envoi interrompu.";
+            MessageBox.Show(DialogOwner,
+                $"L'envoi vers « {_node.Name} » s'est interrompu"
+                + (sent > 0 ? $" après {sent} fichier(s)" : "")
+                + $" : {ex.Message}",
+                "Mesh Control", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            session.TransferChanged -= OnProgress;
+            session.Stop();
+            _dropRunning = false;
+        }
+    }
+
+    private void UpdateDropStatus(Files.TransferProgress? progress)
+    {
+        if (!_dropRunning || _dropCurrentName is null) return;
+
+        var parts = new List<string> { $"Envoi {_dropIndex}/{_dropTotal}", _dropCurrentName };
+        if (progress is not null)
+        {
+            parts.Add($"{Math.Floor(progress.Fraction * 100)} %");
+            if (Files.FileRow.FormatSpeed(progress.BytesPerSecond) is { Length: > 0 } speed)
+                parts.Add(speed);
+        }
+        StatusTransfer.Text = string.Join(" · ", parts);
     }
 }
