@@ -72,12 +72,16 @@
 
     <!-- ============================================================
          Carte blanche arrondie (conteneur de sections)
+
+         L'ombre passe par CardBorder.Shadow et non par Effect : posé sur la
+         carte, l'effet s'appliquait aussi à son contenu, et chaque défilement
+         ou survol de ligne redessinait l'ombre de toute la liste.
          ============================================================ -->
-    <Style x:Key="Card" TargetType="Border">
+    <Style x:Key="Card" TargetType="ui:CardBorder">
         <Setter Property="Background" Value="{StaticResource CardBrush}"/>
         <Setter Property="CornerRadius" Value="12"/>
         <Setter Property="Padding" Value="0"/>
-        <Setter Property="Effect">
+        <Setter Property="Shadow">
             <Setter.Value>
                 <DropShadowEffect Color="{StaticResource CardShadowColor}" BlurRadius="10" ShadowDepth="1"
                                   Direction="270" Opacity="0.5"/>
@@ -839,19 +843,33 @@
                                 Background="{StaticResource CardBrush}"
                                 BorderBrush="{StaticResource SeparatorBrush}"
                                 BorderThickness="0,0,0,1">
+                            <!-- Deux colonnes : les boutons de fenêtre gardent leur
+                                 place, le reste (titre ou contenu fourni par la
+                                 fenêtre, voir ChromeWindow.TitleBarContent) se
+                                 partage la largeur restante. -->
                             <Grid>
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
-                                            Margin="15,0,54,0">
-                                    <Image Source="/app.ico" Width="17" Height="17"
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" MinWidth="0"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <DockPanel Grid.Column="0" Margin="15,0,8,0" LastChildFill="True">
+                                    <Image DockPanel.Dock="Left" Source="/app.ico"
+                                           Width="17" Height="17" VerticalAlignment="Center"
                                            RenderOptions.BitmapScalingMode="HighQuality"/>
-                                    <TextBlock Text="{TemplateBinding Title}"
+                                    <TextBlock x:Name="TitleLabel" DockPanel.Dock="Left"
+                                               Text="{TemplateBinding Title}"
                                                FontSize="12.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimaryBrush}"
                                                VerticalAlignment="Center" Margin="9,0,0,0"
-                                               TextTrimming="CharacterEllipsis"/>
-                                </StackPanel>
+                                               TextTrimming="CharacterEllipsis"
+                                               Visibility="Collapsed"/>
+                                    <ContentPresenter Margin="9,0,0,0" VerticalAlignment="Center"
+                                                      Content="{Binding (ui:ChromeWindow.TitleBarContent),
+                                                                RelativeSource={RelativeSource TemplatedParent}}"/>
+                                </DockPanel>
 
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                <StackPanel Grid.Column="1" Orientation="Horizontal"
                                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
                                     <Button x:Name="MinBtn" Style="{DynamicResource WindowButton}"
                                             Content="&#xE921;" ToolTip="Réduire"
@@ -884,6 +902,12 @@
                         <Trigger Property="WindowState" Value="Maximized">
                             <Setter TargetName="MaxGlyph" Property="Text" Value="&#xE923;"/>
                             <Setter TargetName="MaxBtn" Property="ToolTip" Value="Restaurer"/>
+                        </Trigger>
+                        <!-- Titre textuel tant que la fenêtre ne loge rien
+                             dans la barre ; sinon c'est son contenu qui la
+                             remplit (et qui porte déjà le nom utile). -->
+                        <Trigger Property="ui:ChromeWindow.TitleBarContent" Value="{x:Null}">
+                            <Setter TargetName="TitleLabel" Property="Visibility" Value="Visible"/>
                         </Trigger>
                         <!-- Boîte de dialogue : ni réduction ni agrandissement. -->
                         <Trigger Property="ResizeMode" Value="NoResize">

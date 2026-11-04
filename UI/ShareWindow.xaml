@@ -17,7 +17,7 @@
 
         <!-- Paramètres du partage -->
         <TextBlock Text="NOUVEAU PARTAGE" Style="{StaticResource SectionHeaderText}"/>
-        <Border Style="{StaticResource Card}" Padding="16" Margin="0,0,0,16">
+        <ui:CardBorder Style="{StaticResource Card}" Padding="16" Margin="0,0,0,16">
             <StackPanel>
                 <Grid Margin="0,0,0,12">
                     <Grid.ColumnDefinitions>
@@ -104,12 +104,12 @@
                            Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap"
                            Margin="0,8,0,0" Visibility="Collapsed"/>
             </StackPanel>
-        </Border>
+        </ui:CardBorder>
 
         <!-- Résultat -->
         <StackPanel x:Name="ResultPanel" Visibility="Collapsed">
             <TextBlock Text="LIEN GÉNÉRÉ" Style="{StaticResource SectionHeaderText}"/>
-            <Border Style="{StaticResource Card}" Padding="16" Margin="0,0,0,16">
+            <ui:CardBorder Style="{StaticResource Card}" Padding="16" Margin="0,0,0,16">
                 <StackPanel>
                     <TextBlock Text="Lien direct" Style="{StaticResource CaptionText}"
                                Margin="0,0,0,4"/>
@@ -152,12 +152,12 @@
                                    Text="L'iframe ne s'affichera que si votre serveur MeshCentral l'autorise : ajoutez &quot;allowFraming&quot;: true et &quot;allowedFramingOrigins&quot; dans son config.json. Sans cela, le navigateur bloque l'affichage (protection anti-clickjacking) — le lien direct fonctionne dans tous les cas."/>
                     </Border>
                 </StackPanel>
-            </Border>
+            </ui:CardBorder>
         </StackPanel>
 
         <!-- Partages existants -->
         <TextBlock Text="PARTAGES ACTIFS" Style="{StaticResource SectionHeaderText}"/>
-        <Border Style="{StaticResource Card}" Padding="6" Margin="0,0,0,16">
+        <ui:CardBorder Style="{StaticResource Card}" Padding="6" Margin="0,0,0,16">
             <StackPanel>
                 <TextBlock x:Name="NoSharesText" Text="Aucun partage actif."
                            Style="{StaticResource CaptionText}" Margin="10,8"/>
@@ -193,7 +193,7 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </StackPanel>
-        </Border>
+        </ui:CardBorder>
 
         <Button Content="Fermer" Style="{StaticResource ToolButton}"
                 HorizontalAlignment="Right" Padding="18,8" Click="Close_Click"/>

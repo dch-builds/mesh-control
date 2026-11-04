@@ -28,7 +28,9 @@ public partial class SessionsWindow : ChromeWindow
 
         // Navigation entre sessions : voir SessionsWindow_PreviewKeyDown.
         PreviewKeyDown += SessionsWindow_PreviewKeyDown;
-        Tabs.PreviewMouseDown += Tabs_PreviewMouseDown;
+        // Sur la fenêtre et non sur Tabs : avec plusieurs sessions, le bandeau
+        // d'onglets vit dans la barre de titre, hors du TabControl.
+        PreviewMouseDown += Tabs_PreviewMouseDown;
 
         Closed += (_, _) =>
         {
@@ -315,5 +317,94 @@ public partial class SessionsWindow : ChromeWindow
         strip.Visibility = !_tabStripHidden && Tabs.Items.Count > 1
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+        if (strip is Border border) UpdateTitleBar(border);
+    }
+
+    /// <summary>Session dont la barre d'outils occupe la barre de titre.</summary>
+    private ISessionWindow? _mergedSession;
+
+    /// <summary>Panneau du gabarit d'où vient le bandeau d'onglets, pour l'y remettre.</summary>
+    private Panel? _tabStripHome;
+
+    /// <summary>
+    /// Choisit ce qu'occupe la barre de titre :
+    /// - plusieurs sessions : le bandeau d'onglets, comme un navigateur — une
+    ///   bande de moins, la barre d'outils de chaque session restant dessous ;
+    /// - une seule : la barre d'outils de la session, comme en fenêtre
+    ///   autonome. Elle regagne sa session dès qu'un second onglet s'ouvre,
+    ///   sinon on verrait celle d'une session en en regardant une autre.
+    /// </summary>
+    private void UpdateTitleBar(Border strip)
+    {
+        var multiple = Tabs.Items.Count > 1;
+
+        ISessionWindow? session = null;
+        if (Tabs.Items.Count == 1
+            && Tabs.Items[0] is TabItem only
+            && _hosts.TryGetValue(only, out var host))
+        {
+            session = host as ISessionWindow;
+        }
+
+        var current = GetTitleBarContent(this);
+        var upToDate = multiple
+            ? ReferenceEquals(current, strip)
+            : session is not null && ReferenceEquals(session, _mergedSession);
+        if (upToDate) return;
+
+        // Libérer la barre de titre avant d'y loger autre chose : chaque élément
+        // doit retrouver sa place d'origine.
+        SetTitleBarContent(this, null);
+        if (_mergedSession is not null)
+        {
+            _mergedSession.RestoreToolbar();
+            _mergedSession = null;
+        }
+        if (ReferenceEquals(current, strip)) RestoreTabStrip(strip);
+
+        if (multiple)
+        {
+            if (DetachTabStrip(strip)) SetTitleBarContent(this, strip);
+        }
+        else if (session?.DetachToolbar() is { } toolbar)
+        {
+            SetTitleBarContent(this, toolbar);
+            _mergedSession = session;
+        }
+    }
+
+    /// <summary>
+    /// Sort le bandeau d'onglets du gabarit du TabControl. Le TabPanel reste
+    /// relié à ses onglets : ce lien passe par le parent de gabarit, que le
+    /// déplacement ne change pas.
+    /// </summary>
+    private bool DetachTabStrip(Border strip)
+    {
+        if (System.Windows.Media.VisualTreeHelper.GetParent(strip) is not Panel home)
+            return false;
+
+        _tabStripHome = home;
+        home.Children.Remove(strip);
+        // Fond de la barre de titre ; les onglets, en pastilles, centrés.
+        strip.Background = System.Windows.Media.Brushes.Transparent;
+        strip.VerticalAlignment = VerticalAlignment.Center;
+        return true;
+    }
+
+    private void RestoreTabStrip(Border strip)
+    {
+        if (_tabStripHome is not { } home) return;
+
+        // La barre de titre ne lâche l'élément qu'à la passe de mise en page
+        // suivante : WPF refuserait un élément qui a encore un parent.
+        if (System.Windows.Media.VisualTreeHelper.GetParent(strip) is not null) UpdateLayout();
+        if (System.Windows.Media.VisualTreeHelper.GetParent(strip) is not null) return;
+
+        strip.ClearValue(Border.BackgroundProperty);
+        strip.ClearValue(VerticalAlignmentProperty);
+        // En tête : le DockPanel du gabarit range ses enfants dans l'ordre.
+        home.Children.Insert(0, strip);
+        _tabStripHome = null;
     }
 }

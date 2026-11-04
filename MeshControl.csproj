@@ -23,9 +23,9 @@
     <StartupObject>MeshControl.App</StartupObject>
 
     <!-- Métadonnées visibles dans les propriétés du fichier .exe -->
-    <Version>1.2.10</Version>
-    <FileVersion>1.2.10.0</FileVersion>
-    <AssemblyVersion>1.2.10.0</AssemblyVersion>
+    <Version>1.2.11</Version>
+    <FileVersion>1.2.11.0</FileVersion>
+    <AssemblyVersion>1.2.11.0</AssemblyVersion>
     <Company>David CHIESA</Company>
     <Product>Mesh Control</Product>
     <Description>Contrôle à distance des postes via MeshCentral</Description>
@@ -43,6 +43,12 @@
     <!-- La troncature est incompatible avec WPF (résolution de types par réflexion
          dans le XAML) : elle provoquerait des plantages à l'exécution. -->
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- Précompilation (ReadyToRun) du code de l'application. Les assemblys du
+         framework embarqué le sont déjà ; seules les nôtres partaient encore
+         en compilation à la volée au lancement — fenêtre principale, liste des
+         appareils, connexion. Le code précompilé reste recompilé à chaud par
+         la compilation par paliers, sans perte en régime établi. -->
+    <PublishReadyToRun>true</PublishReadyToRun>
     <DebugType>none</DebugType>
     <!-- Fichiers de langue des messages du framework : inutiles ici, ils
          représentent une part notable du volume. -->

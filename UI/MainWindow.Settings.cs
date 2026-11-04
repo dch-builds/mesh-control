@@ -115,6 +115,9 @@ public partial class MainWindow
 
     private void SelectFrameRate(int fps)
     {
+        // Un réglage d'une version antérieure (45 ou 60) n'est plus proposé :
+        // on retient la cadence la plus proche plutôt que de retomber à 10.
+        fps = Desktop.DesktopSession.NearestFrameRate(fps);
         foreach (ComboBoxItem item in DefaultFrameRateCombo.Items)
         {
             if (item.Tag is string tag && int.TryParse(tag, out var value) && value == fps)

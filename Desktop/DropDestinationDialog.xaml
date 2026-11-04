@@ -98,7 +98,7 @@
         </StackPanel>
 
         <!-- Emplacements courants de la machine, ou navigation libre -->
-        <Border Style="{StaticResource Card}">
+        <ui:CardBorder Style="{StaticResource Card}">
             <DockPanel>
                 <!-- En-tête des emplacements -->
                 <Grid x:Name="ShortcutsHeader" DockPanel.Dock="Top" Margin="16,10,10,6">
@@ -156,6 +156,6 @@
                              MouseDoubleClick="FolderList_MouseDoubleClick"/>
                 </Grid>
             </DockPanel>
-        </Border>
+        </ui:CardBorder>
     </DockPanel>
 </ui:ChromeWindow>

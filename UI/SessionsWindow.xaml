@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:MeshControl.UI"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Sessions — Mesh Control" Height="740" Width="1180"
         MinWidth="900" MinHeight="360"
         WindowStartupLocation="CenterScreen" Background="#1B1D21">
@@ -9,49 +10,89 @@
     <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0"
                 Padding="0" SelectionChanged="Tabs_SelectionChanged">
 
-        <!-- Onglets compacts, avec bouton de fermeture -->
+        <!-- Onglets compacts, avec bouton de fermeture. Ils vivent dans la barre
+             de titre (fond CardBrush) : l'onglet actif s'en détache par un fond
+             teinté d'accent, un trait d'accent et un texte plein ; les autres
+             restent transparents, texte atténué. Couleurs de la palette, pour
+             suivre le thème clair comme le sombre. -->
         <TabControl.ItemContainerStyle>
             <Style TargetType="TabItem">
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="TabItem">
-                            <Border x:Name="Bd" CornerRadius="8,8,0,0"
-                                    Background="#2A2D33" Margin="2,3,0,0"
-                                    Padding="12,7">
-                                <StackPanel Orientation="Horizontal">
-                                    <!-- Le pictogramme est porté par le Tag de l'onglet :
-                                         plus simple qu'une propriété attachée à lier. -->
-                                    <TextBlock Text="{Binding Tag,
-                                                   RelativeSource={RelativeSource TemplatedParent}}"
-                                               FontSize="12" Margin="0,0,7,0"
-                                               VerticalAlignment="Center"/>
-                                    <ContentPresenter ContentSource="Header"
-                                                      VerticalAlignment="Center"/>
-                                    <Button Content="✕" FontSize="9" Width="18" Height="18"
-                                            Margin="9,0,0,0" Padding="0" Cursor="Hand"
-                                            Background="Transparent" BorderThickness="0"
-                                            Foreground="#9A9DA5"
-                                            Click="CloseTab_Click"
-                                            ToolTip="Fermer cet onglet (Ctrl+F4, ou clic du milieu)"/>
-                                </StackPanel>
-                            </Border>
+                            <Grid Margin="2,0,0,0">
+                                <Border x:Name="Bd" CornerRadius="7"
+                                        Background="Transparent" Padding="11,6,6,6">
+                                    <StackPanel Orientation="Horizontal">
+                                        <!-- Le pictogramme est porté par le Tag de l'onglet :
+                                             plus simple qu'une propriété attachée à lier. -->
+                                        <TextBlock Text="{Binding Tag,
+                                                       RelativeSource={RelativeSource TemplatedParent}}"
+                                                   FontSize="12" Margin="0,0,7,0"
+                                                   VerticalAlignment="Center"/>
+                                        <ContentPresenter ContentSource="Header"
+                                                          VerticalAlignment="Center"/>
+                                        <Button x:Name="CloseBtn" Content="✕" FontSize="9"
+                                                Width="20" Height="20" Margin="8,0,0,0"
+                                                Cursor="Hand" Focusable="False"
+                                                Foreground="{StaticResource TextSecondaryBrush}"
+                                                Click="CloseTab_Click"
+                                                ToolTip="Fermer cet onglet (Ctrl+F4, ou clic du milieu)">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="CloseBd" CornerRadius="5"
+                                                            Background="Transparent">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="CloseBd" Property="Background"
+                                                                    Value="{StaticResource ControlHoverBrush}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                                <!-- Trait d'accent sous l'onglet actif. -->
+                                <Border x:Name="Indicator" Height="2" CornerRadius="1"
+                                        VerticalAlignment="Bottom" Margin="10,0,10,0"
+                                        Background="{StaticResource AccentBrush}"
+                                        Visibility="Collapsed"/>
+                            </Grid>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter TargetName="Bd" Property="Background" Value="#1B1D21"/>
+                                    <Setter TargetName="Bd" Property="Background"
+                                            Value="{StaticResource AccentSoftBrush}"/>
+                                    <Setter TargetName="Indicator" Property="Visibility" Value="Visible"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                                    <Setter TargetName="CloseBtn" Property="Foreground"
+                                            Value="{StaticResource TextPrimaryBrush}"/>
                                 </Trigger>
                                 <MultiTrigger>
                                     <MultiTrigger.Conditions>
                                         <Condition Property="IsSelected" Value="False"/>
                                         <Condition Property="IsMouseOver" Value="True"/>
                                     </MultiTrigger.Conditions>
-                                    <Setter TargetName="Bd" Property="Background" Value="#33363D"/>
+                                    <Setter TargetName="Bd" Property="Background"
+                                            Value="{StaticResource RowHoverBrush}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
                                 </MultiTrigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
                     </Setter.Value>
                 </Setter>
-                <Setter Property="Foreground" Value="#E4E6EA"/>
+                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
                 <Setter Property="FontSize" Value="12"/>
+                <!-- Posé sur chaque onglet, et non sur le TabPanel : la propriété
+                     se transmet par l'arbre logique, et le parent logique d'un
+                     onglet est le TabControl, pas le panneau qui l'affiche. Posée
+                     sur le panneau, elle n'atteignait pas les onglets : une fois
+                     le bandeau dans la barre de titre, le système captait leurs
+                     clics comme un glisser de fenêtre. -->
+                <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
             </Style>
         </TabControl.ItemContainerStyle>
 
@@ -60,7 +101,11 @@
             <ControlTemplate TargetType="TabControl">
                 <DockPanel>
                     <!-- Masqué tant qu'une seule session est ouverte : un onglet
-                         unique n'apporte rien et grignote de la hauteur. -->
+                         unique n'apporte rien et grignote de la hauteur. Dès
+                         deux sessions, il quitte ce gabarit pour la barre de
+                         titre de la fenêtre (voir SessionsWindow.UpdateTitleBar).
+                         Les onglets y restent cliquables grâce au style des
+                         onglets ; l'espace libre à leur droite sert de poignée. -->
                     <Border x:Name="TabStrip" DockPanel.Dock="Top" Background="#141619">
                         <TabPanel IsItemsHost="True" Margin="6,0,6,0"/>
                     </Border>

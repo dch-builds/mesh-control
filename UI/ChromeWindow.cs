@@ -64,6 +64,28 @@ public class ChromeWindow : Window
         => (bool)window.GetValue(IsFullscreenProperty);
 
     /// <summary>
+    /// Contenu logé dans la barre de titre, entre l'icône et les boutons de
+    /// fenêtre ; le titre textuel s'efface alors. Sert à une fenêtre qui veut
+    /// fondre sa barre d'outils dans la barre de titre pour gagner en hauteur.
+    ///
+    /// Ce qui s'y pose de cliquable doit déclarer
+    /// WindowChrome.IsHitTestVisibleInChrome : la zone reste sinon une poignée
+    /// de déplacement, et le système capte les clics avant les contrôles. Les
+    /// espaces vides restent ainsi des poignées, comme une barre de titre
+    /// ordinaire (glisser, double-clic, menu système).
+    /// </summary>
+    public static readonly DependencyProperty TitleBarContentProperty =
+        DependencyProperty.RegisterAttached(
+            "TitleBarContent", typeof(object), typeof(ChromeWindow),
+            new PropertyMetadata(null));
+
+    public static void SetTitleBarContent(Window window, object? value)
+        => window.SetValue(TitleBarContentProperty, value);
+
+    public static object? GetTitleBarContent(Window window)
+        => window.GetValue(TitleBarContentProperty);
+
+    /// <summary>
     /// Windows 11 arrondit les angles des fenêtres, mais pas celles dont
     /// l'application dessine le cadre : il faut le lui demander. Sans cela, la
     /// fenêtre tranche par ses angles carrés au milieu d'un bureau qui les

@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -20,8 +21,8 @@ public readonly record struct DecodedTile(byte[] Pixels, int Stride, int Width, 
 ///
 /// Performance : le DÉCODAGE JPEG (coûteux) se fait sur le thread de fond via
 /// <see cref="Decode"/>, et seule la COPIE de pixels (légère) via <see cref="Apply"/>
-/// touche au WriteableBitmap sur le thread UI. Cela évite de saturer l'UI sous
-/// le flot de tuiles — le principal levier de fluidité côté client.
+/// touche au WriteableBitmap sur le thread UI, par lots. Cela évite de saturer
+/// l'UI sous le flot de tuiles — le principal levier de fluidité côté client.
 ///
 /// WriteableBitmap a son origine en haut à gauche : il est
 /// top-left. On dessine donc la tuile directement à (x, y), sans inversion.
@@ -44,17 +45,32 @@ public sealed class KVMFramebuffer
 
     private void FillBackground()
     {
-        if (Bitmap is null) return;
-        int w = Width, h = Height;
-        var pixels = new byte[w * h * 4];
-        for (int i = 0; i < pixels.Length; i += 4)
+        var bitmap = Bitmap;
+        if (bitmap is null) return;
+
+        // Une seule ligne, recopiée sur toute la hauteur : un tableau de la
+        // taille de l'écran pesait 8 Mo en 1080p et 33 Mo en 4K, alloué dans le
+        // tas des gros objets à chaque changement de résolution.
+        var row = new byte[Width * 4];
+        for (int i = 0; i < row.Length; i += 4)
         {
-            pixels[i + 0] = 0x17; // B
-            pixels[i + 1] = 0x12; // G
-            pixels[i + 2] = 0x0F; // R
-            pixels[i + 3] = 0xFF; // A
+            row[i + 0] = 0x17; // B
+            row[i + 1] = 0x12; // G
+            row[i + 2] = 0x0F; // R
+            row[i + 3] = 0xFF; // A
         }
-        Bitmap.WritePixels(new Int32Rect(0, 0, w, h), pixels, w * 4, 0);
+
+        bitmap.Lock();
+        try
+        {
+            for (int y = 0; y < Height; y++)
+                Marshal.Copy(row, 0, bitmap.BackBuffer + (nint)y * bitmap.BackBufferStride, row.Length);
+            bitmap.AddDirtyRect(new Int32Rect(0, 0, Width, Height));
+        }
+        finally
+        {
+            bitmap.Unlock();
+        }
     }
 
     /// <summary>
@@ -105,34 +121,59 @@ public sealed class KVMFramebuffer
     }
 
     /// <summary>
-    /// Copie une tuile déjà décodée dans le framebuffer. À appeler sur le thread
-    /// UI. Clipping robuste : garantit que WritePixels reste dans les bornes du
-    /// bitmap (un dépassement lèverait une ArgumentException).
+    /// Copie une série de tuiles déjà décodées dans le framebuffer, en un seul
+    /// verrouillage du bitmap. À appeler sur le thread UI.
+    ///
+    /// Un rafraîchissement complet arrive en centaines de tuiles : les copier
+    /// une à une (WritePixels) verrouillait et invalidait le bitmap autant de
+    /// fois. Ici, un seul Lock/Unlock, et une zone modifiée par tuile.
+    ///
+    /// Rend chaque tampon loué au pool, y compris en cas d'échec : sans cela le
+    /// pool se viderait et on retomberait sur des allocations.
     /// </summary>
-    public void Apply(DecodedTile tile)
+    public void Apply(IReadOnlyList<DecodedTile> tiles)
     {
-        // try/finally : le tampon loué doit retourner au pool par tous les
-        // chemins de sortie, y compris les abandons anticipés ci-dessous.
-        // Sans cela le pool se viderait et on retomberait sur des allocations.
+        var bitmap = Bitmap;
+        bool locked = false;
         try
         {
-            if (Bitmap is null) return;
-
-            int srcX = tile.X < 0 ? -tile.X : 0;
-            int srcY = tile.Y < 0 ? -tile.Y : 0;
-            int destX = Math.Max(0, tile.X);
-            int destY = Math.Max(0, tile.Y);
-
-            int drawW = Math.Min(tile.Width - srcX, Width - destX);
-            int drawH = Math.Min(tile.Height - srcY, Height - destY);
-            if (drawW <= 0 || drawH <= 0) return;
-
-            var sourceRect = new Int32Rect(srcX, srcY, drawW, drawH);
-            Bitmap.WritePixels(sourceRect, tile.Pixels, tile.Stride, destX, destY);
+            if (bitmap is null || tiles.Count == 0) return;
+            bitmap.Lock();
+            locked = true;
+            foreach (var tile in tiles) CopyTile(bitmap, tile);
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(tile.Pixels);
+            if (locked) bitmap!.Unlock();
+            foreach (var tile in tiles) ArrayPool<byte>.Shared.Return(tile.Pixels);
         }
+    }
+
+    /// <summary>
+    /// Copie une tuile dans le tampon arrière, bitmap verrouillé. Clipping
+    /// robuste : la copie reste dans les bornes du bitmap, une tuile qui déborde
+    /// (changement de résolution en vol) est rognée plutôt que d'écrire hors
+    /// de la mémoire du tampon.
+    /// </summary>
+    private void CopyTile(WriteableBitmap bitmap, DecodedTile tile)
+    {
+        int srcX = tile.X < 0 ? -tile.X : 0;
+        int srcY = tile.Y < 0 ? -tile.Y : 0;
+        int destX = Math.Max(0, tile.X);
+        int destY = Math.Max(0, tile.Y);
+
+        int drawW = Math.Min(tile.Width - srcX, Width - destX);
+        int drawH = Math.Min(tile.Height - srcY, Height - destY);
+        if (drawW <= 0 || drawH <= 0) return;
+
+        int destStride = bitmap.BackBufferStride;
+        var dest = bitmap.BackBuffer + (nint)destY * destStride + (nint)destX * 4;
+        int srcOffset = srcY * tile.Stride + srcX * 4;
+        int rowBytes = drawW * 4;
+
+        for (int row = 0; row < drawH; row++)
+            Marshal.Copy(tile.Pixels, srcOffset + row * tile.Stride, dest + (nint)row * destStride, rowBytes);
+
+        bitmap.AddDirtyRect(new Int32Rect(destX, destY, drawW, drawH));
     }
 }

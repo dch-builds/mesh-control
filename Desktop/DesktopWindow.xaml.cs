@@ -29,6 +29,79 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         }
     }
 
+    /// <summary>
+    /// Ne se déclenche que si la fenêtre s'affiche elle-même : en mode onglets,
+    /// elle n'est jamais montrée et la barre d'outils reste dans son panneau.
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        MeshControl.UI.ChromeWindow.SetTitleBarContent(this, DetachToolbar());
+    }
+
+    /// <summary>Apparence d'origine de la barre, rétablie à son retour dans le panneau.</summary>
+    private System.Windows.Media.Brush? _toolbarBackground;
+    private Thickness _toolbarPadding;
+    private System.Windows.Media.Effects.Effect? _toolbarEffect;
+
+    /// <summary>
+    /// Sort la barre d'outils de son panneau pour la loger dans une barre de
+    /// titre : une seule bande de 44 px au lieu de deux, l'image distante gagne
+    /// une cinquantaine de pixels en hauteur. Le titre de la fenêtre faisait
+    /// doublon avec le nom de la machine affiché par la barre.
+    ///
+    /// Sert en fenêtre autonome, et en mode onglets tant qu'une seule session
+    /// est ouverte (voir SessionsWindow).
+    /// </summary>
+    public UIElement? DetachToolbar()
+    {
+        if (Toolbar.Parent != RootPanel) return Toolbar;
+
+        _toolbarBackground = Toolbar.Background;
+        _toolbarPadding = Toolbar.Padding;
+        _toolbarEffect = Toolbar.Effect;
+
+        RootPanel.Children.Remove(Toolbar);
+        // La barre de titre fournit déjà fond, séparateur et marges.
+        Toolbar.Background = System.Windows.Media.Brushes.Transparent;
+        Toolbar.Padding = new Thickness(0, 0, 4, 0);
+        Toolbar.Effect = null;
+        Toolbar.VerticalAlignment = VerticalAlignment.Center;
+
+        // Hors de RootPanel, les frappes faites quand un bouton de la barre a
+        // le focus ne passeraient plus par ses gestionnaires : les raccourcis
+        // Ctrl+Maj+… et la saisie vers la machine distante seraient perdus.
+        // Abonnés ici seulement : dans le panneau, RootPanel les traite déjà.
+        Toolbar.PreviewKeyDown += Content_PreviewKeyDown;
+        Toolbar.PreviewKeyUp += Content_PreviewKeyUp;
+        return Toolbar;
+    }
+
+    /// <summary>Ramène la barre d'outils dans son panneau, en tête.</summary>
+    public void RestoreToolbar()
+    {
+        if (Toolbar.Parent == RootPanel) return;
+
+        // La barre de titre qui l'hébergeait ne la lâche qu'à la passe de mise
+        // en page suivante : WPF refuserait un élément qui a encore un parent.
+        if (System.Windows.Media.VisualTreeHelper.GetParent(Toolbar) is not null)
+            Window.GetWindow(Toolbar)?.UpdateLayout();
+        if (System.Windows.Media.VisualTreeHelper.GetParent(Toolbar) is not null)
+            return;
+
+        Toolbar.PreviewKeyDown -= Content_PreviewKeyDown;
+        Toolbar.PreviewKeyUp -= Content_PreviewKeyUp;
+
+        Toolbar.Background = _toolbarBackground;
+        Toolbar.Padding = _toolbarPadding;
+        Toolbar.Effect = _toolbarEffect;
+        Toolbar.ClearValue(VerticalAlignmentProperty);
+
+        // En tête : le DockPanel range ses enfants dans l'ordre, et la barre
+        // doit passer avant la barre d'état et la zone d'affichage.
+        RootPanel.Children.Insert(0, Toolbar);
+    }
+
     /// <summary>Démarre la session ; sans effet si elle l'est déjà.</summary>
     public async Task StartSessionAsync()
     {
@@ -208,15 +281,9 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     {
         QualityCombo.SelectedIndex = Math.Clamp(_settings.DefaultDesktopQuality, 0, 2);
 
-        FrameRateCombo.SelectedIndex = _settings.DefaultDesktopFrameRate switch
-        {
-            5 => 0,
-            20 => 2,
-            30 => 3,
-            45 => 4,
-            60 => 5,
-            _ => 1,      // 10 img/s
-        };
+        var frameRate = DesktopSession.NearestFrameRate(_settings.DefaultDesktopFrameRate);
+        FrameRateCombo.SelectedItem = FrameRateCombo.Items.Cast<ComboBoxItem>()
+            .FirstOrDefault(item => FrameRateOf(item) == frameRate);
 
         FitCheck.IsChecked = _settings.DefaultDesktopFit;
 
@@ -592,16 +659,13 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
     private void FrameRateCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        _session.FrameRate = FrameRateCombo.SelectedIndex switch
-        {
-            0 => 5,
-            2 => 20,
-            3 => 30,
-            4 => 45,
-            5 => 60,
-            _ => 10,
-        };
+        if (FrameRateCombo.SelectedItem is ComboBoxItem item && FrameRateOf(item) is { } fps)
+            _session.FrameRate = fps;
     }
+
+    /// <summary>Cadence portée par un élément de la liste (son Tag).</summary>
+    private static int? FrameRateOf(ComboBoxItem item) =>
+        item.Tag is string tag && int.TryParse(tag, out var fps) ? fps : null;
 
     // MARK: - Presse-papiers de la machine distante
 

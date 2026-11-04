@@ -15,13 +15,13 @@
                    TextWrapping="Wrap" Margin="0,0,0,14"/>
 
         <!-- Notes de version : hauteur bornée, la release peut être longue -->
-        <Border x:Name="NotesBox" Style="{StaticResource Card}" Padding="12"
+        <ui:CardBorder x:Name="NotesBox" Style="{StaticResource Card}" Padding="12"
                 Margin="0,0,0,14" Visibility="Collapsed">
             <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto">
                 <TextBlock x:Name="NotesText" Style="{StaticResource CaptionText}"
                            TextWrapping="Wrap"/>
             </ScrollViewer>
-        </Border>
+        </ui:CardBorder>
 
         <!-- Progression du téléchargement -->
         <StackPanel x:Name="ProgressPanel" Visibility="Collapsed" Margin="0,0,0,14">

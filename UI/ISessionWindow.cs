@@ -25,4 +25,19 @@ public interface ISessionWindow
     /// à faire.
     /// </summary>
     void ReleaseKeyboard() { }
+
+    /// <summary>
+    /// Sort la barre d'outils de la session de son panneau, pour qu'une
+    /// fenêtre la loge dans sa barre de titre (voir
+    /// ChromeWindow.TitleBarContent). Null si la session n'en propose pas.
+    /// Idempotent : renvoie la même barre si elle est déjà sortie.
+    /// </summary>
+    System.Windows.UIElement? DetachToolbar() => null;
+
+    /// <summary>
+    /// Remet la barre d'outils à sa place, sous la barre de titre. L'appelant
+    /// doit d'abord la retirer de sa barre de titre. Sans effet si elle n'en
+    /// était pas sortie.
+    /// </summary>
+    void RestoreToolbar() { }
 }

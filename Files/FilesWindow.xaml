@@ -272,7 +272,7 @@
         </Border>
 
         <!-- Panneau des transferts : un résumé, et le détail fichier par fichier -->
-        <Border x:Name="TransferPanel" DockPanel.Dock="Bottom" Style="{StaticResource Card}"
+        <ui:CardBorder x:Name="TransferPanel" DockPanel.Dock="Bottom" Style="{StaticResource Card}"
                 Margin="12,0,12,12" Visibility="Collapsed">
             <StackPanel>
                 <Grid Margin="14,11,10,9">
@@ -378,7 +378,7 @@
                     </ScrollViewer>
                 </Border>
             </StackPanel>
-        </Border>
+        </ui:CardBorder>
 
         <!-- Les volets : ce poste (double volet seulement), passerelle, machine distante.
              Les colonnes du volet local sont réglées par code : à zéro en vue simple. -->
@@ -390,7 +390,7 @@
             </Grid.ColumnDefinitions>
 
             <!-- Volet local -->
-            <Border x:Name="LocalPane" Style="{StaticResource Card}" Visibility="Collapsed"
+            <ui:CardBorder x:Name="LocalPane" Style="{StaticResource Card}" Visibility="Collapsed"
                     AllowDrop="True" DragOver="LocalPane_DragOver" DragLeave="LocalPane_DragLeave"
                     Drop="LocalPane_Drop">
                 <Grid>
@@ -503,7 +503,7 @@
                         </StackPanel>
                     </Grid>
                 </Grid>
-            </Border>
+            </ui:CardBorder>
 
             <!-- Passerelle entre les volets -->
             <StackPanel x:Name="BridgePanel" Grid.Column="1" VerticalAlignment="Center"
@@ -518,7 +518,7 @@
 
             <!-- Volet distant -->
             <Grid Grid.Column="2">
-                <Border Style="{StaticResource Card}" Padding="0,0,0,6">
+                <ui:CardBorder Style="{StaticResource Card}" Padding="0,0,0,6">
                     <DockPanel>
                         <StackPanel DockPanel.Dock="Top" Margin="12,12,12,4">
                             <StackPanel x:Name="RemotePaneTitle" Orientation="Horizontal"
@@ -628,7 +628,7 @@
                             </StackPanel>
                         </Grid>
                     </DockPanel>
-                </Border>
+                </ui:CardBorder>
 
                 <!-- Repère visuel du dépôt : sans lui, rien ne dirait que la fenêtre
                      accepte les fichiers glissés depuis l'Explorateur. -->

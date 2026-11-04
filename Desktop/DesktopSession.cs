@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -109,12 +112,26 @@ public sealed class DesktopSession : IDisposable
     /// Plus la valeur est basse, plus l'image est fluide — au prix de la bande passante.
     /// </summary>
     private ushort _frameTimerMs = 100;
+
+    /// <summary>
+    /// Cadences proposées, en images par seconde. Plafonnées à 40 : au-delà,
+    /// l'agent et le relais suivent rarement, et le surcroît de fluidité ne se
+    /// voit guère sur un bureau — seulement sur la bande passante.
+    /// </summary>
+    public static IReadOnlyList<int> FrameRates { get; } = new[] { 5, 10, 15, 20, 25, 30, 40 };
+
+    /// <summary>
+    /// Cadence proposée la plus proche, la plus basse en cas d'égalité. Ramène
+    /// les réglages d'une version antérieure (45 ou 60 img/s) sur la liste.
+    /// </summary>
+    public static int NearestFrameRate(int fps) => FrameRates.MinBy(r => Math.Abs(r - fps));
+
     public int FrameRate
     {
         get => _frameTimerMs > 0 ? 1000 / _frameTimerMs : 10;
         set
         {
-            var fps = Math.Clamp(value, 1, 60);
+            var fps = Math.Clamp(value, 1, FrameRates[^1]);
             _frameTimerMs = (ushort)(1000 / fps);
             SendCompressionSettings();
         }
@@ -335,6 +352,7 @@ public sealed class DesktopSession : IDisposable
         _socket?.Close();
         _socket?.Dispose();
         _socket = null;
+        DiscardPendingUpdates();
         if (State != DesktopSessionState.Closed)
         {
             CloseReason ??= null;
@@ -375,6 +393,14 @@ public sealed class DesktopSession : IDisposable
 
     private void SendCommand(ushort command, byte[]? payload = null)
     {
+        // Un déplacement encore en attente part d'abord : un clic ou une frappe
+        // ne doit pas devancer le mouvement qui amène le curseur à sa place.
+        FlushPendingMove();
+        EnqueueCommand(command, payload);
+    }
+
+    private void EnqueueCommand(ushort command, byte[]? payload = null)
+    {
         payload ??= Array.Empty<byte>();
         var data = new byte[payload.Length + 4];
         data[0] = (byte)(command >> 8);
@@ -409,7 +435,80 @@ public sealed class DesktopSession : IDisposable
 
     // MARK: - Encodage des entrées
 
-    public void SendMouseMove(int x, int y) => SendMouse(0, x, y);
+    // MARK: - Déplacements regroupés
+
+    /// <summary>
+    /// Intervalle minimal entre deux déplacements transmis, soit une soixantaine
+    /// par seconde — au-delà de la cadence maximale de l'image, pour que le
+    /// curseur distant ne soit jamais en retard sur elle. Une souris rapide produit
+    /// plusieurs centaines d'événements par seconde : les relayer tous chargeait
+    /// le relais et l'agent, et le curseur distant prenait du retard.
+    /// </summary>
+    private const double MouseMoveIntervalMs = 16;
+
+    private readonly object _moveLock = new();
+    private bool _movePending;
+    private bool _moveFlushScheduled;
+    private ushort _pendingMoveX, _pendingMoveY;
+    private long _lastMoveSent;
+
+    /// <summary>
+    /// Déplacement de souris. Transmis aussitôt si le précédent est assez
+    /// ancien ; sinon seule la dernière position est retenue, et part à la fin
+    /// de l'intervalle — ou plus tôt, devant le prochain clic ou la prochaine
+    /// frappe (voir <see cref="SendCommand"/>).
+    /// </summary>
+    public void SendMouseMove(int x, int y)
+    {
+        double wait;
+        lock (_moveLock)
+        {
+            _pendingMoveX = (ushort)Math.Max(0, Math.Min(x, ScreenWidth));
+            _pendingMoveY = (ushort)Math.Max(0, Math.Min(y, ScreenHeight));
+            _lastMouseX = _pendingMoveX;
+            _lastMouseY = _pendingMoveY;
+            _movePending = true;
+
+            // Un envoi est déjà programmé : il prendra cette position.
+            if (_moveFlushScheduled) return;
+
+            wait = MouseMoveIntervalMs - Stopwatch.GetElapsedTime(_lastMoveSent).TotalMilliseconds;
+            if (wait <= 0)
+            {
+                FlushMoveLocked();
+                return;
+            }
+            _moveFlushScheduled = true;
+        }
+        _ = FlushMoveLaterAsync(wait);
+    }
+
+    private async Task FlushMoveLaterAsync(double delayMs)
+    {
+        await Task.Delay(TimeSpan.FromMilliseconds(delayMs)).ConfigureAwait(false);
+        lock (_moveLock)
+        {
+            _moveFlushScheduled = false;
+            FlushMoveLocked();
+        }
+    }
+
+    private void FlushPendingMove()
+    {
+        lock (_moveLock) FlushMoveLocked();
+    }
+
+    /// <summary>Transmet le déplacement en attente, s'il y en a un. Sous _moveLock.</summary>
+    private void FlushMoveLocked()
+    {
+        if (!_movePending) return;
+        _movePending = false;
+        _lastMoveSent = Stopwatch.GetTimestamp();
+        EnqueueCommand(Kvm.Mouse, MousePayload(0, _pendingMoveX, _pendingMoveY));
+    }
+
+    private static byte[] MousePayload(byte button, ushort x, ushort y) =>
+        new byte[] { 0, button, (byte)(x >> 8), (byte)x, (byte)(y >> 8), (byte)y };
 
     public void SendMouseButton(MouseButton button, bool down, int x, int y)
         => SendMouse(down ? DownFlag(button) : UpFlag(button), x, y);
@@ -446,10 +545,7 @@ public sealed class DesktopSession : IDisposable
         var cy = (ushort)Math.Max(0, Math.Min(y, ScreenHeight));
         _lastMouseX = cx;
         _lastMouseY = cy;
-        var payload = new List<byte> { 0, button };
-        payload.AppendBE(cx);
-        payload.AppendBE(cy);
-        SendCommand(Kvm.Mouse, payload.ToArray());
+        SendCommand(Kvm.Mouse, MousePayload(button, cx, cy));
     }
 
     /// <summary>
@@ -732,6 +828,92 @@ public sealed class DesktopSession : IDisposable
         catch { /* trame de contrôle illisible : ignorée */ }
     }
 
+    // MARK: - Application des mises à jour sur le thread UI
+
+    /// <summary>
+    /// Mise à jour en attente pour le thread UI : une tuile décodée, ou un
+    /// changement de résolution quand elle ne porte pas de tuile.
+    /// </summary>
+    private readonly record struct PendingUpdate(DecodedTile Tile, int ResizeWidth, int ResizeHeight)
+    {
+        // Sur la tuile et non sur les dimensions : une résolution nulle
+        // annoncée par l'agent ne doit pas passer pour une tuile sans pixels.
+        public bool IsResize => Tile.Pixels is null;
+    }
+
+    private readonly ConcurrentQueue<PendingUpdate> _pendingUpdates = new();
+
+    /// <summary>1 tant qu'un passage sur le thread UI est déjà programmé.</summary>
+    private int _flushScheduled;
+
+    /// <summary>Lot de tuiles en cours d'application (thread UI uniquement).</summary>
+    private readonly List<DecodedTile> _tileBatch = new();
+
+    /// <summary>
+    /// Met une mise à jour en file et programme au besoin un passage sur le
+    /// thread UI. Un seul passage à la fois : les tuiles arrivées entre-temps
+    /// sont appliquées ensemble, au lieu d'une opération du dispatcher chacune
+    /// — sous un rafraîchissement complet, c'étaient des centaines d'opérations
+    /// qui retardaient le reste de l'interface, saisie comprise.
+    /// </summary>
+    private void PostUpdate(PendingUpdate update)
+    {
+        _pendingUpdates.Enqueue(update);
+        if (Interlocked.Exchange(ref _flushScheduled, 1) != 0) return;
+
+        // Si l'UI n'exécute jamais ce passage (arrêt du dispatcher à la
+        // fermeture), les tampons loués sont rendus ici.
+        var operation = _uiDispatcher.BeginInvoke(() => FlushUpdates());
+        operation.Aborted += (_, _) => DiscardPendingUpdates();
+    }
+
+    private void FlushUpdates()
+    {
+        // Remis à zéro AVANT de vider : une tuile arrivée pendant le vidage
+        // programme ainsi un nouveau passage au lieu de rester en file.
+        Volatile.Write(ref _flushScheduled, 0);
+
+        bool resized = false;
+        bool drawn = false;
+        while (_pendingUpdates.TryDequeue(out var update))
+        {
+            if (!update.IsResize)
+            {
+                _tileBatch.Add(update.Tile);
+                continue;
+            }
+
+            drawn |= ApplyTileBatch();
+            try
+            {
+                Framebuffer.Resize(update.ResizeWidth, update.ResizeHeight);
+                resized = true;
+            }
+            catch { /* dimensions aberrantes : ignorées, un prochain screen-size corrigera */ }
+        }
+        drawn |= ApplyTileBatch();
+
+        if (resized) ScreenSizeChanged?.Invoke();
+        if (drawn) FrameUpdated?.Invoke();
+    }
+
+    /// <summary>Applique le lot accumulé ; renvoie vrai s'il contenait des tuiles.</summary>
+    private bool ApplyTileBatch()
+    {
+        if (_tileBatch.Count == 0) return false;
+        try { Framebuffer.Apply(_tileBatch); }
+        catch { /* tuiles ignorées : les suivantes rafraîchiront la zone */ }
+        finally { _tileBatch.Clear(); }
+        return true;
+    }
+
+    /// <summary>Vide la file sans rien dessiner, en rendant les tampons loués.</summary>
+    private void DiscardPendingUpdates()
+    {
+        while (_pendingUpdates.TryDequeue(out var update))
+            if (!update.IsResize) ArrayPool<byte>.Shared.Return(update.Tile.Pixels);
+    }
+
     /// <summary>Extrait les commandes complètes du buffer de réassemblage.</summary>
     private void DrainCommands(List<byte> buffer)
     {
@@ -785,20 +967,7 @@ public sealed class DesktopSession : IDisposable
                 var decoded = KVMFramebuffer.Decode(imageData, x.Value, y.Value);
                 if (decoded is null) break; // tuile illisible : la prochaine corrigera
 
-                // Apply rend le tampon loué au pool. Si l'UI n'exécute jamais ce
-                // travail (arrêt du dispatcher à la fermeture), on le rend ici :
-                // sans ce filet, chaque tuile en vol à la fermeture fuirait.
-                var operation = _uiDispatcher.BeginInvoke(() =>
-                {
-                    try
-                    {
-                        Framebuffer.Apply(decoded.Value);
-                        FrameUpdated?.Invoke();
-                    }
-                    catch { /* tuile ignorée : la prochaine rafraîchira la zone */ }
-                });
-                operation.Aborted += (_, _) =>
-                    System.Buffers.ArrayPool<byte>.Shared.Return(decoded.Value.Pixels);
+                PostUpdate(new PendingUpdate(decoded.Value, 0, 0));
                 break;
             }
             case Kvm.Screen:
@@ -881,23 +1050,14 @@ public sealed class DesktopSession : IDisposable
         ScreenWidth = w;
         ScreenHeight = h;
 
-        // BeginInvoke plutôt qu'Invoke : attendre l'interface bloquerait le fil de
-        // réception, et les trames suivantes s'accumuleraient pendant ce temps.
+        // Sans attendre l'interface, qui bloquerait le fil de réception : les
+        // trames suivantes s'accumuleraient pendant ce temps.
         //
-        // L'ordre reste garanti vis-à-vis des tuiles : elles empruntent le même
-        // dispatcher à la même priorité, et WPF traite sa file en FIFO à priorité
-        // égale. Le redimensionnement s'exécute donc avant les tuiles qui le
-        // suivent — indispensable, sinon elles seraient rognées sur l'ancienne
-        // taille du framebuffer.
-        _uiDispatcher.BeginInvoke(() =>
-        {
-            try
-            {
-                Framebuffer.Resize(w, h);
-                ScreenSizeChanged?.Invoke();
-            }
-            catch { /* dimensions aberrantes : ignorées, un prochain screen-size corrigera */ }
-        });
+        // Le redimensionnement emprunte la file des tuiles : l'ordre est ainsi
+        // garanti. Il s'applique après les tuiles qui le précèdent et avant
+        // celles qui le suivent — indispensable, sinon elles seraient rognées
+        // sur l'ancienne taille du framebuffer.
+        PostUpdate(new PendingUpdate(default, w, h));
 
         // Reproduit la rafale du client web après screen-size.
         SendCompressionSettings();

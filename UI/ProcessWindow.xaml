@@ -47,7 +47,7 @@
                    Margin="2,10,0,0"/>
 
         <!-- Liste des processus -->
-        <Border Style="{StaticResource Card}" Padding="0">
+        <ui:CardBorder Style="{StaticResource Card}" Padding="0">
             <ListView x:Name="ProcessList" BorderThickness="0" Background="Transparent"
                       SelectionChanged="ProcessList_SelectionChanged">
                 <ListView.View>
@@ -61,6 +61,6 @@
                     </GridView>
                 </ListView.View>
             </ListView>
-        </Border>
+        </ui:CardBorder>
     </DockPanel>
 </ui:ChromeWindow>
