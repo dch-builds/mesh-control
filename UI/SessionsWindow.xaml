@@ -20,7 +20,21 @@
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="TabItem">
-                            <Grid Margin="2,0,0,0">
+                            <!-- IsHitTestVisibleInChrome : une fois le bandeau dans
+                                 la barre de titre, le système capterait sinon les
+                                 clics de l'onglet comme un glisser de fenêtre.
+
+                                 Posé sur la racine du gabarit, SURTOUT PAS sur
+                                 l'onglet : la propriété se transmet par l'arbre
+                                 logique, et le contenu de l'onglet — la session
+                                 entière — est enfant logique de l'onglet. Il en
+                                 héritait, et Windows ne voyait plus aucun bord
+                                 de redimensionnement à gauche, à droite ni en bas.
+                                 Pas non plus sur le TabPanel : le parent logique
+                                 d'un onglet est le TabControl, la valeur
+                                 n'atteindrait pas les onglets. -->
+                            <Grid Margin="2,0,0,0"
+                                  shell:WindowChrome.IsHitTestVisibleInChrome="True">
                                 <Border x:Name="Bd" CornerRadius="7"
                                         Background="Transparent" Padding="11,6,6,6">
                                     <StackPanel Orientation="Horizontal">
@@ -86,13 +100,6 @@
                 </Setter>
                 <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
                 <Setter Property="FontSize" Value="12"/>
-                <!-- Posé sur chaque onglet, et non sur le TabPanel : la propriété
-                     se transmet par l'arbre logique, et le parent logique d'un
-                     onglet est le TabControl, pas le panneau qui l'affiche. Posée
-                     sur le panneau, elle n'atteignait pas les onglets : une fois
-                     le bandeau dans la barre de titre, le système captait leurs
-                     clics comme un glisser de fenêtre. -->
-                <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
             </Style>
         </TabControl.ItemContainerStyle>
 
