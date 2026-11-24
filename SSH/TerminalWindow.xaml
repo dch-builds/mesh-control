@@ -50,17 +50,53 @@
                      lieu de valider la commande — « Coller » collait deux fois. -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
                             HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button Content="Coller" Style="{StaticResource ToolButton}"
+                    <!-- Commandes courantes de maintenance, adaptées au shell
+                         ouvert (voir QuickCommands). -->
+                    <Button x:Name="CommandsButton" Style="{StaticResource ToolButton}"
+                            Click="Commands_Click" Margin="0,0,6,0" Focusable="False"
+                            ToolTip="Commandes courantes : dossiers, informations, réseau, maintenance (Ctrl+Maj+K)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE756;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       VerticalAlignment="Center" Margin="0,1,6,0"/>
+                            <TextBlock Text="Commandes ▾" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolButton}"
                             Click="Paste_Click" Margin="0,0,6,0" Focusable="False"
-                            ToolTip="Coller le presse-papiers (Ctrl+Maj+V, ou clic du milieu)"/>
-                    <Button Content="Copier" Style="{StaticResource ToolButton}"
+                            ToolTip="Coller le presse-papiers (Ctrl+Maj+V, ou clic du milieu)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE77F;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       VerticalAlignment="Center" Margin="0,1,6,0"/>
+                            <TextBlock Text="Coller" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolButton}"
                             Click="CopyAll_Click" Margin="0,0,6,0" Focusable="False"
-                            ToolTip="Copier la sélection, ou tout le terminal à défaut (Ctrl+Maj+C)"/>
-                    <Button Content="Rechercher" Style="{StaticResource ToolButton}"
+                            ToolTip="Copier la sélection, ou tout le terminal à défaut (Ctrl+Maj+C)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       VerticalAlignment="Center" Margin="0,1,6,0"/>
+                            <TextBlock Text="Copier" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolButton}"
                             Click="Search_Click" Margin="0,0,6,0" Focusable="False"
-                            ToolTip="Rechercher dans l'historique (Ctrl+Maj+R)"/>
-                    <Button Content="Reconnecter" Style="{StaticResource ToolButton}"
-                            Click="Reconnect_Click" Margin="0,0,6,0" Focusable="False"/>
+                            ToolTip="Rechercher dans l'historique (Ctrl+Maj+R)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       VerticalAlignment="Center" Margin="0,1,6,0"/>
+                            <TextBlock Text="Rechercher" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="ReconnectButton" Style="{StaticResource ToolButton}"
+                            Click="Reconnect_Click" Margin="0,0,6,0" Focusable="False"
+                            ToolTip="Rouvrir la session (Entrée, une fois la session fermée)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       VerticalAlignment="Center" Margin="0,1,6,0"/>
+                            <TextBlock Text="Reconnecter" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="FullscreenButton" Content="⛶"
                             Style="{StaticResource ToolButton}"
                             Click="Fullscreen_Click" Padding="9,5" Focusable="False"
@@ -71,7 +107,9 @@
 
         <!-- Terminal (contrôle dessiné à la main, ajouté par code) -->
         <Grid>
-            <Border x:Name="TerminalHost" Background="#1B1B1F"/>
+            <!-- Marge : le texte ne colle plus aux bords. Pas à droite, où
+                 se tient la glissière de l'historique. -->
+            <Border x:Name="TerminalHost" Background="#1B1B1F" Padding="10,8,0,0"/>
 
             <ssh:TerminalSearchBar x:Name="SearchBar"/>
 

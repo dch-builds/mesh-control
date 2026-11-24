@@ -82,8 +82,26 @@ standard.
   glissière paraît sur le bord droit dès que l'on remonte, et toute frappe
   ramène en bas
 - Sélection à la souris : glisser pour sélectionner, double-clic pour un mot —
-  chemins et adresses compris —, triple-clic pour une ligne. Ctrl+Maj+C copie
-  la sélection, ou tout le terminal à défaut ; clic du milieu pour coller
+  chemins et adresses compris —, triple-clic pour une ligne. Ctrl+C copie la
+  sélection (sans sélection, il interrompt la commande), Ctrl+Maj+C copie la
+  sélection ou tout le terminal ; clic du milieu pour coller
+- Clic droit : copier, coller, tout copier, rechercher, effacer, taille du
+  texte, reconnecter
+- Collage sûr : si le shell gère le collage protégé (bash, zsh, PSReadLine),
+  le texte lui arrive d'un bloc et rien ne s'exécute avant Entrée ; sinon, un
+  collage de plusieurs lignes est confirmé d'abord
+- Session fermée : Entrée la rouvre. Les messages de l'agent (attente de
+  l'accord de l'utilisateur, refus) s'affichent dans le terminal, et un
+  terminal resté muet le signale au bout de quelques secondes
+- Menu « Commandes » (Ctrl+Maj+K), écrit pour le shell ouvert — cmd,
+  PowerShell ou Linux : dossiers courants (bureau, téléchargements, documents,
+  AppData de l'utilisateur connecté, même depuis un shell SYSTEM et avec
+  OneDrive), informations (utilisateurs, disques, processus, services,
+  logiciels, mises à jour, erreurs système), réseau et maintenance (SFC, DISM,
+  spouleur, file d'impression, redémarrage programmé). Ce qui modifie la
+  machine est seulement tapé, à valider par Entrée
+- Répond aux requêtes du shell (position du curseur, identification) : la
+  console Windows en a besoin pour s'afficher sur certains postes
 - Recherche dans l'historique par Ctrl+Maj+R : les occurrences sont surlignées,
   Entrée et Maj+Entrée passent de l'une à l'autre, Échap referme
 - Zoom par Ctrl+molette, Ctrl+Maj+Plus et Ctrl+Maj+Moins ; Ctrl+Maj+0 revient à

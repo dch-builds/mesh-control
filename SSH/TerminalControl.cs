@@ -27,6 +27,15 @@ public sealed class TerminalControl : Control
     /// </summary>
     public event Action? PasteRequested;
 
+    /// <summary>« Rechercher… » du menu contextuel ; masqué sans abonné.</summary>
+    public event Action? SearchRequested;
+
+    /// <summary>« Commandes » du menu contextuel ; masqué sans abonné.</summary>
+    public event Action? CommandsRequested;
+
+    /// <summary>« Reconnecter » du menu contextuel ; masqué sans abonné.</summary>
+    public event Action? ReconnectRequested;
+
     public TerminalEmulator Emulator => _emulator;
 
     /// <summary>
@@ -114,6 +123,14 @@ public sealed class TerminalControl : Control
     private static readonly Brush CursorBrush =
         new SolidColorBrush(Color.FromArgb(0x99, 0xD4, 0xD4, 0xD4));
 
+    /// <summary>Curseur sans le focus : un simple contour, qui dit où l'on en est
+    /// sans laisser croire que la frappe arrivera ici.</summary>
+    private static readonly Pen CursorOutline =
+        new(new SolidColorBrush(Color.FromArgb(0xB0, 0xD4, 0xD4, 0xD4)), 1);
+
+    private static readonly Brush SizeBadgeBackground =
+        new SolidColorBrush(Color.FromArgb(0xD9, 0x00, 0x00, 0x00));
+
     private static readonly Brush ScrollbarTrack =
         new SolidColorBrush(Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF));
 
@@ -135,6 +152,8 @@ public sealed class TerminalControl : Control
         foreach (var b in Brushes) b.Freeze();
         DefaultBackground.Freeze();
         CursorBrush.Freeze();
+        CursorOutline.Freeze();
+        SizeBadgeBackground.Freeze();
         ScrollbarTrack.Freeze();
         ScrollbarThumb.Freeze();
         MatchBrush.Freeze();
@@ -160,11 +179,135 @@ public sealed class TerminalControl : Control
         MeasureCharacter();
 
         _autoScrollTimer.Tick += (_, _) => AutoScrollStep();
+        _sizeBadgeTimer.Tick += (_, _) =>
+        {
+            _sizeBadgeTimer.Stop();
+            InvalidateVisual();
+        };
+        BuildContextMenu();
 
         // Le contrôle est créé avant d'être dans l'arbre visuel : on prend le
         // focus dès qu'il y est réellement attaché.
         Loaded += (_, _) => Focus();
-        Unloaded += (_, _) => _autoScrollTimer.Stop();
+        Unloaded += (_, _) =>
+        {
+            _autoScrollTimer.Stop();
+            _sizeBadgeTimer.Stop();
+        };
+    }
+
+    // MARK: - Menu contextuel
+
+    private MenuItem _copyItem = null!;
+    private MenuItem _searchItem = null!;
+    private MenuItem _commandsItem = null!;
+    private MenuItem _reconnectItem = null!;
+    private Separator _reconnectSeparator = null!;
+
+    /// <summary>
+    /// Clic droit : les actions du terminal à portée de souris, avec leur
+    /// raccourci en rappel. Les actions propres à la session (coller,
+    /// rechercher, reconnecter) sont relayées à la fenêtre.
+    /// </summary>
+    private void BuildContextMenu()
+    {
+        MenuItem Item(string header, string? gesture, Action action)
+        {
+            var item = new MenuItem { Header = header, InputGestureText = gesture ?? "" };
+            item.Click += (_, _) => action();
+            return item;
+        }
+
+        _copyItem = Item("Copier", "Ctrl+C", () => CopyToClipboard(selectionOnly: true));
+        _searchItem = Item("Rechercher…", "Ctrl+Maj+R", () => SearchRequested?.Invoke());
+        // Différé : le menu contextuel doit être refermé avant d'ouvrir celui
+        // des commandes, sans quoi la fermeture du premier emporte le second.
+        _commandsItem = Item("Commandes…", "Ctrl+Maj+K", () =>
+            Dispatcher.BeginInvoke(() => CommandsRequested?.Invoke(),
+                                   System.Windows.Threading.DispatcherPriority.Input));
+        _reconnectItem = Item("Reconnecter", null, () => ReconnectRequested?.Invoke());
+        _reconnectSeparator = new Separator();
+
+        var menu = new ContextMenu();
+        menu.Items.Add(_copyItem);
+        menu.Items.Add(Item("Coller", "Ctrl+Maj+V", () => PasteRequested?.Invoke()));
+        menu.Items.Add(Item("Tout copier", null, () => CopyToClipboard(selectionOnly: false)));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(_commandsItem);
+        menu.Items.Add(_searchItem);
+        menu.Items.Add(Item("Effacer l'écran", null, Clear));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(Item("Texte plus grand", "Ctrl+Maj++", () => ZoomBy(+1)));
+        menu.Items.Add(Item("Texte plus petit", "Ctrl+Maj+-", () => ZoomBy(-1)));
+        menu.Items.Add(Item("Taille par défaut", "Ctrl+Maj+0", ResetZoom));
+        menu.Items.Add(_reconnectSeparator);
+        menu.Items.Add(_reconnectItem);
+
+        // Le clavier revient au terminal une fois le menu refermé.
+        menu.Closed += (_, _) => Focus();
+        ContextMenu = menu;
+
+        ContextMenuOpening += (_, _) =>
+        {
+            _copyItem.IsEnabled = HasSelection;
+            _searchItem.Visibility = SearchRequested is null ? Visibility.Collapsed : Visibility.Visible;
+            _commandsItem.Visibility = CommandsRequested is null ? Visibility.Collapsed : Visibility.Visible;
+            var reconnect = ReconnectRequested is null ? Visibility.Collapsed : Visibility.Visible;
+            _reconnectItem.Visibility = reconnect;
+            _reconnectSeparator.Visibility = reconnect;
+        };
+    }
+
+    /// <summary>
+    /// Copie la sélection — ou, si <paramref name="selectionOnly"/> est faux et
+    /// qu'il n'y en a pas, tout le terminal, historique compris. La sélection
+    /// est levée : elle a servi.
+    /// </summary>
+    public bool CopyToClipboard(bool selectionOnly)
+    {
+        var text = selectionOnly ? GetSelectedText() : TextForCopy();
+        if (string.IsNullOrEmpty(text)) return false;
+
+        try { Clipboard.SetText(text); }
+        catch { return false; /* presse-papiers verrouillé par une autre application */ }
+
+        ClearSelection();
+        return true;
+    }
+
+    // MARK: - Taille affichée au redimensionnement
+
+    /// <summary>
+    /// Pendant un redimensionnement (fenêtre ou police), la taille en
+    /// caractères s'affiche un instant au centre : utile pour caler une sortie
+    /// en colonnes ou un éditeur.
+    /// </summary>
+    private readonly System.Windows.Threading.DispatcherTimer _sizeBadgeTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(900),
+    };
+
+    /// <summary>La première grille n'est pas un redimensionnement : rien à afficher.</summary>
+    private bool _gridInitialized;
+
+    private void ShowSizeBadge()
+    {
+        _sizeBadgeTimer.Stop();
+        _sizeBadgeTimer.Start();
+    }
+
+    private void DrawSizeBadge(DrawingContext dc, double dpi)
+    {
+        if (!_sizeBadgeTimer.IsEnabled) return;
+
+        var text = new FormattedText($"{_emulator.Cols} × {_emulator.Rows}",
+            CultureInfo.InvariantCulture, FlowDirection.LeftToRight, _typeface,
+            Math.Max(12, FontSize), Brushes[15], dpi);
+        var width = text.Width + 28;
+        var height = text.Height + 14;
+        var box = new Rect((ActualWidth - width) / 2, (ActualHeight - height) / 2, width, height);
+        dc.DrawRoundedRectangle(SizeBadgeBackground, null, box, 8, 8);
+        dc.DrawText(text, new Point(box.X + 14, box.Y + 7));
     }
 
     /// <summary>
@@ -243,6 +386,8 @@ public sealed class TerminalControl : Control
 
         _emulator.Resize(cols, rows);
         ClampViewOffset();
+        if (_gridInitialized) ShowSizeBadge();
+        _gridInitialized = true;
         GridSizeChanged?.Invoke(cols, rows);
         InvalidateVisual();
     }
@@ -405,15 +550,21 @@ public sealed class TerminalControl : Control
 
         // Curseur : bloc semi-transparent, visible sans masquer le caractère.
         // Sans objet quand on regarde l'historique — le curseur n'y est pas.
-        if (_emulator.CursorVisible && IsFocused && _viewOffset == 0)
+        if (_emulator.CursorVisible && _viewOffset == 0)
         {
-            dc.DrawRectangle(CursorBrush, null,
-                new Rect(_emulator.CursorCol * _charWidth,
-                         _emulator.CursorRow * _charHeight,
-                         _charWidth, _charHeight));
+            var cursor = new Rect(_emulator.CursorCol * _charWidth,
+                                  _emulator.CursorRow * _charHeight,
+                                  _charWidth, _charHeight);
+            if (IsFocused)
+                dc.DrawRectangle(CursorBrush, null, cursor);
+            else
+                dc.DrawRectangle(null, CursorOutline,
+                    new Rect(cursor.X + 0.5, cursor.Y + 0.5,
+                             Math.Max(0, cursor.Width - 1), Math.Max(0, cursor.Height - 1)));
         }
 
         DrawScrollbar(dc);
+        DrawSizeBadge(dc, dpi);
     }
 
     /// <summary>

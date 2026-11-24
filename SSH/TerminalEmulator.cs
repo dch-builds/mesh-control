@@ -38,8 +38,24 @@ public sealed class TerminalEmulator
     public int CursorRow { get; private set; }
     public bool CursorVisible { get; private set; } = true;
 
+    /// <summary>
+    /// Collage protégé (mode 2004) demandé par le shell distant : un texte
+    /// collé doit alors lui parvenir encadré, pour qu'il ne l'exécute pas.
+    /// </summary>
+    public bool BracketedPaste { get; private set; }
+
     /// <summary>Grille courante : [ligne][colonne].</summary>
     public TerminalCell[][] Grid { get; private set; } = [];
+
+    /// <summary>
+    /// Réponse que le terminal doit renvoyer au programme distant, comme s'il
+    /// l'avait tapée : position du curseur, identification du terminal.
+    ///
+    /// Indispensable sous Windows : la console (ConPTY) demande la position du
+    /// curseur à l'ouverture et peut attendre la réponse avant d'afficher quoi
+    /// que ce soit. Sans elle, le terminal restait noir sur certains postes.
+    /// </summary>
+    public event Action<string>? Reply;
 
     /// <summary>Incrémenté à chaque modification, pour déclencher un redessin.</summary>
     public int Revision { get; private set; }
@@ -356,11 +372,44 @@ public sealed class TerminalEmulator
 
             case 'm': ApplySgr(args); break;
 
-            case 'h': if (priv && clean == "25") CursorVisible = true; break;
-            case 'l': if (priv && clean == "25") CursorVisible = false; break;
+            case 'h': SetPrivateModes(priv, args, true); break;
+            case 'l': SetPrivateModes(priv, args, false); break;
 
             case 's': _savedCol = CursorCol; _savedRow = CursorRow; break;
             case 'u': CursorCol = _savedCol; CursorRow = _savedRow; break;
+
+            // Rapports d'état (DSR) : 5 = état du terminal, 6 = position du curseur.
+            case 'n':
+                if (Arg0(0) == 5 && !priv)
+                    Reply?.Invoke($"{Esc}[0n");
+                else if (Arg0(0) == 6)
+                    Reply?.Invoke(priv
+                        ? $"{Esc}[?{CursorRow + 1};{CursorCol + 1}R"
+                        : $"{Esc}[{CursorRow + 1};{CursorCol + 1}R");
+                break;
+
+            // Identification (DA) : on se présente comme un VT100 avec options
+            // avancées, ce que reconnaissent tous les programmes courants.
+            case 'c':
+                if (paramText.StartsWith('>'))
+                    Reply?.Invoke($"{Esc}[>0;10;1c");
+                else if (!priv && Arg0(0) == 0)
+                    Reply?.Invoke($"{Esc}[?1;2c");
+                break;
+        }
+    }
+
+    /// <summary>Modes privés (CSI ? … h / l) que l'émulateur prend en compte.</summary>
+    private void SetPrivateModes(bool priv, string[] modes, bool on)
+    {
+        if (!priv) return;
+        foreach (var mode in modes)
+        {
+            switch (mode)
+            {
+                case "25": CursorVisible = on; break;
+                case "2004": BracketedPaste = on; break;
+            }
         }
     }
 
@@ -496,6 +545,7 @@ public sealed class TerminalEmulator
         _scrollTop = 0;
         _scrollBottom = Rows - 1;
         CursorVisible = true;
+        BracketedPaste = false;
         for (int r = 0; r < Rows; r++) Grid[r] = NewBlankLine();
         ClearScrollback();
     }

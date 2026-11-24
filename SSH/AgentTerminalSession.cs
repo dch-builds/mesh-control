@@ -56,6 +56,21 @@ public sealed class AgentTerminalSession : IDisposable
     private bool _stopped;
 
     /// <summary>
+    /// Décodeur conservé d'une trame à l'autre : un caractère accentué coupé
+    /// entre deux trames serait sinon affiché comme deux caractères illisibles.
+    /// </summary>
+    private readonly Decoder _utf8 = Encoding.UTF8.GetDecoder();
+
+    /// <summary>Le shell a-t-il déjà envoyé quelque chose ?</summary>
+    private volatile bool _receivedOutput;
+
+    /// <summary>
+    /// Délai au-delà duquel un terminal resté vide reçoit une indication, plutôt
+    /// que de laisser croire à une fenêtre figée.
+    /// </summary>
+    private static readonly TimeSpan SilenceHintDelay = TimeSpan.FromSeconds(6);
+
+    /// <summary>
     /// File d'envoi. Sur un tunnel meshrelay, la saisie clavier circule en trames
     /// BINAIRES, mais les messages du canal de contrôle (redimensionnement, pong)
     /// doivent partir en TEXTE : envoyés en binaire, l'agent les prendrait pour
@@ -111,6 +126,7 @@ public sealed class AgentTerminalSession : IDisposable
             // dans la console : rien à faire de notre côté.
             SetState(SshSessionState.Connected);
             SendResize(Cols, Rows);
+            _ = HintIfSilentAsync(_cts.Token);
         }
         catch (Exception ex)
         {
@@ -119,6 +135,33 @@ public sealed class AgentTerminalSession : IDisposable
             SetState(SshSessionState.Closed);
         }
     }
+
+    /// <summary>
+    /// Terminal toujours vide après quelques secondes : on le dit, et l'on
+    /// indique le geste qui débloque le plus souvent la situation.
+    /// </summary>
+    private async Task HintIfSilentAsync(CancellationToken ct)
+    {
+        try { await Task.Delay(SilenceHintDelay, ct).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return; }
+
+        if (_receivedOutput || _stopped || State != SshSessionState.Connected) return;
+        Log.Info($"{_node.Name} : aucune sortie du terminal après {SilenceHintDelay.TotalSeconds:0} s.", "Terminal");
+        EmitLocal("Aucune sortie de la machine pour l'instant. Appuyez sur Entrée pour "
+                  + "réafficher l'invite, ou changez de shell.");
+    }
+
+    /// <summary>
+    /// Message de l'application (et non du shell), affiché en gris dans le
+    /// terminal pour ne pas être confondu avec la sortie distante.
+    /// </summary>
+    private void EmitLocal(string message) =>
+        _ui.BeginInvoke(() =>
+        {
+            var text = $"\u001B[90m» {message}\u001B[0m\r\n";
+            if (Output is not null) Output.Invoke(text);
+            else _pendingOutput.Append(text);
+        });
 
     public void Stop()
     {
@@ -223,7 +266,7 @@ public sealed class AgentTerminalSession : IDisposable
         string text = message switch
         {
             WsMessage.Text(var t) => t,
-            WsMessage.Binary(var b) => Encoding.UTF8.GetString(b),
+            WsMessage.Binary(var b) => DecodeUtf8(b),
             _ => "",
         };
         if (text.Length == 0) return;
@@ -234,8 +277,22 @@ public sealed class AgentTerminalSession : IDisposable
             try
             {
                 using var doc = JsonDocument.Parse(text);
-                if (doc.RootElement.TryGetProperty("type", out var t)
-                    && t.GetString() == "ping")
+                var type = doc.RootElement.TryGetProperty("type", out var t) ? t.GetString() : null;
+                if (type == "console")
+                {
+                    // Message de l'agent ou du serveur : attente de l'accord de
+                    // l'utilisateur, refus, aucun utilisateur connecté… Ignoré
+                    // jusqu'ici, il laissait le terminal noir sans explication.
+                    if (doc.RootElement.TryGetProperty("msg", out var m)
+                        && m.ValueKind == JsonValueKind.String
+                        && !string.IsNullOrWhiteSpace(m.GetString()))
+                    {
+                        var raw = m.GetString()!;
+                        Log.Info($"{_node.Name} : message de l'agent « {raw} ».", "Terminal");
+                        EmitLocal(TranslateConsoleMessage(raw));
+                    }
+                }
+                else if (type == "ping")
                 {
                     var pong = JsonSerializer.Serialize(
                         new { ctrlChannel = "102938", type = "pong" });
@@ -251,12 +308,30 @@ public sealed class AgentTerminalSession : IDisposable
             }
         }
 
+        _receivedOutput = true;
         _ui.BeginInvoke(() =>
         {
             if (Output is not null) Output.Invoke(text);
             else _pendingOutput.Append(text);
         });
     }
+
+    private string DecodeUtf8(byte[] bytes)
+    {
+        var chars = new char[_utf8.GetCharCount(bytes, 0, bytes.Length, flush: false)];
+        var count = _utf8.GetChars(bytes, 0, bytes.Length, chars, 0, flush: false);
+        return new string(chars, 0, count);
+    }
+
+    /// <summary>Messages connus de l'agent, en français ; les autres tels quels.</summary>
+    private static string TranslateConsoleMessage(string message) => message.Trim() switch
+    {
+        "Waiting for user to grant access..." =>
+            "En attente de l'accord de l'utilisateur de la machine…",
+        "Denied" => "Accès refusé par l'utilisateur de la machine.",
+        "Timeout" => "L'utilisateur de la machine n'a pas répondu à temps.",
+        _ => $"Agent : {message}",
+    };
 
     public string DrainPendingOutput()
     {

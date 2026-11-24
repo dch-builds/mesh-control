@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using MeshControl.Core;
@@ -32,7 +33,12 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
         _terminal = new TerminalControl();
         _terminal.SetFontSize(AppSettings.Load().TerminalFontSize);
         _terminal.GridSizeChanged += (cols, rows) => _session?.Resize(cols, rows);
+        // Réponses aux questions du programme distant (position du curseur…).
+        _terminal.Emulator.Reply += reply => _session?.SendInput(reply);
         _terminal.PasteRequested += () => Paste_Click(this, new RoutedEventArgs());
+        _terminal.SearchRequested += () => SearchBar.Toggle();
+        _terminal.CommandsRequested += OpenQuickCommands;
+        _terminal.ReconnectRequested += () => Reconnect_Click(this, new RoutedEventArgs());
         // Abonnement après la taille initiale : avant, on réenregistrerait la
         // valeur qu'on vient tout juste de lire.
         _terminal.FontSizeChanged += SaveFontSize;
@@ -148,8 +154,20 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
 
     private async Task StartSessionAsync()
     {
-        // Fermer une session précédente (changement de shell, reconnexion).
-        _session?.Stop();
+        // Fermer une session précédente (changement de shell, reconnexion). On
+        // s'en désabonne d'abord : sa fermeture et ses dernières trames ne
+        // doivent pas s'afficher dans la nouvelle.
+        if (_session is { } previous)
+        {
+            previous.Output -= OnOutput;
+            previous.StateChanged -= OnStateChanged;
+            previous.Stop();
+        }
+
+        var shellName = (ShellCombo.SelectedItem as ComboBoxItem)?.Content as string ?? "shell";
+        _terminal.Write($"\u001B[90m» Connexion à {_node.Name} — {shellName}…\u001B[0m\r\n");
+        SetReconnectHighlighted(false);
+
         _session = new AgentTerminalSession(_connection, _node, SelectedShell, Dispatcher);
         _session.Output += OnOutput;
         _session.StateChanged += OnStateChanged;
@@ -183,9 +201,18 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
                 SetStatus("Session fermée", "#FDE8E7", "#C0392B");
                 if (!string.IsNullOrEmpty(_session.CloseReason))
                     _terminal.Write($"\r\n\u001B[31m*** {_session.CloseReason}\u001B[0m\r\n");
+                _terminal.Write("\u001B[90m» Appuyez sur Entrée pour vous reconnecter.\u001B[0m\r\n");
+                SetReconnectHighlighted(true);
                 break;
         }
     }
+
+    /// <summary>
+    /// Session fermée : « Reconnecter » passe en couleur d'accent, c'est
+    /// désormais l'action attendue.
+    /// </summary>
+    private void SetReconnectHighlighted(bool highlighted) =>
+        ReconnectButton.Style = (Style)FindResource(highlighted ? "AccentToolButton" : "ToolButton");
 
     private void SetStatus(string text, string background, string foreground)
     {
@@ -235,6 +262,104 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
     }
 
     private void Search_Click(object sender, RoutedEventArgs e) => SearchBar.Toggle();
+
+    // MARK: - Commandes rapides
+
+    private void Commands_Click(object sender, RoutedEventArgs e) => OpenQuickCommands();
+
+    /// <summary>
+    /// Menu des commandes courantes, reconstruit à chaque ouverture : il
+    /// dépend du shell choisi, qui peut avoir changé depuis.
+    /// </summary>
+    private void OpenQuickCommands()
+    {
+        // Sous le bouton ; en plein écran, la barre d'outils étant masquée,
+        // au centre du terminal.
+        var underButton = CommandsButton.IsVisible;
+        var menu = new ContextMenu
+        {
+            PlacementTarget = underButton ? CommandsButton : _terminal,
+            Placement = underButton ? PlacementMode.Bottom : PlacementMode.Center,
+        };
+
+        foreach (var group in QuickCommands.For(_node.OsFamily, SelectedShell))
+        {
+            var submenu = new MenuItem { Header = group.Title };
+            foreach (var command in group.Items)
+            {
+                if (command is null)
+                {
+                    submenu.Items.Add(new Separator());
+                    continue;
+                }
+
+                var item = new MenuItem
+                {
+                    // « … » : la commande sera tapée, pas exécutée.
+                    Header = command.Run ? command.Label : command.Label + "…",
+                    ToolTip = QuickCommandToolTip(command),
+                };
+                item.Click += (_, _) => SendQuickCommand(command);
+                submenu.Items.Add(item);
+            }
+            menu.Items.Add(submenu);
+        }
+
+        menu.Items.Add(new Separator());
+        menu.Items.Add(new MenuItem
+        {
+            Header = "« … » : commande tapée, à valider par Entrée",
+            IsEnabled = false,
+        });
+
+        menu.Closed += (_, _) => _terminal.Focus();
+        menu.IsOpen = true;
+    }
+
+    /// <summary>Info-bulle : la commande exacte, puis ce qu'il faut en savoir.</summary>
+    private static object QuickCommandToolTip(QuickCommand command)
+    {
+        var panel = new StackPanel { MaxWidth = 520 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = command.Command,
+            FontFamily = new FontFamily("Consolas"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var hint = command.Run
+            ? command.Note
+            : string.Join(" ", new[] { command.Note, "Tapée sans être exécutée : vérifiez-la, puis Entrée." }
+                                  .Where(part => !string.IsNullOrEmpty(part)));
+        if (!string.IsNullOrEmpty(hint))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = hint,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 6, 0, 0),
+                Opacity = 0.75,
+            });
+        }
+        return panel;
+    }
+
+    private void SendQuickCommand(QuickCommand command)
+    {
+        if (_session?.State != SshSessionState.Connected)
+        {
+            _terminal.Write("\u001B[90m» Session non connectée : la commande n'a pas été envoyée.\u001B[0m\r\n");
+            return;
+        }
+
+        // Sous Linux, Ctrl+E puis Ctrl+U vident la ligne en cours : la
+        // commande ne se colle pas derrière une saisie entamée. Pas d'équivalent
+        // sûr sous Windows — Échap, envoyé juste avant du texte, serait lu
+        // comme Alt+lettre par la console.
+        var clearLine = _node.OsFamily == OSFamily.Windows ? "" : "\u0005\u0015";
+        _session.SendInput(clearLine + command.Command + (command.Run ? "\r" : ""));
+        _terminal.Focus();
+    }
 
     // MARK: - Plein écran
 
@@ -309,6 +434,14 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
             e.Handled = true;
             return;
         }
+        // Ctrl+C sur une sélection : copier, comme partout ailleurs sous
+        // Windows. Sans sélection, il interrompt la commande, comme toujours.
+        if (ctrl && !shift && e.Key == Key.C && _terminal.HasSelection)
+        {
+            _terminal.CopyToClipboard(selectionOnly: true);
+            e.Handled = true;
+            return;
+        }
         if (ctrl && shift && e.Key == Key.F)
         {
             ToggleFullscreen();
@@ -321,11 +454,26 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
             e.Handled = true;
             return;
         }
+        if (ctrl && shift && e.Key == Key.K)
+        {
+            OpenQuickCommands();
+            e.Handled = true;
+            return;
+        }
 
         // Défilement de l'historique, lui aussi indépendant de l'état de la
         // session. Toute autre frappe ramène la vue en bas.
         if (_terminal.HandleViewKey(e.Key, Keyboard.Modifiers))
         {
+            e.Handled = true;
+            return;
+        }
+
+        // Session fermée : Entrée la rouvre, sans aller chercher le bouton.
+        if (_session?.State == SshSessionState.Closed && e.Key == Key.Enter
+            && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            Reconnect_Click(this, new RoutedEventArgs());
             e.Handled = true;
             return;
         }
@@ -364,11 +512,11 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
         try
         {
             if (!Clipboard.ContainsText()) return;
-            var text = Clipboard.GetText();
-            if (string.IsNullOrEmpty(text)) return;
-            // Les fins de ligne Windows deviennent un simple retour chariot,
-            // sinon le shell verrait une ligne vide après chaque commande.
-            _session.SendInput(text.Replace("\r\n", "\r").Replace("\n", "\r"));
+            // Voir TerminalPaste : collage protégé si le shell le permet,
+            // confirmation avant d'exécuter plusieurs lignes sinon.
+            var data = TerminalPaste.Prepare(Clipboard.GetText(),
+                                             _terminal.Emulator.BracketedPaste, RootPanel);
+            if (data is not null) _session.SendInput(data);
         }
         catch { /* presse-papiers verrouillé par une autre application */ }
 

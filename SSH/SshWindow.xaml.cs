@@ -39,7 +39,10 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
         _terminal = new TerminalControl();
         _terminal.SetFontSize(AppSettings.Load().TerminalFontSize);
         _terminal.GridSizeChanged += (cols, rows) => _session.Resize(cols, rows);
+        // Réponses aux questions du programme distant (position du curseur…).
+        _terminal.Emulator.Reply += reply => _session.SendInput(reply);
         _terminal.PasteRequested += () => Paste_Click(this, new RoutedEventArgs());
+        _terminal.SearchRequested += () => SearchBar.Toggle();
         // Abonnement après la taille initiale : avant, on réenregistrerait la
         // valeur qu'on vient tout juste de lire.
         _terminal.FontSizeChanged += SaveFontSize;
@@ -238,6 +241,13 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
             e.Handled = true;
             return;
         }
+        // Ctrl+C sur une sélection : copier ; sans sélection, interrompre.
+        if (ctrl && !shift && e.Key == Key.C && _terminal.HasSelection)
+        {
+            _terminal.CopyToClipboard(selectionOnly: true);
+            e.Handled = true;
+            return;
+        }
         if (ctrl && shift && e.Key == Key.F)
         {
             ToggleFullscreen();
@@ -294,11 +304,11 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
         try
         {
             if (!Clipboard.ContainsText()) return;
-            var text = Clipboard.GetText();
-            if (string.IsNullOrEmpty(text)) return;
-            // Le terminal reçoit le texte tel quel : contrairement au bureau à
-            // distance, il n'y a pas de simulation de frappe à cadencer.
-            _session.SendInput(text.Replace("\r\n", "\r").Replace("\n", "\r"));
+            // Voir TerminalPaste : collage protégé si le shell le permet,
+            // confirmation avant d'exécuter plusieurs lignes sinon.
+            var data = TerminalPaste.Prepare(Clipboard.GetText(),
+                                             _terminal.Emulator.BracketedPaste, RootPanel);
+            if (data is not null) _session.SendInput(data);
         }
         catch { /* presse-papiers verrouillé par une autre application */ }
 
