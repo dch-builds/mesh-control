@@ -427,7 +427,8 @@ public sealed class FilesSession : IDisposable
         {
             using var handler = new HttpClientHandler();
             if (_connection.Profile.AllowSelfSigned)
-                handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+                handler.ServerCertificateCustomValidationCallback =
+                    CertificateTrust.HttpCallback(baseUri.Authority);
 
             using var http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
             using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
@@ -449,6 +450,7 @@ public sealed class FilesSession : IDisposable
                 }
             }
             completed = true;
+            MarkFromRemote(destination);
         }
         finally
         {
@@ -460,6 +462,18 @@ public sealed class FilesSession : IDisposable
             }
             SetTransfer(null);
         }
+    }
+
+    /// <summary>
+    /// Marque le fichier reçu comme venant d'ailleurs (« Mark of the Web »,
+    /// zone Internet), comme le fait un navigateur : SmartScreen contrôle alors
+    /// un exécutable avant son lancement, et Office ouvre les documents en mode
+    /// protégé. Sans effet sur un disque qui ne gère pas les flux NTFS.
+    /// </summary>
+    private static void MarkFromRemote(string path)
+    {
+        try { File.WriteAllText(path + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\n"); }
+        catch { /* FAT, exFAT, partage réseau : pas de flux alternatif */ }
     }
 
     private static string LastSegment(string id)

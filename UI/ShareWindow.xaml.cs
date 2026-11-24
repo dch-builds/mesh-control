@@ -237,7 +237,8 @@ public partial class ShareWindow : ChromeWindow
     private void OpenLink_Click(object sender, RoutedEventArgs e)
     {
         var url = LinkBox.Text;
-        if (string.IsNullOrEmpty(url)) return;
+        // Seul un lien web part vers le navigateur (voir NormalizeShareUrl).
+        if (!MeshServerConnection.IsWebUrl(url)) return;
         try
         {
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });

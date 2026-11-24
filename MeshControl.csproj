@@ -75,4 +75,12 @@
     <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
+  <!-- Mentions des composants redistribués (runtime .NET, Velopack) : leurs
+       licences MIT exigent qu'elles accompagnent l'application installée. -->
+  <ItemGroup>
+    <None Include="THIRD-PARTY-NOTICES.md"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

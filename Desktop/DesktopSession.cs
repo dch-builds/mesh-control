@@ -914,6 +914,12 @@ public sealed class DesktopSession : IDisposable
             if (!update.IsResize) ArrayPool<byte>.Shared.Return(update.Tile.Pixels);
     }
 
+    /// <summary>
+    /// Plus grande trame « jumbo » acceptée : une tuile d'écran 8K en PNG reste
+    /// très en deçà.
+    /// </summary>
+    private const uint MaxJumboSize = 64 * 1024 * 1024;
+
     /// <summary>Extrait les commandes complètes du buffer de réassemblage.</summary>
     private void DrainCommands(List<byte> buffer)
     {
@@ -929,6 +935,14 @@ public sealed class DesktopSession : IDisposable
                 if (buffer.Count < 8) return;
                 uint realSize = ((uint)buffer[4] << 24) | ((uint)buffer[5] << 16)
                               | ((uint)buffer[6] << 8) | buffer[7];
+                // Taille aberrante : la trame est malformée, et l'attendre ferait
+                // grossir le tampon sans fin. On abandonne ce qui est en attente.
+                if (realSize < 2 || realSize > MaxJumboSize)
+                {
+                    Log.Warning($"Trame KVM de {realSize} octets ignorée (malformée).", "Bureau");
+                    buffer.Clear();
+                    return;
+                }
                 totalLength = 8 + (int)realSize;
                 if (buffer.Count < totalLength) return;
                 body = new byte[totalLength - 8];

@@ -181,10 +181,32 @@ public partial class MainWindow
         _settings.StartMinimized = StartMinimizedCheck.IsChecked == true;
 
         // Serveur & compte
+        var allowSelfSigned = SelfSignedCheck.IsChecked == true;
+
+        // Un autre serveur, c'est un autre compte : mot de passe, jeton de
+        // connexion et cookie de second facteur de l'ancien ne doivent pas lui
+        // être présentés (même règle que l'écran de choix du serveur).
+        if (!string.Equals(host, _settings.Host, StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrEmpty(_settings.Host))
+        {
+            _settings.ProtectedPassword = null;
+            _settings.ClearDeviceTrust();
+        }
+
+        // Option décochée : le certificat retenu est oublié, pour qu'un
+        // certificat renouvelé puisse être accepté en la recochant.
+        if (!allowSelfSigned && _settings.AllowSelfSigned)
+            CertificateTrust.Forget(new ServerProfile { Host = _settings.Host }.BaseUri?.Authority);
+
         _settings.Host = host;
-        _settings.AllowSelfSigned = SelfSignedCheck.IsChecked == true;
+        _settings.AllowSelfSigned = allowSelfSigned;
         _settings.RememberCredentials = RememberSettingCheck.IsChecked == true;
-        if (!_settings.RememberCredentials) _settings.ProtectedPassword = null;
+        if (!_settings.RememberCredentials)
+        {
+            // Ne rien laisser qui rouvrirait une session sans mot de passe.
+            _settings.ProtectedPassword = null;
+            _settings.ClearDeviceTrust();
+        }
 
         // Diagnostic
         _settings.VerboseLogging = VerboseLogCheck.IsChecked == true;

@@ -31,13 +31,14 @@ internal static class TerminalPaste
 
         // Fins de ligne unifiées : le shell attend un retour chariot, comme
         // la touche Entrée.
-        var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        var normalized = RemoveControlCharacters(text.Replace("\r\n", "\n").Replace('\r', '\n'));
 
         if (bracketed)
         {
-            // Un marqueur de fin glissé dans le texte ferait sortir du bloc
-            // protégé — et exécuter la suite : on le retire.
-            var body = normalized.Replace(BracketEnd, "").Replace("\n", "\r");
+            // Plus aucun ESC dans le texte : un marqueur de fin glissé dedans
+            // (même découpé pour se reformer après un premier filtrage) ne
+            // peut plus faire sortir du bloc protégé.
+            var body = normalized.Replace("\n", "\r");
             return BracketStart + body + BracketEnd;
         }
 
@@ -50,6 +51,21 @@ internal static class TerminalPaste
         if (!ConfirmMultiline(lineCount, owner)) return null;
         return normalized.Replace("\n", "\r");
     }
+
+    /// <summary>
+    /// Retire les caractères de contrôle, tabulation et saut de ligne mis à
+    /// part. Un texte collé n'a aucune raison d'en contenir, et chacun peut
+    /// piloter le shell : ESC ouvre une séquence (dont la fin du collage
+    /// protégé), Ctrl+O ou Ctrl+J exécutent la ligne sous bash…
+    /// </summary>
+    public static string RemoveControlCharacters(string text)
+    {
+        if (!text.Any(IsUnwantedControl)) return text;
+        return new string(text.Where(c => !IsUnwantedControl(c)).ToArray());
+    }
+
+    private static bool IsUnwantedControl(char c) =>
+        (c < 0x20 && c is not '\t' and not '\n') || (c >= 0x7F && c <= 0x9F);
 
     private static bool ConfirmMultiline(int lineCount, DependencyObject owner)
     {

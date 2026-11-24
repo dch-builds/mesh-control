@@ -318,6 +318,10 @@ public sealed class MeshServerConnection : IDisposable
     {
         HttpRequestError.NameResolutionError
             => "Serveur introuvable. Vérifiez l'adresse et la connexion réseau.",
+        HttpRequestError.SecureConnectionError when CertificateTrust.HasRejectedChange
+            => "Le certificat du serveur a changé depuis la dernière connexion : connexion refusée "
+             + "par sécurité. Si ce changement est attendu (certificat renouvelé), décochez "
+             + "« Autoriser un certificat auto-signé » dans les réglages, enregistrez, puis recochez-la.",
         HttpRequestError.SecureConnectionError
             => "Le certificat du serveur a été refusé. S'il est auto-signé, activez l'option correspondante.",
         _ => "Impossible de joindre le serveur. Vérifiez la connexion réseau.",
@@ -336,7 +340,7 @@ public sealed class MeshServerConnection : IDisposable
 
         using var handler = new HttpClientHandler();
         if (profile.AllowSelfSigned)
-            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+            handler.ServerCertificateCustomValidationCallback = CertificateTrust.HttpCallback(uri.Authority);
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
         try
         {
@@ -495,9 +499,10 @@ public sealed class MeshServerConnection : IDisposable
                     HandleEvent(ev);
                 break;
             case "msg":
-                // Journalisé au niveau Debug : permet d'identifier le format exact
-                // renvoyé par l'agent si le presse-papiers ne fonctionne pas.
-                Log.Debug($"Message d'agent reçu : {json.GetRawText()}", "Serveur");
+                // Journalisé au niveau Debug, mais sans son contenu : un message
+                // d'agent peut porter le presse-papiers distant (souvent un mot
+                // de passe), une liste de processus ou une sortie de console.
+                Log.Debug($"Message d'agent reçu : {DescribeAgentMessage(json)}", "Serveur");
                 HandleDeviceMessage(json);
                 break;
             case "close":
@@ -509,9 +514,8 @@ public sealed class MeshServerConnection : IDisposable
                 // une réponse d'agent au format inattendu.
                 if (_consoleWaiter is not null || _processListWaiter is not null)
                 {
-                    var raw = json.GetRawText();
                     Log.Debug($"Action non gérée « {action} » (attente en cours) : "
-                            + (raw.Length > 400 ? raw[..400] + "…" : raw), "Serveur");
+                            + DescribeAgentMessage(json), "Serveur");
                 }
                 break;
         }
@@ -1340,12 +1344,36 @@ public sealed class MeshServerConnection : IDisposable
     /// Le serveur renvoie parfois un chemin relatif (quand son nom d'hôte n'est
     /// pas qualifié) : on le complète avec l'adresse du profil.
     /// </summary>
+    /// <summary>
+    /// Lien de partage absolu, en http ou https uniquement — vide sinon. Il
+    /// finit ouvert par le navigateur (ShellExecute) : toute autre forme
+    /// (« file: », chemin, protocole applicatif) n'a rien à y faire.
+    /// </summary>
     private string NormalizeShareUrl(string url)
     {
-        if (url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return url;
         var baseUri = Profile.BaseUri;
-        if (baseUri is null) return url;
-        return $"{baseUri.Scheme}://{baseUri.Authority}{(url.StartsWith('/') ? "" : "/")}{url}";
+        var absolute = url.StartsWith("http", StringComparison.OrdinalIgnoreCase) || baseUri is null
+            ? url
+            : $"{baseUri.Scheme}://{baseUri.Authority}{(url.StartsWith('/') ? "" : "/")}{url}";
+
+        return IsWebUrl(absolute) ? absolute : "";
+    }
+
+    /// <summary>Adresse absolue en http ou https.</summary>
+    public static bool IsWebUrl(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
+
+    /// <summary>
+    /// Résumé d'un message d'agent pour le journal : son type et sa taille,
+    /// jamais son contenu.
+    /// </summary>
+    private static string DescribeAgentMessage(JsonElement json)
+    {
+        var type = json.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String
+            ? t.GetString()
+            : null;
+        return $"type « {type ?? "?"} », {json.GetRawText().Length} caractères";
     }
 
     /// <summary>Liste les partages actifs d'un appareil.</summary>
@@ -1415,14 +1443,12 @@ public sealed class MeshServerConnection : IDisposable
 
     private static string B64(string s) => Convert.ToBase64String(Encoding.UTF8.GetBytes(s));
 
-    private static readonly char[] HexChars = "0123456789abcdef".ToCharArray();
-    public static string RandomHex(int length)
-    {
-        var chars = new char[length];
-        var rnd = Random.Shared;
-        for (int i = 0; i < length; i++) chars[i] = HexChars[rnd.Next(16)];
-        return new string(chars);
-    }
+    /// <summary>
+    /// Identifiant aléatoire (tunnels, réponses). Générateur cryptographique :
+    /// un identifiant de tunnel prévisible permettrait de s'y raccrocher.
+    /// </summary>
+    public static string RandomHex(int length) =>
+        System.Security.Cryptography.RandomNumberGenerator.GetHexString(length, lowercase: true);
 
     private static bool TryParse(string text, out JsonElement element)
     {

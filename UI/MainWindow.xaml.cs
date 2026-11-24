@@ -43,6 +43,7 @@ public partial class MainWindow : ChromeWindow
     public MainWindow()
     {
         InitializeComponent();
+        CertificateTrust.Initialize(_settings);
         _refreshTimer.Tick += (_, _) =>
         {
             _refreshTimer.Stop();

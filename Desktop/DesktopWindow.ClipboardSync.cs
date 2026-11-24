@@ -300,6 +300,20 @@ public partial class DesktopWindow
 
         if (string.IsNullOrEmpty(remote) || SameClipboardText(remote, _remoteClipKnown)) return;
 
+        // Garde-fous, le texte arrivant sans action de l'utilisateur : taille
+        // bornée comme dans l'autre sens, et pas de caractères de contrôle —
+        // une machine hostile pourrait sinon y glisser des séquences qui, une
+        // fois collées dans un terminal, piloteraient le shell d'une autre.
+        if (remote.Length > MaxRemoteClipboardLength)
+        {
+            _remoteClipKnown = remote;
+            StatsText.Text = $"Presse-papiers de la machine trop volumineux ({remote.Length / 1024} Ko) : non recopié.";
+            return;
+        }
+        // La référence garde le texte brut, pour que la relecture suivante ne
+        // passe pas pour un nouveau changement.
+        var local = WithoutControlCharacters(remote);
+
         // Le presse-papiers distant a changé : on le recopie en local. La
         // référence est mise à jour d'abord, pour que l'avis de changement
         // local qui va suivre soit reconnu comme un écho.
@@ -307,8 +321,8 @@ public partial class DesktopWindow
         _remoteClipKnown = remote;
         try
         {
-            Clipboard.SetText(remote);
-            StatsText.Text = $"Presse-papiers ← machine ({remote.Length} car.)";
+            Clipboard.SetText(local);
+            StatsText.Text = $"Presse-papiers ← machine ({local.Length} car.)";
         }
         catch
         {
@@ -329,6 +343,14 @@ public partial class DesktopWindow
         {
             return null;
         }
+    }
+
+    /// <summary>Texte sans caractères de contrôle (tabulations et fins de ligne gardées).</summary>
+    private static string WithoutControlCharacters(string text)
+    {
+        static bool Unwanted(char c) =>
+            (c < 0x20 && c is not '\t' and not '\r' and not '\n') || (c >= 0x7F && c <= 0x9F);
+        return text.Any(Unwanted) ? new string(text.Where(c => !Unwanted(c)).ToArray()) : text;
     }
 
     /// <summary>Égalité aux fins de ligne près : l'agent les normalise au passage.</summary>

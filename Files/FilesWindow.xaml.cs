@@ -719,7 +719,9 @@ public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.I
         {
             var dialog = new SaveFileDialog
             {
-                FileName = single.Name,
+                // Nom assaini : tel quel, un nom distant contenant « ..\ »
+                // proposerait un emplacement hors du dossier affiché.
+                FileName = SafeLocalName(single.Name),
                 Title = "Enregistrer le fichier",
             };
             if (dialog.ShowDialog(DialogOwner) != true) return;
@@ -777,7 +779,7 @@ public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.I
                 foreach (var row in directories)
                 {
                     var localRoot = UniqueLocalPath(folder, SafeLocalName(row.Name), reserved);
-                    await CollectRemoteFilesAsync(_session.FullPathOf(row.Entry), localRoot, items);
+                    await CollectRemoteFilesAsync(_session.FullPathOf(row.Entry), localRoot, items, depth: 0);
                 }
             }
             catch (Exception ex)
@@ -805,15 +807,34 @@ public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.I
     /// fichiers, en reproduisant l'arborescence sous <paramref name="localDirectory"/>.
     /// </summary>
     private async Task CollectRemoteFilesAsync(string remoteDirectory, string localDirectory,
-                                               List<TransferItem> items)
+                                               List<TransferItem> items, int depth)
     {
+        // Une arborescence plus profonde ne peut venir que d'un lien qui
+        // boucle sur lui-même, ou d'un agent qui invente des dossiers.
+        if (depth > MaxFolderDownloadDepth)
+            throw new MeshException(
+                $"Plus de {MaxFolderDownloadDepth} niveaux de dossiers : boucle probable, téléchargement interrompu.");
+
         var entries = await _session.ListDirectoryAsync(remoteDirectory)
                       ?? throw new MeshException($"Le dossier « {remoteDirectory} » n'a pas pu être lu.");
 
+        // Deux noms qui ne diffèrent que par la casse (possible sous Linux) ne
+        // doivent pas s'écraser l'un l'autre sous Windows.
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var entry in entries)
         {
+            if (entry.Name is "." or ".." || string.IsNullOrEmpty(entry.Name)) continue;
+
             var remotePath = _session.CombinePath(remoteDirectory, entry.Name);
-            var localPath = Path.Combine(localDirectory, SafeLocalName(entry.Name));
+            var localName = SafeLocalName(entry.Name);
+            if (!usedNames.Add(localName))
+            {
+                var stem = Path.GetFileNameWithoutExtension(localName);
+                var extension = Path.GetExtension(localName);
+                for (var index = 2; !usedNames.Add(localName = $"{stem} ({index}){extension}"); index++) { }
+            }
+            var localPath = Path.Combine(localDirectory, localName);
 
             if (entry.Kind == FileKind.File)
             {
@@ -824,7 +845,7 @@ public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.I
             }
             else if (entry.Kind == FileKind.Directory)
             {
-                await CollectRemoteFilesAsync(remotePath, localPath, items);
+                await CollectRemoteFilesAsync(remotePath, localPath, items, depth + 1);
             }
         }
     }
@@ -837,8 +858,24 @@ public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.I
     {
         var invalid = Path.GetInvalidFileNameChars();
         var safe = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray()).TrimEnd('.', ' ');
-        return safe.Length > 0 ? safe : "_";
+        if (safe.Length == 0) return "_";
+
+        // Noms de périphériques réservés par Windows, extension comprise
+        // (« CON.txt » désigne encore la console) : préfixés pour devenir
+        // des noms de fichier ordinaires.
+        var stem = safe.Split('.')[0].TrimEnd(' ');
+        return ReservedDeviceNames.Contains(stem) ? "_" + safe : safe;
     }
+
+    private static readonly HashSet<string> ReservedDeviceNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    };
+
+    /// <summary>Profondeur maximale d'un dossier téléchargé.</summary>
+    private const int MaxFolderDownloadDepth = 64;
 
     /// <summary>Chemin local encore libre pour ce nom de fichier ou de dossier.</summary>
     private static string UniqueLocalPath(string directory, string name, HashSet<string> reserved)

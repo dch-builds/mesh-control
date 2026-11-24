@@ -25,6 +25,12 @@ public sealed class MeshWebSocket : IDisposable
     // Taille max d'un message reçu (les tuiles KVM jumbo peuvent être volumineuses).
     private const int ReceiveBufferSize = 64 * 1024;
 
+    /// <summary>
+    /// Plus gros message accepté. Bien au-delà de la plus grosse trame légitime
+    /// (tuile d'écran, liste d'appareils d'un grand serveur).
+    /// </summary>
+    private const long MaxMessageSize = 128L * 1024 * 1024;
+
     public MeshWebSocket(Uri uri, IReadOnlyDictionary<string, string>? headers, bool allowSelfSigned)
     {
         _uri = uri;
@@ -34,10 +40,12 @@ public sealed class MeshWebSocket : IDisposable
 
         // MeshCentral impose un contrôle d'origine côté navigateur ; on n'envoie
         // pas d'en-tête Origin.
+        // Certificat auto-signé : retenu à la première connexion, refusé
+        // ensuite s'il change (voir CertificateTrust).
         if (allowSelfSigned)
         {
             _socket.Options.RemoteCertificateValidationCallback =
-                (_, _, _, _) => true;
+                CertificateTrust.WebSocketCallback(uri.Authority);
         }
     }
 
@@ -80,6 +88,12 @@ public sealed class MeshWebSocket : IDisposable
                     _socket.CloseStatusDescription ?? "Connexion fermée par le serveur.");
             }
             ms.Write(buffer, 0, result.Count);
+            // Un message sans fin ferait grossir la mémoire indéfiniment.
+            if (ms.Length > MaxMessageSize)
+            {
+                throw new WebSocketException(WebSocketError.Faulted,
+                    $"Message reçu trop volumineux (plus de {MaxMessageSize / (1024 * 1024)} Mo).");
+            }
         }
         while (!result.EndOfMessage);
 

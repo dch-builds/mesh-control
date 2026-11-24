@@ -93,6 +93,24 @@ public sealed class TerminalEmulator
     // Curseur sauvegardé (ESC 7 / ESC 8, CSI s / CSI u).
     private int _savedCol, _savedRow;
 
+    // Bornes défensives : le flux vient d'une machine qui peut être hostile.
+    // Paramètres CSI et titres OSC n'approchent jamais ces longueurs, et un
+    // compteur (lignes à insérer, caractères à effacer) ne dépasse jamais
+    // l'écran — au-delà, ESC[999999999L gelait l'interface entière.
+    private const int MaxParamLength = 256;
+    private const int MaxOscLength = 4096;
+    private const int MaxCount = 10_000;
+
+    /// <summary>
+    /// Curseur sauvegardé, ramené dans la grille : elle a pu rétrécir depuis
+    /// la sauvegarde, et l'écriture suivante serait sortie de ses bornes.
+    /// </summary>
+    private void RestoreCursor()
+    {
+        CursorCol = Math.Clamp(_savedCol, 0, Cols - 1);
+        CursorRow = Math.Clamp(_savedRow, 0, Rows - 1);
+    }
+
     public TerminalEmulator(int cols = 80, int rows = 24)
     {
         Cols = 0; Rows = 0;
@@ -149,7 +167,7 @@ public sealed class TerminalEmulator
                     case '[': _state = ParseState.Csi; _paramBuffer.Clear(); break;
                     case ']': _state = ParseState.Osc; _oscBuffer.Clear(); break;
                     case '7': _savedCol = CursorCol; _savedRow = CursorRow; _state = ParseState.Ground; break;
-                    case '8': CursorCol = _savedCol; CursorRow = _savedRow; _state = ParseState.Ground; break;
+                    case '8': RestoreCursor(); _state = ParseState.Ground; break;
                     case 'M': ReverseIndex(); _state = ParseState.Ground; break;
                     case 'c': HardReset(); _state = ParseState.Ground; break;
                     // Sélection de jeu de caractères (ESC ( B, ESC ) 0 …) :
@@ -163,7 +181,10 @@ public sealed class TerminalEmulator
                 // Paramètres : chiffres, ';', '?', '>' … puis une lettre finale.
                 if ((ch >= '0' && ch <= '9') || ch is ';' or '?' or '>' or '=' or ' ')
                 {
-                    _paramBuffer.Append(ch);
+                    // Séquence démesurée : aucune séquence légitime n'en approche,
+                    // on l'abandonne plutôt que de laisser grossir le tampon.
+                    if (_paramBuffer.Length >= MaxParamLength) _state = ParseState.Ground;
+                    else _paramBuffer.Append(ch);
                 }
                 else
                 {
@@ -186,8 +207,9 @@ public sealed class TerminalEmulator
                 {
                     _state = ParseState.OscEscape;   // attendre le « \ » du ST
                 }
-                else
+                else if (_oscBuffer.Length < MaxOscLength)
                 {
+                    // Au-delà, le texte est ignoré jusqu'à la fin de la séquence.
                     _oscBuffer.Append(ch);
                 }
                 break;
@@ -334,9 +356,10 @@ public sealed class TerminalEmulator
         int Arg(int index, int fallback = 1)
         {
             if (index >= args.Length) return fallback;
-            return int.TryParse(args[index], out var v) && v > 0 ? v : fallback;
+            return int.TryParse(args[index], out var v) && v > 0 ? Math.Min(v, MaxCount) : fallback;
         }
-        int Arg0(int index) => index < args.Length && int.TryParse(args[index], out var v) ? v : 0;
+        int Arg0(int index) =>
+            index < args.Length && int.TryParse(args[index], out var v) ? Math.Clamp(v, 0, MaxCount) : 0;
 
         switch (final)
         {
@@ -376,7 +399,7 @@ public sealed class TerminalEmulator
             case 'l': SetPrivateModes(priv, args, false); break;
 
             case 's': _savedCol = CursorCol; _savedRow = CursorRow; break;
-            case 'u': CursorCol = _savedCol; CursorRow = _savedRow; break;
+            case 'u': RestoreCursor(); break;
 
             // Rapports d'état (DSR) : 5 = état du terminal, 6 = position du curseur.
             case 'n':
@@ -501,6 +524,7 @@ public sealed class TerminalEmulator
 
     private void InsertLines(int count)
     {
+        count = Math.Min(count, _scrollBottom - CursorRow + 1);
         for (int n = 0; n < count; n++)
         {
             for (int r = _scrollBottom; r > CursorRow; r--) Grid[r] = Grid[r - 1];
@@ -510,6 +534,7 @@ public sealed class TerminalEmulator
 
     private void DeleteLines(int count)
     {
+        count = Math.Min(count, _scrollBottom - CursorRow + 1);
         for (int n = 0; n < count; n++)
         {
             for (int r = CursorRow; r < _scrollBottom; r++) Grid[r] = Grid[r + 1];

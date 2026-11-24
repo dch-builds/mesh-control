@@ -24,6 +24,12 @@ public sealed class AppSettings
     public string Host { get; set; } = "";
     public string Username { get; set; } = "";
     public bool AllowSelfSigned { get; set; }
+
+    /// <summary>
+    /// Certificats auto-signés retenus à la première connexion : empreinte
+    /// SHA-256 par hôte (voir CertificateTrust). Rien de secret.
+    /// </summary>
+    public Dictionary<string, string> PinnedCertificates { get; set; } = new();
     public bool RememberCredentials { get; set; } = true;
 
     /// <summary>Lanceur rapide : raccourci global, au format « Ctrl+Alt+W ».</summary>

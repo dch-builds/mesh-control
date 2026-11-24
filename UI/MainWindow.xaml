@@ -784,6 +784,8 @@
                             <CheckBox x:Name="SelfSignedCheck"
                                       Content="Autoriser un certificat auto-signé"/>
                             <TextBlock Style="{StaticResource FieldHint}" Margin="24,4,0,0"
+                                       Text="Le certificat présenté à la première connexion est retenu ; un certificat différent sera ensuite refusé."/>
+                            <TextBlock Style="{StaticResource FieldHint}" Margin="24,4,0,0"
                                        Text="Modifier l'adresse impose de se reconnecter."/>
                         </StackPanel>
                     </Border>
