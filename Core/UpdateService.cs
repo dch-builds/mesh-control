@@ -12,9 +12,9 @@ namespace MeshControl.Core;
 /// et retour à la version précédente si le remplacement échoue. Ne reste ici que
 /// la politique — quand proposer une mise à jour, et quoi en montrer.
 ///
-/// Les binaires sont publiés sur un dépôt public, distinct du dépôt privé qui
-/// héberge le code source : aucune authentification n'est nécessaire, et plus
-/// aucun jeton n'est compilé dans l'application.
+/// Les binaires sont publiés sur un dépôt public dédié, distinct de celui du
+/// code source : aucune authentification n'est nécessaire, et aucun jeton n'est
+/// compilé dans l'application.
 /// </summary>
 public static class UpdateService
 {

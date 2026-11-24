@@ -8,9 +8,9 @@
 #   dist\      les fichiers de l'application, tels quels
 #   Releases\  les paquets Velopack (Setup.exe, .nupkg, manifeste de canal)
 #
-# Les mises à jour sont distribuées par un dépôt PUBLIC, distinct du dépôt privé
-# qui héberge ce code. Aucun jeton n'est donc embarqué dans l'application ; celui
-# que réclame l'envoi est lu à la volée auprès de gh.
+# Les mises à jour sont distribuées par un dépôt public dédié, distinct de celui
+# du code. Aucun jeton n'est donc embarqué dans l'application ; celui que réclame
+# l'envoi est lu à la volée auprès de gh.
 #
 # Usage :
 #   .\publish.ps1                  → publie et empaquette

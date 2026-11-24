@@ -1,240 +1,244 @@
 # Mesh Control
 
-Application Windows native pour piloter un serveur
-[MeshCentral](https://meshcentral.com) : bureau à distance, terminal, transfert
-de fichiers et actions d'alimentation.
+*English · [Français](README.fr.md)*
 
-Écrite en C# / WPF sur .NET 10, sans dépendance externe hors bibliothèque
-standard.
+Native Windows application to drive a [MeshCentral](https://meshcentral.com)
+server: remote desktop, terminal, file transfer and power actions.
 
-## Fonctionnalités
+Written in C# / WPF on .NET 10. Its only external dependency is
+[Velopack](https://github.com/velopack/velopack), for installation and updates.
 
-**Appareils**
-- Liste groupée par dossier, repliable, avec état en ligne en temps réel
-- Recherche instantanée (nom, dossier, système, adresse IP, utilisateur
-  MeshCentral connecté) et filtre « en ligne uniquement »
-- Tri retenu d'une session à l'autre : par nom, en ligne d'abord, dernière
-  présence ou système, à l'intérieur de chaque dossier
-- Chaque ligne montre l'adresse IP et l'utilisateur MeshCentral connecté à la
-  machine (« vous » pour ses propres sessions, détail par type de session en
-  info-bulle) ; au survol, bureau, terminal et fichiers en un clic, ou le
-  réveil d'une machine hors ligne
-- Thème clair ou sombre pour toute l'application, au choix dans les réglages
-  (appliqué au redémarrage, proposé d'un clic)
-- Favoris épinglés et machines récemment utilisées
-- Palette de recherche rapide par raccourci clavier global, utilisable même
-  lorsque l'application est en arrière-plan
+> The user interface is in French for now.
 
-**Bureau à distance**
-- Décodage natif du protocole KVM (tuiles JPEG, trames jumbo)
-- Cadence réglable jusqu'à 60 images/s, trois niveaux de qualité
-- Souris, molette, boutons latéraux et clavier complet (codes VK Windows). La
-  touche Windows n'est pas transmise — le poste local l'intercepte de toute
-  façon — et s'envoie par le menu « Raccourcis »
-- Raccourcis prédéfinis adaptés à Windows ou Linux
-- Raccourcis locaux : Ctrl+Maj+R redemande une image complète, Ctrl+Maj+A
-  bascule l'ajustement à la fenêtre, Ctrl+Maj+D débloque le clavier distant et
-  Ctrl+Maj+Suppr envoie Ctrl+Alt+Suppr
-- Autres outils de la machine sans quitter le bureau : terminal (Ctrl+Maj+T),
-  fichiers (Ctrl+Maj+E), processus (Ctrl+Maj+P), page web (Ctrl+Maj+W)
-- Plein écran par Ctrl+Maj+F : barres et bandeau d'onglets masqués. La souris
-  portée en haut de l'écran fait descendre une barre flottante : coller, taper,
-  synchronisation du presse-papiers, raccourcis, Ctrl+Alt+Suppr, vue seule,
-  capture et sortie du plein écran
-- Ouverture des sessions au choix dans les réglages : fenêtre habituelle,
-  agrandie ou plein écran
-- Vue seule (bouton œil ou Ctrl+Maj+O) : l'image reste à jour mais ni souris ni
-  clavier ne partent vers la machine ; un badge le rappelle sur l'écran
-- Barre d'outils qui se resserre sur une fenêtre étroite : libellés réduits à
-  leur icône, puis outils secondaires repliés dans le menu « ⋯ »
-- Loupe (bouton ou Ctrl+Maj+Z) : on trace un rectangle sur l'écran distant et
-  la zone remplit la fenêtre, la souris restant utilisable. Le même geste
-  revient à la vue entière ; Maj+clic sur la loupe agrandit encore
-- Redémarrage, veille ou extinction depuis la barre d'outils (redémarrage :
-  Ctrl+Maj+B). Après un redémarrage, la session reprend d'elle-même au retour
-  de la machine, même au-delà de la reprise automatique
-- Fichiers et dossiers glissés depuis l'Explorateur sur l'écran distant : une
-  boîte demande le dossier d'arrivée et propose les emplacements courants de
-  la machine — bureau (OneDrive compris), téléchargements et documents de
-  chaque utilisateur, bureau public, disques ; sous Linux, les dossiers
-  personnels, `/tmp` et `/`. « Parcourir… » permet de naviguer dans les
-  dossiers de la machine pour en choisir un autre ; le chemin reste aussi
-  modifiable à la main, et le dernier dossier choisi est reproposé.
-  Progression dans la barre d'état
-- Le flux s'interrompt dès que la session n'est plus regardée — onglet passé à
-  l'arrière-plan, fenêtre réduite — et reprend sur une image complète
-- Presse-papiers dans les deux sens. Le collage écrit le presse-papiers de la
-  machine distante puis envoie Ctrl+V — instantané, quelle que soit la longueur
-  du texte. Si le serveur refuse l'écriture (`clipboardset`) ou si l'agent ne la
-  confirme pas, la saisie caractère par caractère prend le relais ; elle reste
-  accessible à la demande (bouton « Taper » ou Ctrl+Maj+Alt+V), pour les
-  applications qui ignorent Ctrl+V
-- Synchronisation automatique du presse-papiers (bouton ⇄, désactivée par
-  défaut) : ce qui est copié d'un côté est disponible de l'autre, en texte
+## Features
+
+**Devices**
+- List grouped by device group, collapsible, with live online status
+- Instant search (name, group, OS, IP address, logged-in MeshCentral user) and
+  an "online only" filter
+- Sort order remembered across sessions: by name, online first, last seen or
+  OS, within each group
+- Each row shows the IP address and the MeshCentral user connected to the
+  machine ("you" for your own sessions, details per session type in the
+  tooltip); on hover, desktop, terminal and files in one click, or wake-up for
+  an offline machine
+- Light or dark theme for the whole application, selectable in the settings
+- Pinned favorites and recently used machines
+- Quick search palette on a global keyboard shortcut, usable even when the
+  application is in the background
+
+**Remote desktop**
+- Native decoding of the KVM protocol (JPEG tiles, jumbo frames)
+- Frame rate from 5 to 40 fps, three quality levels
+- Mouse, wheel, side buttons and full keyboard (Windows VK codes). The Windows
+  key is not forwarded — the local PC intercepts it anyway — and can be sent
+  from the "Shortcuts" menu
+- Predefined shortcuts for Windows or Linux
+- Local shortcuts: Ctrl+Shift+R requests a full frame, Ctrl+Shift+A toggles
+  fit-to-window, Ctrl+Shift+D releases stuck modifier keys and Ctrl+Shift+Del
+  sends Ctrl+Alt+Del
+- Other tools for the machine without leaving the desktop: terminal
+  (Ctrl+Shift+T), files (Ctrl+Shift+E), processes (Ctrl+Shift+P), web page
+  (Ctrl+Shift+W)
+- Full screen with Ctrl+Shift+F: toolbars and tab strip hidden. Moving the
+  mouse to the top of the screen slides down a floating toolbar: paste, type,
+  clipboard sync, shortcuts, Ctrl+Alt+Del, view only, screenshot and exit full
+  screen
+- Sessions can open in a regular window, maximized or in full screen (setting)
+- View only (eye button or Ctrl+Shift+O): the picture stays live, but no mouse
+  or keyboard input is sent; a badge on screen shows it
+- Toolbar that compacts in a narrow window: labels shrink to icons, then
+  secondary tools move into the "⋯" menu
+- Magnifier (button or Ctrl+Shift+Z): draw a rectangle on the remote screen and
+  that area fills the window, with the mouse still usable. The same gesture
+  returns to the full view; Shift+click on the magnifier zooms further
+- Restart, sleep or shut down from the toolbar (restart: Ctrl+Shift+B). After a
+  restart, the session resumes on its own when the machine comes back
+- Files and folders dragged from Explorer onto the remote screen: a dialog asks
+  for the destination and suggests the machine's usual locations — desktop
+  (OneDrive included), downloads and documents of each user, public desktop,
+  drives; on Linux, home folders, `/tmp` and `/`. "Browse…" lets you pick
+  another folder on the machine; the path can also be typed, and the last one
+  is suggested again. Progress in the status bar
+- The stream pauses as soon as nobody is watching — tab in the background,
+  window minimized — and resumes with a full frame
+- Two-way clipboard. Paste writes the remote clipboard and then sends Ctrl+V —
+  instant, whatever the length. If the server refuses the write
+  (`clipboardset`) or the agent does not confirm it, character-by-character
+  typing takes over; it is also available on demand ("Type" button or
+  Ctrl+Shift+Alt+V) for applications that ignore Ctrl+V
+- Automatic clipboard sync (⇄ button, off by default): text copied on one side
+  is available on the other
 
 **Terminal**
-- Via l'agent : invite de commandes, PowerShell, shell utilisateur, et sur Linux
-  un *login shell* demandant identifiant et mot de passe
-- Via SSH lorsque le serveur l'autorise
-- Émulateur ANSI/VT100 intégré (couleurs, curseur, zones de défilement)
-- Historique de 5 000 lignes : molette, Maj+Page précédente et Maj+Page
-  suivante, Ctrl+Maj+Début et Ctrl+Maj+Fin pour aller d'un bout à l'autre. Une
-  glissière paraît sur le bord droit dès que l'on remonte, et toute frappe
-  ramène en bas
-- Sélection à la souris : glisser pour sélectionner, double-clic pour un mot —
-  chemins et adresses compris —, triple-clic pour une ligne. Ctrl+C copie la
-  sélection (sans sélection, il interrompt la commande), Ctrl+Maj+C copie la
-  sélection ou tout le terminal ; clic du milieu pour coller
-- Clic droit : copier, coller, tout copier, rechercher, effacer, taille du
-  texte, reconnecter
-- Collage sûr : si le shell gère le collage protégé (bash, zsh, PSReadLine),
-  le texte lui arrive d'un bloc et rien ne s'exécute avant Entrée ; sinon, un
-  collage de plusieurs lignes est confirmé d'abord
-- Session fermée : Entrée la rouvre. Les messages de l'agent (attente de
-  l'accord de l'utilisateur, refus) s'affichent dans le terminal, et un
-  terminal resté muet le signale au bout de quelques secondes
-- Menu « Commandes » (Ctrl+Maj+K), écrit pour le shell ouvert — cmd,
-  PowerShell ou Linux : dossiers courants (bureau, téléchargements, documents,
-  AppData de l'utilisateur connecté, même depuis un shell SYSTEM et avec
-  OneDrive), informations (utilisateurs, disques, processus, services,
-  logiciels, mises à jour, erreurs système), réseau et maintenance (SFC, DISM,
-  spouleur, file d'impression, redémarrage programmé). Ce qui modifie la
-  machine est seulement tapé, à valider par Entrée
-- Répond aux requêtes du shell (position du curseur, identification) : la
-  console Windows en a besoin pour s'afficher sur certains postes
-- Recherche dans l'historique par Ctrl+Maj+R : les occurrences sont surlignées,
-  Entrée et Maj+Entrée passent de l'une à l'autre, Échap referme
-- Zoom par Ctrl+molette, Ctrl+Maj+Plus et Ctrl+Maj+Moins ; Ctrl+Maj+0 revient à
-  la taille d'origine. La taille choisie vaut pour les terminaux suivants
-- Plein écran par Ctrl+Maj+F, comme le bureau à distance
+- Through the agent: command prompt, PowerShell, user shell, and on Linux a
+  *login shell* asking for user name and password
+- Through SSH when the server allows it
+- Built-in ANSI/VT100 emulator (colors, cursor, scroll regions)
+- 5,000-line scrollback: wheel, Shift+Page Up and Shift+Page Down,
+  Ctrl+Shift+Home and Ctrl+Shift+End to jump to either end. A scrollbar appears
+  on the right edge as soon as you scroll up, and any keystroke brings you back
+  to the bottom
+- Mouse selection: drag to select, double-click for a word — paths and
+  addresses included —, triple-click for a line. Ctrl+C copies the selection
+  (with no selection, it interrupts the command), Ctrl+Shift+C copies the
+  selection or the whole terminal; middle-click pastes
+- Right-click menu: copy, paste, copy all, commands, search, clear, text size,
+  reconnect
+- Safe paste: if the shell supports bracketed paste (bash, zsh, PSReadLine),
+  the text arrives as one block and nothing runs before Enter; otherwise,
+  pasting several lines asks for confirmation first
+- Closed session: press Enter to reopen it. Agent messages (waiting for the
+  user's consent, access denied) are shown in the terminal, and a terminal that
+  stays silent says so after a few seconds
+- "Commands" menu (Ctrl+Shift+K), written for the shell actually open — cmd,
+  PowerShell or Linux: common folders (desktop, downloads, documents, AppData of
+  the logged-in user, even from a SYSTEM shell and with OneDrive), information
+  (users, disks, processes, services, software, updates, system errors),
+  network and maintenance (SFC, DISM, print spooler, print queue, scheduled
+  restart). Anything that changes the machine is only typed, to be confirmed
+  with Enter
+- Answers terminal queries (cursor position, device attributes): the Windows
+  console needs them to display anything on some machines
+- Search the scrollback with Ctrl+Shift+R: matches are highlighted, Enter and
+  Shift+Enter move between them, Esc closes
+- Zoom with Ctrl+wheel, Ctrl+Shift+Plus and Ctrl+Shift+Minus; Ctrl+Shift+0
+  restores the default size. The chosen size applies to later terminals
+- Full screen with Ctrl+Shift+F, like the remote desktop
 
-**Fichiers**
-- Navigation par fil d'Ariane cliquable, pastilles par type de fichier
-- Vue double volet, retenue d'une session à l'autre : ce poste à gauche, la
-  machine à droite. On glisse d'un volet à l'autre, ou l'on passe par les
-  boutons → et ← ; un téléchargement arrive alors directement dans le dossier
-  local affiché, sans boîte de dialogue
-- Envoi avec fenêtre de fragments en vol, le fichier étant lu au fil de l'eau :
-  ni plafond de taille, ni chargement complet en mémoire
-- Glisser-déposer depuis l'Explorateur, envoi et téléchargement de plusieurs
-  fichiers à la fois : les transferts s'enchaînent dans une file d'attente,
-  avec débit et temps restant. Chaque ligne s'annule ou se relance seule ; les
-  doublons locaux sont numérotés plutôt que remplacés
-- Les dossiers s'envoient et se téléchargent avec toute leur arborescence. Le
-  protocole ne transfère que des fichiers : les sous-dossiers sont recréés un à
-  un, chaque création étant confirmée par une relecture du dossier
-- Envoi vers plusieurs machines à la fois (menu contextuel, palette, bouton
-  « Envoyer des fichiers », ou fichiers glissés sur une machine de la liste) :
-  une session par machine, quatre en parallèle, une destination par famille de
-  système, et une relance qui reprend après les fichiers déjà reçus
-- Création de dossier, renommage, suppression
+**Files**
+- Clickable breadcrumb navigation, file type badges
+- Dual-pane view, remembered across sessions: this PC on the left, the machine
+  on the right. Drag from one pane to the other, or use the → and ← buttons; a
+  download then lands directly in the local folder shown, without a dialog
+- Uploads with a window of chunks in flight, the file being read as it goes:
+  no size limit, never fully loaded in memory
+- Drag and drop from Explorer, upload and download of several files at once:
+  transfers run in a queue, with speed and time remaining. Each row can be
+  cancelled or retried on its own; local duplicates are numbered rather than
+  replaced
+- Folders are uploaded and downloaded with their whole tree. The protocol only
+  transfers files: subfolders are created one by one, each creation being
+  confirmed by re-reading the folder
+- Upload to several machines at once (context menu, palette, "Send files"
+  button, or files dropped on a machine in the list): one session per machine,
+  four in parallel, one destination per OS family, and a retry that resumes
+  after the files already received
+- Downloaded files are marked as coming from the Internet, like a browser
+  does: SmartScreen and Office Protected View apply
+- Create folder, rename, delete
 
 **Administration**
-- Alimentation : réveil Wake-on-LAN, redémarrage, veille, extinction
-- Liste et arrêt des processus distants
-- Informations système : processeur, mémoire, disques, BIOS
-- Ouverture d'une URL sur la machine distante
-- Renommage d'un appareil (F2, menu contextuel ou palette) : le nom affiché
-  dans MeshCentral change pour tous les utilisateurs, le nom réseau de la
-  machine reste le sien
-- Génération de liens de partage publics temporaires, avec code d'intégration
+- Power: Wake-on-LAN, restart, sleep, shut down
+- List and kill remote processes
+- System information: CPU, memory, disks, BIOS
+- Open a URL on the remote machine
+- Rename a device (F2, context menu or palette): the name shown in MeshCentral
+  changes for all users, the machine's network name stays the same
+- Temporary public share links, with embed code
 
 **Application**
-- Sessions regroupées en onglets : Ctrl+Tab et Ctrl+Maj+Tab pour circuler,
-  Ctrl+1 à Ctrl+9 pour atteindre une session, Ctrl+F4 ou clic du milieu pour la
-  fermer. Ces raccourcis ne sont captés qu'à partir de deux sessions ouvertes :
-  seuls, ils gardent tout leur sens sur la machine distante
-- Page web MeshCentral d'une machine par Ctrl+Maj+W, où que l'on se trouve :
-  sur la machine sélectionnée dans la liste, sur celle en surbrillance dans la
-  palette de recherche rapide, et sur celle affichée par une session de bureau
-  à distance
-- Code à deux facteurs demandé une seule fois : le poste est ensuite mémorisé
-  auprès du serveur, pour la durée qu'il autorise ou sans limite au moyen d'un
-  jeton de connexion
-- Fonctionnement dans la zone de notification, démarrage automatique possible
-- Reconnexion automatique après coupure réseau. Le canal de contrôle est
-  surveillé : un websocket resté ouvert mais muet — veille du poste, coupure
-  Wi-Fi, proxy qui oublie la session — est repéré en moins de deux minutes.
-  L'inventaire est relu à la sortie de veille, au retour du réseau, au retour
-  dans la fenêtre et toutes les cinq minutes : l'état des machines ne peut plus
-  rester figé
-- Journal d'erreurs pour le diagnostic
+- Sessions grouped in tabs: Ctrl+Tab and Ctrl+Shift+Tab to cycle, Ctrl+1 to
+  Ctrl+9 to jump to a session, Ctrl+F4 or middle-click to close it. These
+  shortcuts are only captured once two sessions are open: with a single one,
+  they keep their meaning on the remote machine
+- MeshCentral web page of a machine with Ctrl+Shift+W, wherever you are: for
+  the machine selected in the list, the one highlighted in the quick search
+  palette, and the one shown in a remote desktop session
+- Two-factor code asked only once: the PC is then remembered by the server, for
+  as long as it allows, or indefinitely with a login token
+- Runs in the notification area, optional start with Windows
+- Automatic reconnection after a network drop. The control channel is
+  monitored: a websocket left open but silent — PC asleep, Wi-Fi drop, proxy
+  forgetting the session — is detected within two minutes. The device list is
+  refreshed when waking from sleep, when the network comes back, when the
+  window is focused and every five minutes
+- Error log for troubleshooting
 
-## Compilation
+## Building
 
-Nécessite le [SDK .NET 10](https://dotnet.microsoft.com/download).
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 
 ```bash
 dotnet build MeshControl.csproj -c Release
 ```
 
-## Publication
+## Publishing
 
-Produit une application autonome — aucun prérequis .NET sur les postes cibles —
-puis l'empaquette pour Velopack :
+Produces a self-contained application — no .NET prerequisite on target PCs —
+then packages it with Velopack:
 
 ```powershell
-.\publish.ps1            # publie et empaquette
-.\publish.ps1 -Upload    # envoie aussi la release, en brouillon
+.\publish.ps1            # publish and package
+.\publish.ps1 -Upload    # also upload the release, as a draft
 ```
 
-Les fichiers de l'application vont dans `dist/`, les paquets dans `Releases/` :
-`Setup.exe` pour une première installation, et un paquet delta qui ne contient
-que les différences avec la version précédente — quelques centaines de
-kilooctets, là où l'installeur complet en fait 67 mégaoctets.
+Application files go to `dist/`, packages to `Releases/`: `Setup.exe` for a
+first install, and a delta package that only holds the differences with the
+previous version — a few hundred kilobytes, where the full installer weighs
+about 70 megabytes.
 
-Les releases sont publiées sur
-[mesh-control-releases](https://github.com/dch-builds/mesh-control-releases), un
-dépôt public d'où l'application se met à jour seule. L'installation ne réclame
-aucun droit administrateur : elle se fait dans le profil de l'utilisateur.
+Releases are published on
+[mesh-control-releases](https://github.com/dch-builds/mesh-control-releases), a
+public repository the application updates itself from. Installing requires no
+administrator rights: it goes into the user's profile.
 
-> Windows affiche un avertissement SmartScreen au premier lancement,
-> l'exécutable n'étant pas signé numériquement. Cliquer sur « Informations
-> complémentaires » puis « Exécuter quand même ».
+> Windows shows a SmartScreen warning on first launch, as the executable is not
+> digitally signed. Click "More info", then "Run anyway".
 
 ## Configuration
 
-L'adresse du serveur se règle au premier lancement ou dans le volet des
-réglages. Les identifiants sont chiffrés par DPAPI — liés à la session Windows
-de l'utilisateur — et stockés dans `%APPDATA%\Mesh Control\`.
+The server address is set on first launch or in the settings pane. Credentials
+are encrypted with DPAPI — bound to the user's Windows session — and stored in
+`%APPDATA%\Mesh Control\`.
 
-Lorsque le serveur impose un second facteur, le code n'est demandé qu'une fois :
-l'application obtient du serveur un cookie d'appareil de confiance, valable
-`twoFactorCookieDurationDays` jours — 30 par défaut. Le volet des réglages
-permet d'aller plus loin et de créer un **jeton de connexion** propre au poste,
-qui n'expire pas : c'est ce qu'il faut pour un démarrage automatique et des
-reconnexions sans intervention. Le jeton se révoque depuis l'application, ou
-depuis « Mon compte » sur le serveur ; se déconnecter le retire également.
+When the server enforces a second factor, the code is asked only once: the
+application obtains a trusted-device cookie from the server, valid for
+`twoFactorCookieDurationDays` days — 30 by default. The settings pane can go
+further and create a **login token** dedicated to the PC, which does not
+expire: that is what unattended start-up and reconnections need. The token can
+be revoked from the application, or from "My Account" on the server; signing
+out removes it as well.
 
-Certaines fonctions dépendent de la configuration du serveur MeshCentral :
+With a self-signed certificate, the matching option remembers the certificate
+presented on first connection and then refuses any different one: someone in
+the middle of the network cannot impersonate the server.
 
-| Fonction | Prérequis serveur |
+Some features depend on the MeshCentral server configuration:
+
+| Feature | Server requirement |
 |---|---|
-| Terminal SSH | `"ssh": true` dans la section domaine |
-| Presse-papiers | `clipboardget` / `clipboardset` non désactivés |
-| Processus, informations système | droit « Console » sur le groupe d'appareils |
-| Intégration en iframe | `allowFraming` et `allowedFramingOrigins` |
-| Poste mémorisé pour le second facteur | `twoFactorCookieDurationDays` non nul |
-| Jeton de connexion | `passwordRequirements.loginTokens` non désactivé |
+| SSH terminal | `"ssh": true` in the domain section |
+| Clipboard | `clipboardget` / `clipboardset` not disabled |
+| Processes, system information | "Console" right on the device group |
+| Iframe embedding | `allowFraming` and `allowedFramingOrigins` |
+| Remembered PC for the second factor | `twoFactorCookieDurationDays` not zero |
+| Login token | `passwordRequirements.loginTokens` not disabled |
 
-## Organisation du code
+## Code layout
 
 ```
-Core/       Connexion au serveur, protocoles, réglages, journal
-Desktop/    Bureau à distance : session KVM, framebuffer, fenêtre
-SSH/        Terminaux (agent et SSH), émulateur ANSI
-Files/      Navigation et transfert de fichiers
-UI/         Fenêtre principale, volet de réglages, boîtes de dialogue
+Core/       Server connection, protocols, settings, log
+Desktop/    Remote desktop: KVM session, framebuffer, window
+SSH/        Terminals (agent and SSH), ANSI emulator
+Files/      File browsing and transfer
+UI/         Main window, settings pane, dialogs
 ```
 
-## Mentions
+## License
 
-Mesh Control est un client indépendant pour MeshCentral. Il n'est ni affilié ni
-approuvé par le projet MeshCentral. MeshCentral est © Intel Corporation, créé
-par Ylian Saint-Hilaire, sous licence Apache 2.0. Cette application ne contient
-aucun code MeshCentral : elle communique avec les serveurs via leurs interfaces
-publiées.
+Mesh Control is released under the [MIT License](LICENSE). Third-party
+components shipped with the application are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-Windows est une marque du groupe Microsoft. Linux® est une marque déposée de
-Linus Torvalds. Les autres marques appartiennent à leurs propriétaires
-respectifs.
+## Notices
+
+Mesh Control is an independent client for MeshCentral. It is not affiliated
+with or endorsed by the MeshCentral project. MeshCentral is © Intel
+Corporation, created by Ylian Saint-Hilaire, and licensed under the Apache
+License 2.0. This application contains no MeshCentral code: it talks to
+servers through their published interfaces.
+
+Windows is a trademark of the Microsoft group of companies. Linux® is a
+registered trademark of Linus Torvalds. Other trademarks belong to their
+respective owners.
