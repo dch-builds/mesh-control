@@ -98,6 +98,20 @@ public sealed class AppSettings
     public bool DefaultDesktopFit { get; set; } = true;
 
     /// <summary>
+    /// Présentation d'une session de bureau à distance à son ouverture :
+    /// 0 fenêtre habituelle, 1 agrandie (plein écran fenêtré), 2 plein écran.
+    /// </summary>
+    public int DesktopOpenMode { get; set; }
+
+    /// <summary>
+    /// Synchroniser automatiquement le presse-papiers avec la machine distante
+    /// (texte, dans les deux sens). Réglé depuis le bouton du bureau à distance
+    /// et retenu d'une session à l'autre. Faux par défaut : copier un mot de
+    /// passe en local ne doit pas l'envoyer à une machine sans qu'on l'ait voulu.
+    /// </summary>
+    public bool DesktopClipboardSync { get; set; }
+
+    /// <summary>
     /// Taille de police des terminaux, en points. Réglée par le zoom et retenue
     /// d'une session à l'autre : c'est une question de vue, pas de machine.
     /// </summary>

@@ -13,6 +13,76 @@
     <DockPanel x:Name="RootPanel" Focusable="True"
                PreviewKeyDown="Content_PreviewKeyDown"
                PreviewKeyUp="Content_PreviewKeyUp">
+        <!-- Ressources portées par le panneau et non par la fenêtre : en mode
+             onglets, c'est lui qui migre vers la fenêtre hôte. -->
+        <DockPanel.Resources>
+            <!-- Pastille posée sur l'image distante (zoom, vue seule) :
+                 cliquable, elle rappelle un état et permet d'en sortir. -->
+            <Style x:Key="OverlayChip" TargetType="Button">
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Focusable" Value="False"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Chip" Background="#D9000000" CornerRadius="8"
+                                    Padding="12,6">
+                                <StackPanel Orientation="Horizontal">
+                                    <ContentPresenter TextElement.Foreground="#E4E6EA"
+                                                      TextElement.FontSize="12"
+                                                      VerticalAlignment="Center"/>
+                                    <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets"
+                                               FontSize="10" Foreground="#E4E6EA"
+                                               VerticalAlignment="Center" Margin="10,1,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Chip" Property="Background" Value="#F2000000"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- Bouton de la barre flottante du plein écran, sur fond sombre.
+                 Non focalisable : le clavier doit rester au panneau, donc à
+                 la machine distante. -->
+            <Style x:Key="OverlayButton" TargetType="Button">
+                <Setter Property="Foreground" Value="#E4E6EA"/>
+                <Setter Property="FontSize" Value="12"/>
+                <Setter Property="Padding" Value="10,6"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Focusable" Value="False"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                    CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#26FFFFFF"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Bd" Property="Opacity" Value="0.4"/>
+                                    <Setter Property="Cursor" Value="Arrow"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="OverlayGlyph" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="VerticalAlignment" Value="Center"/>
+            </Style>
+        </DockPanel.Resources>
+
         <!-- Barre d'outils. En fenêtre autonome, elle quitte ce panneau pour se
              loger dans la barre de titre (voir MergeToolbarIntoTitleBar) : une
              seule bande au lieu de deux. En mode onglets, elle reste ici. -->
@@ -50,7 +120,7 @@
                 <!-- Contrôles. IsHitTestVisibleInChrome : une fois la barre
                      logée dans la barre de titre, le système capterait sinon
                      les clics comme un glisser de fenêtre. Sans effet ailleurs. -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                <StackPanel x:Name="ToolbarControls" Grid.Column="1" Orientation="Horizontal"
                             HorizontalAlignment="Right" VerticalAlignment="Center"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <!-- Libellés retirés au profit d'info-bulles : les valeurs
@@ -109,7 +179,7 @@
                             Visibility="Collapsed"
                             ToolTip="Relancer la connexion à cette machine"/>
 
-                    <Button Content="Rafraîchir" Style="{StaticResource ToolButton}"
+                    <Button x:Name="RefreshButton" Content="Rafraîchir" Style="{StaticResource ToolButton}"
                             Click="Refresh_Click" Margin="0,0,6,0"
                             ToolTip="Redemander une image complète (Ctrl+Maj+R)"/>
 
@@ -123,11 +193,48 @@
                         </Button.ContextMenu>
                     </Button>
 
-                    <!-- Colle le presse-papiers local en le tapant sur la machine distante -->
-                    <Button x:Name="PasteButton" Content="Coller"
-                            Style="{StaticResource ToolButton}"
-                            Click="Paste_Click" Margin="0,0,6,0"
-                            ToolTip="Saisir le texte du presse-papiers sur la machine distante (Ctrl+Maj+V)"/>
+                    <!-- Les deux façons de coller, réunies en un bloc segmenté :
+                         chacune à un clic, et visiblement liées.
+                         - Coller : presse-papiers distant + Ctrl+V (instantané,
+                           repli automatique sur la frappe si besoin) ;
+                         - Taper : saisie caractère par caractère, pour les
+                           applications qui ignorent Ctrl+V (certains terminaux,
+                           consoles, écrans de connexion). Pendant une saisie,
+                           le même bouton sert à l'interrompre. -->
+                    <Border Background="{StaticResource ControlBrush}" CornerRadius="8"
+                            Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="PasteButton" Content="Coller"
+                                    Style="{StaticResource ToolButton}"
+                                    Background="Transparent"
+                                    Click="Paste_Click"
+                                    ToolTip="Coller le presse-papiers local sur la machine distante (Ctrl+Maj+V)"/>
+                            <Border Width="1" Margin="0,6" Background="{StaticResource SeparatorBrush}"/>
+                            <Button x:Name="PasteTypingButton"
+                                    Style="{StaticResource ToolButton}"
+                                    Background="Transparent"
+                                    Click="PasteAsTyping_Click"
+                                    ToolTip="Coller en simulant la frappe : lent, mais fonctionne partout, même là où Ctrl+V est ignoré (Ctrl+Maj+Alt+V)">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock x:Name="PasteTypingGlyph" Text="&#xE765;"
+                                               FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                               VerticalAlignment="Center" Margin="0,1,6,0"/>
+                                    <TextBlock x:Name="PasteTypingLabel" Text="Taper"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                            <Border Width="1" Margin="0,6" Background="{StaticResource SeparatorBrush}"/>
+                            <!-- Interrupteur : synchronisation automatique du
+                                 presse-papiers dans les deux sens. Mis en
+                                 évidence (bleu) quand il est actif. -->
+                            <Button x:Name="ClipboardSyncButton"
+                                    Style="{StaticResource ToolButton}"
+                                    Background="Transparent"
+                                    Click="ClipboardSync_Click" Padding="9,5">
+                                <TextBlock Text="&#xE895;" FontFamily="Segoe MDL2 Assets" FontSize="13"/>
+                            </Button>
+                        </StackPanel>
+                    </Border>
 
                     <!-- Récupère le presse-papiers de la machine distante -->
                     <Button x:Name="CopyFromRemoteButton" Content="Copier depuis"
@@ -151,8 +258,18 @@
                                    FontFamily="Segoe MDL2 Assets" FontSize="13"/>
                     </Button>
 
+                    <!-- Vue seule : la souris et le clavier ne partent plus
+                         vers la machine. Pour observer sans risque de clic
+                         malencontreux. Mis en évidence quand il est actif. -->
+                    <Button x:Name="ViewOnlyButton"
+                            Style="{StaticResource ToolButton}"
+                            Click="ViewOnly_Click" Padding="9,5" Margin="0,0,6,0"
+                            ToolTip="Vue seule : observer sans envoyer souris ni clavier (Ctrl+Maj+O)">
+                        <TextBlock Text="&#xE890;" FontFamily="Segoe MDL2 Assets" FontSize="13"/>
+                    </Button>
+
                     <!-- Secours : débloque un modificateur resté enfoncé côté distant -->
-                    <Button Content="⌨" Style="{StaticResource ToolButton}"
+                    <Button x:Name="ReleaseModifiersButton" Content="⌨" Style="{StaticResource ToolButton}"
                             Click="ReleaseModifiers_Click" Padding="9,5" Margin="0,0,6,0"
                             ToolTip="Débloquer le clavier distant : relâche Ctrl, Alt, Maj, Win (Ctrl+Maj+D)"/>
 
@@ -189,6 +306,22 @@
                             ToolTip="Autres outils : terminal (Ctrl+Maj+T), fichiers (Ctrl+Maj+E), processus (Ctrl+Maj+P), page web (Ctrl+Maj+W)">
                         <Button.ContextMenu>
                             <ContextMenu x:Name="MoreMenu" Placement="Bottom">
+                                <!-- Boutons de la barre repliés ici quand la
+                                     fenêtre est trop étroite pour les afficher
+                                     (voir ApplyToolbarCompactness). -->
+                                <MenuItem x:Name="OverflowCopyItem" Visibility="Collapsed"
+                                          Header="Copier depuis la machine" InputGestureText="Ctrl+Maj+C"
+                                          Click="CopyFromRemote_Click"/>
+                                <MenuItem x:Name="OverflowScreenshotItem" Visibility="Collapsed"
+                                          Header="Capturer l'écran" InputGestureText="Ctrl+Maj+S"
+                                          Click="Screenshot_Click"/>
+                                <MenuItem x:Name="OverflowZoomItem" Visibility="Collapsed"
+                                          Header="Loupe" InputGestureText="Ctrl+Maj+Z"
+                                          Click="Zoom_Click"/>
+                                <MenuItem x:Name="OverflowReleaseItem" Visibility="Collapsed"
+                                          Header="Débloquer le clavier distant" InputGestureText="Ctrl+Maj+D"
+                                          Click="ReleaseModifiers_Click"/>
+                                <Separator x:Name="OverflowSeparator" Visibility="Collapsed"/>
                                 <MenuItem Header="Terminal" InputGestureText="Ctrl+Maj+T"
                                           Click="OpenTerminal_Click"/>
                                 <MenuItem Header="Fichiers" InputGestureText="Ctrl+Maj+E"
@@ -200,13 +333,6 @@
                                           Click="OpenWebPage_Click"/>
                                 <MenuItem Header="Informations système…"
                                           Click="OpenSystemInfo_Click"/>
-                                <Separator/>
-                                <!-- Repli quand le presse-papiers distant est
-                                     inutilisable, ou quand l'application distante
-                                     ignore Ctrl+V (certains terminaux). -->
-                                <MenuItem Header="Coller en simulant la frappe"
-                                          Click="PasteAsTyping_Click"
-                                          ToolTip="Saisit le texte caractère par caractère : lent, mais fonctionne partout"/>
                                 <Separator/>
                                 <!-- Sous-menu plutôt qu'un contrôle de plus dans
                                      la barre, déjà dense. -->
@@ -284,6 +410,7 @@
         <!-- AllowDrop : des fichiers glissés depuis l'Explorateur sur l'écran
              distant partent vers la machine (dossier de transfert habituel). -->
         <Grid x:Name="DisplayArea" Background="#1B1D21" AllowDrop="True"
+              PreviewMouseMove="DisplayArea_PreviewMouseMove"
               DragEnter="DisplayArea_DragOver" DragOver="DisplayArea_DragOver"
               DragLeave="DisplayArea_DragLeave" Drop="DisplayArea_Drop">
             <!-- ClipToBounds : agrandie par la loupe, l'image déborde de son
@@ -326,7 +453,7 @@
                     CornerRadius="8" Padding="14,8"
                     VerticalAlignment="Top" HorizontalAlignment="Center"
                     Margin="0,18,0,0">
-                <TextBlock Text="Plein écran — Ctrl+Maj+F pour revenir"
+                <TextBlock Text="Plein écran — souris en haut de l'écran pour la barre d'outils, Ctrl+Maj+F pour revenir"
                            Foreground="#E4E6EA" FontSize="12"/>
             </Border>
 
@@ -355,31 +482,104 @@
 
             <!-- Rappel du zoom en cours, cliquable pour revenir à la vue entière. -->
             <Button x:Name="ZoomBadge" Visibility="Collapsed"
-                    Click="ZoomBadge_Click" Cursor="Hand" Focusable="False"
+                    Style="{StaticResource OverlayChip}"
+                    Click="ZoomBadge_Click"
                     VerticalAlignment="Top" HorizontalAlignment="Right"
                     Margin="0,14,14,0"
-                    ToolTip="Revenir à la vue entière (Ctrl+Maj+Z)">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Chip" Background="#D9000000" CornerRadius="8"
-                                Padding="12,6">
-                            <StackPanel Orientation="Horizontal">
-                                <ContentPresenter TextElement.Foreground="#E4E6EA"
-                                                  TextElement.FontSize="12"
-                                                  VerticalAlignment="Center"/>
-                                <TextBlock Text="&#xE711;" FontFamily="Segoe MDL2 Assets"
-                                           FontSize="10" Foreground="#E4E6EA"
-                                           VerticalAlignment="Center" Margin="10,1,0,0"/>
-                            </StackPanel>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Chip" Property="Background" Value="#F2000000"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
+                    ToolTip="Revenir à la vue entière (Ctrl+Maj+Z)"/>
+
+            <!-- Rappel permanent de la vue seule : sans lui, on croirait la
+                 session figée. Cliquable pour reprendre la main. -->
+            <Button x:Name="ViewOnlyBadge" Visibility="Collapsed"
+                    Style="{StaticResource OverlayChip}"
+                    Click="ViewOnly_Click"
+                    VerticalAlignment="Top" HorizontalAlignment="Left"
+                    Margin="14,14,0,0"
+                    ToolTip="Reprendre le contrôle (Ctrl+Maj+O)">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE890;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                               VerticalAlignment="Center" Margin="0,1,8,0"/>
+                    <TextBlock Text="Vue seule" VerticalAlignment="Center"/>
+                </StackPanel>
             </Button>
+
+            <!-- Barre flottante du plein écran : apparaît quand la souris
+                 touche le bord haut de l'écran, disparaît quand elle s'en
+                 éloigne. Donne accès aux actions courantes sans quitter le
+                 plein écran ni retenir de raccourci. -->
+            <Border x:Name="FullscreenBar" Visibility="Collapsed"
+                    VerticalAlignment="Top" HorizontalAlignment="Center"
+                    Background="#EB1B1D21" BorderBrush="#33FFFFFF" BorderThickness="1,0,1,1"
+                    CornerRadius="0,0,10,10" Padding="8,5"
+                    MouseEnter="FullscreenBar_MouseEnter"
+                    MouseLeave="FullscreenBar_MouseLeave">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="2"
+                                      Direction="270" Opacity="0.5"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <Ellipse x:Name="FullscreenBarDot" Width="8" Height="8"
+                             Fill="{StaticResource OnlineBrush}"
+                             VerticalAlignment="Center" Margin="6,0,8,0"/>
+                    <TextBlock x:Name="FullscreenBarTitle" Foreground="#E4E6EA"
+                               FontSize="12" FontWeight="SemiBold"
+                               VerticalAlignment="Center" MaxWidth="220"
+                               TextTrimming="CharacterEllipsis" Margin="0,0,10,0"/>
+                    <Border Width="1" Background="#33FFFFFF" Margin="2,5"/>
+
+                    <Button x:Name="BarPasteButton" Style="{StaticResource OverlayButton}"
+                            Click="Paste_Click" Margin="4,0,0,0"
+                            ToolTip="Coller le presse-papiers local (Ctrl+Maj+V)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE77F;" Style="{StaticResource OverlayGlyph}" Margin="0,1,6,0"/>
+                            <TextBlock Text="Coller" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="BarTypingButton" Style="{StaticResource OverlayButton}"
+                            Click="PasteAsTyping_Click"
+                            ToolTip="Coller en simulant la frappe (Ctrl+Maj+Alt+V)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="BarTypingGlyph" Text="&#xE765;"
+                                       Style="{StaticResource OverlayGlyph}" Margin="0,1,6,0"/>
+                            <TextBlock x:Name="BarTypingLabel" Text="Taper" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="BarSyncButton" Style="{StaticResource OverlayButton}"
+                            Click="ClipboardSync_Click" Padding="9,6">
+                        <TextBlock Text="&#xE895;" Style="{StaticResource OverlayGlyph}"/>
+                    </Button>
+
+                    <Border Width="1" Background="#33FFFFFF" Margin="4,5"/>
+
+                    <Button x:Name="BarShortcutsButton" Style="{StaticResource OverlayButton}"
+                            Content="Raccourcis ▾" Click="Shortcuts_Click"
+                            ToolTip="Combinaisons envoyées à la machine distante"/>
+                    <Button x:Name="BarCtrlAltDelButton" Style="{StaticResource OverlayButton}"
+                            Content="Ctrl+Alt+Suppr" Click="CtrlAltDel_Click"
+                            ToolTip="Envoyer Ctrl+Alt+Suppr (Ctrl+Maj+Suppr)"/>
+                    <Button x:Name="BarViewOnlyButton" Style="{StaticResource OverlayButton}"
+                            Click="ViewOnly_Click" Padding="9,6"
+                            ToolTip="Vue seule (Ctrl+Maj+O)">
+                        <TextBlock Text="&#xE890;" Style="{StaticResource OverlayGlyph}"/>
+                    </Button>
+                    <Button Style="{StaticResource OverlayButton}"
+                            Click="Screenshot_Click" Padding="9,6"
+                            ToolTip="Capturer l'écran distant (Ctrl+Maj+S)">
+                        <TextBlock Text="&#xE722;" Style="{StaticResource OverlayGlyph}"/>
+                    </Button>
+
+                    <Border Width="1" Background="#33FFFFFF" Margin="4,5"/>
+
+                    <Button Style="{StaticResource OverlayButton}"
+                            Click="Fullscreen_Click"
+                            ToolTip="Quitter le plein écran (Ctrl+Maj+F)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE73F;" Style="{StaticResource OverlayGlyph}" Margin="0,1,6,0"/>
+                            <TextBlock Text="Quitter" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
 
             <!-- Fichiers glissés au-dessus de l'écran : rappelle où ils iront. -->
             <Grid x:Name="DropOverlay" Visibility="Collapsed" IsHitTestVisible="False"

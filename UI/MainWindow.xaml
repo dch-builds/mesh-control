@@ -685,6 +685,16 @@
                             <CheckBox x:Name="DefaultFitCheck"
                                       Content="Ajuster l'écran à la fenêtre"/>
 
+                            <TextBlock Text="Ouverture des sessions"
+                                       Style="{StaticResource CaptionText}" Margin="0,14,0,5"/>
+                            <ComboBox x:Name="DesktopOpenModeCombo">
+                                <ComboBoxItem Content="Fenêtre habituelle" IsSelected="True"/>
+                                <ComboBoxItem Content="Plein écran fenêtré (agrandie)"/>
+                                <ComboBoxItem Content="Plein écran"/>
+                            </ComboBox>
+                            <TextBlock Style="{StaticResource FieldHint}"
+                                       Text="En plein écran : souris en haut de l'écran pour la barre d'outils, Ctrl+Maj+F pour revenir."/>
+
                             <Border Height="1" Background="{StaticResource SeparatorBrush}"
                                     Margin="0,14,0,14"/>
 

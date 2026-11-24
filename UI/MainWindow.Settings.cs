@@ -79,6 +79,7 @@ public partial class MainWindow
         SelectFrameRate(_settings.DefaultDesktopFrameRate);
         SelectScale(_settings.DefaultDesktopScale);
         DefaultFitCheck.IsChecked = _settings.DefaultDesktopFit;
+        DesktopOpenModeCombo.SelectedIndex = Math.Clamp(_settings.DesktopOpenMode, 0, 2);
         TabbedSessionsCheck.IsChecked = _settings.UseTabbedSessions;
 
         // Recherche rapide
@@ -168,6 +169,7 @@ public partial class MainWindow
         _settings.DefaultDesktopFrameRate = SelectedFrameRate();
         _settings.DefaultDesktopScale = SelectedScale();
         _settings.DefaultDesktopFit = DefaultFitCheck.IsChecked == true;
+        _settings.DesktopOpenMode = Math.Max(0, DesktopOpenModeCombo.SelectedIndex);
         _settings.UseTabbedSessions = TabbedSessionsCheck.IsChecked == true;
 
         // Recherche rapide

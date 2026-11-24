@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Shell;
 
 namespace MeshControl.UI;
 
@@ -14,7 +15,8 @@ namespace MeshControl.UI;
 public static class FullscreenController
 {
     private sealed record SavedState(
-        WindowStyle Style, WindowState State, ResizeMode Resize, Rect Bounds);
+        WindowStyle Style, WindowState State, ResizeMode Resize, Rect Bounds,
+        object Chrome);
 
     private static readonly Dictionary<Window, SavedState> Saved = new();
 
@@ -30,6 +32,7 @@ public static class FullscreenController
             // restaurée dépasserait de l'écran.
             window.WindowStyle = saved.Style;
             window.ResizeMode = saved.Resize;
+            RestoreChrome(window, saved.Chrome);
             ChromeWindow.SetIsFullscreen(window, false);
             ChromeWindow.SetRoundedCorners(window, true);
 
@@ -48,7 +51,8 @@ public static class FullscreenController
 
         Saved[window] = new SavedState(
             window.WindowStyle, window.WindowState, window.ResizeMode,
-            RestoreGeometry(window));
+            RestoreGeometry(window),
+            window.ReadLocalValue(WindowChrome.WindowChromeProperty));
         // Une fenêtre fermée en plein écran laisserait une entrée orpheline.
         window.Closed += (_, _) => Saved.Remove(window);
 
@@ -60,6 +64,22 @@ public static class FullscreenController
         window.WindowState = WindowState.Normal;
         window.WindowStyle = WindowStyle.None;
         window.ResizeMode = ResizeMode.NoResize;
+        // Le cadre dessiné par l'application déclare une zone de titre (44 px)
+        // et une bordure de redimensionnement : Windows les traite comme hors
+        // contenu, si bien que le haut de l'écran déplaçait la fenêtre au lieu
+        // d'atteindre l'image distante — et que la barre flottante, qui
+        // s'ouvre au bord haut, ne pouvait jamais apparaître.
+        if (WindowChrome.GetWindowChrome(window) is not null)
+        {
+            WindowChrome.SetWindowChrome(window, new WindowChrome
+            {
+                CaptionHeight = 0,
+                ResizeBorderThickness = new Thickness(0),
+                GlassFrameThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(0),
+                UseAeroCaptionButtons = false,
+            });
+        }
         ChromeWindow.SetIsFullscreen(window, true);
         ChromeWindow.SetRoundedCorners(window, false);
 
@@ -69,6 +89,18 @@ public static class FullscreenController
         window.Width = bounds.Width;
         window.Height = bounds.Height;
         return true;
+    }
+
+    /// <summary>
+    /// Rend à la fenêtre le cadre qu'elle avait : sa valeur locale s'il y en
+    /// avait une, sinon celle de son style.
+    /// </summary>
+    private static void RestoreChrome(Window window, object chrome)
+    {
+        if (chrome == DependencyProperty.UnsetValue)
+            window.ClearValue(WindowChrome.WindowChromeProperty);
+        else
+            window.SetValue(WindowChrome.WindowChromeProperty, chrome);
     }
 
     /// <summary>Sort du plein écran ; sans effet si la fenêtre n'y est pas.</summary>

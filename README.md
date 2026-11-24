@@ -37,7 +37,16 @@ standard.
   Ctrl+Maj+Suppr envoie Ctrl+Alt+Suppr
 - Autres outils de la machine sans quitter le bureau : terminal (Ctrl+Maj+T),
   fichiers (Ctrl+Maj+E), processus (Ctrl+Maj+P), page web (Ctrl+Maj+W)
-- Plein écran par Ctrl+Maj+F : barres et bandeau d'onglets masqués
+- Plein écran par Ctrl+Maj+F : barres et bandeau d'onglets masqués. La souris
+  portée en haut de l'écran fait descendre une barre flottante : coller, taper,
+  synchronisation du presse-papiers, raccourcis, Ctrl+Alt+Suppr, vue seule,
+  capture et sortie du plein écran
+- Ouverture des sessions au choix dans les réglages : fenêtre habituelle,
+  agrandie ou plein écran
+- Vue seule (bouton œil ou Ctrl+Maj+O) : l'image reste à jour mais ni souris ni
+  clavier ne partent vers la machine ; un badge le rappelle sur l'écran
+- Barre d'outils qui se resserre sur une fenêtre étroite : libellés réduits à
+  leur icône, puis outils secondaires repliés dans le menu « ⋯ »
 - Loupe (bouton ou Ctrl+Maj+Z) : on trace un rectangle sur l'écran distant et
   la zone remplit la fenêtre, la souris restant utilisable. Le même geste
   revient à la vue entière ; Maj+clic sur la loupe agrandit encore
@@ -58,7 +67,10 @@ standard.
   machine distante puis envoie Ctrl+V — instantané, quelle que soit la longueur
   du texte. Si le serveur refuse l'écriture (`clipboardset`) ou si l'agent ne la
   confirme pas, la saisie caractère par caractère prend le relais ; elle reste
-  accessible à la demande, pour les applications qui ignorent Ctrl+V
+  accessible à la demande (bouton « Taper » ou Ctrl+Maj+Alt+V), pour les
+  applications qui ignorent Ctrl+V
+- Synchronisation automatique du presse-papiers (bouton ⇄, désactivée par
+  défaut) : ce qui est copié d'un côté est disponible de l'autre, en texte
 
 **Terminal**
 - Via l'agent : invite de commandes, PowerShell, shell utilisateur, et sur Linux

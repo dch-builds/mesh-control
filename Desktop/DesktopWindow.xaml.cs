@@ -141,6 +141,11 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         _fullscreen.Changed += OnFullscreenChanged;
         ApplyDefaultsFromSettings();
         ApplyFitMode();
+        InitializeClipboardSync();
+        InitializeFullscreenBar();
+        InitializeToolbarLayout();
+        ApplyOpenModeOnFirstDisplay();
+        UpdateInputControls();
 
         TitleText.Text = node.Name;
         _session.FrameUpdated += OnFrameUpdated;
@@ -451,6 +456,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     // ce qui reste correct quel que soit le mode d'affichage actif.
     private void Screen_MouseMove(object sender, MouseEventArgs e)
     {
+        if (_viewOnly) return;
         if (TryMapToRemote(e.GetPosition((IInputElement)sender), out int x, out int y))
             _session.SendMouseMove(x, y);
     }
@@ -460,6 +466,8 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // Donner le focus au panneau racine (et non à la fenêtre) : c'est lui qui
         // porte les gestionnaires clavier, y compris en mode onglets.
         RootPanel.Focus();
+
+        if (_viewOnly) return;
 
         // Boutons latéraux : le protocole KVM ne transporte que les trois
         // boutons principaux. On les traduit en touches de navigation, celles
@@ -494,6 +502,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         if (sender is UIElement image && image.IsMouseCaptured && !AnyMouseButtonPressed)
             image.ReleaseMouseCapture();
 
+        if (_viewOnly) return;
         if (!TryMapToRemote(e.GetPosition((IInputElement)sender), out int x, out int y)) return;
         var button = MapButton(e.ChangedButton);
         if (button is null) return;
@@ -517,6 +526,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
     private void Screen_MouseWheel(object sender, MouseWheelEventArgs e)
     {
+        if (_viewOnly) return;
         if (TryMapToRemote(e.GetPosition((IInputElement)sender), out int x, out int y))
             _session.SendScroll(e.Delta, x, y); // WPF Delta déjà en multiples de 120
     }
@@ -554,6 +564,17 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
             return;
         }
 
+        // Ctrl+Maj+Alt+V : collage en simulant la frappe. Avec Alt enfoncé, WPF
+        // livre la touche sous Key.System, la vraie lettre étant dans SystemKey.
+        if (ctrlShift && Keyboard.Modifiers.HasFlag(ModifierKeys.Alt)
+            && e.Key == Key.System && e.SystemKey == Key.V)
+        {
+            e.Handled = true;
+            _session.ReleaseModifiers();
+            PasteAsTyping_Click(this, new RoutedEventArgs());
+            return;
+        }
+
         // Bascule d'écran : uniquement quand la machine en a plusieurs, sinon
         // Ctrl+Maj+flèches doit rester disponible côté distant (sélection de
         // texte par mot, par exemple).
@@ -567,7 +588,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
         if (ctrlShift && e.Key is Key.V or Key.C or Key.S or Key.T or Key.E or Key.P or Key.W
                                or Key.F or Key.R or Key.D or Key.A or Key.Z or Key.B
-                               or Key.Delete)
+                               or Key.O or Key.Delete)
         {
             e.Handled = true;
             // Ctrl et Maj ont déjà été transmis « enfoncés » par leurs propres
@@ -590,17 +611,23 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
                 case Key.A: ToggleFit(); break;
                 case Key.Z: ToggleZoom(); break;
                 case Key.B: Reboot_Click(this, new RoutedEventArgs()); break;
+                case Key.O: SetViewOnly(!_viewOnly); break;
 
                 // Ctrl+Maj+Suppr pour Ctrl+Alt+Suppr : la vraie combinaison est
                 // confisquée par Windows en local. On passe par la commande KVM
                 // dédiée, la seule qui atteigne l'écran de sécurité.
                 case Key.Delete:
-                    _session.SendCtrlAltDel();
-                    StatsText.Text = "Envoyé : Ctrl+Alt+Suppr";
+                    SendCtrlAltDel();
                     break;
             }
             return;
         }
+
+        // Vue seule : rien ne part. La touche n'est pas marquée traitée, pour
+        // que les raccourcis locaux (Alt+F4 par exemple) fonctionnent. Les
+        // relâchements, eux, partent toujours : ils ne peuvent rien déclencher
+        // et évitent qu'une touche reste enfoncée côté distant.
+        if (_viewOnly) return;
 
         if (SendVirtualKey(e.Key, down: true)) e.Handled = true;
     }
@@ -688,6 +715,9 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
                 return;
             }
 
+            // Référence de la synchronisation : ce texte est désormais des deux
+            // côtés, il ne doit pas repartir vers la machine.
+            _remoteClipKnown = text;
             Clipboard.SetText(text);
             StatsText.Text = $"Copié ({text.Length} car.)";
             Log.Info($"Presse-papiers récupéré de {_node.Name} ({text.Length} caractères)",
@@ -755,13 +785,16 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // Le menu est reconstruit à chaque ouverture : l'OS détecté peut avoir
         // été précisé entre-temps par le serveur.
         BuildShortcutsMenu();
-        ShortcutsMenu.PlacementTarget = ShortcutsButton;
+        // Ouvert depuis la barre d'outils ou depuis la barre du plein écran :
+        // le menu se place sous le bouton cliqué.
+        ShortcutsMenu.PlacementTarget = sender as UIElement ?? ShortcutsButton;
         ShortcutsMenu.IsOpen = true;
     }
 
     private void Shortcut_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { Tag: RemoteShortcut shortcut }) return;
+        if (RejectedByViewOnly()) return;
         _session.SendChord(shortcut.Modifiers, shortcut.Key, shortcut.Extended);
         StatsText.Text = $"Envoyé : {shortcut.Label}";
     }
@@ -1020,10 +1053,44 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         RootPanel.Focus();
     }
 
-    private void OnFullscreenChanged(bool fullscreen) =>
+    /// <summary>
+    /// Ouverture agrandie ou en plein écran, selon le réglage. Appliquée une
+    /// seule fois, au premier affichage : c'est alors seulement que l'on sait
+    /// quelle fenêtre héberge la session (la sienne, ou celle des onglets).
+    /// </summary>
+    private void ApplyOpenModeOnFirstDisplay()
+    {
+        var mode = _settings.DesktopOpenMode;
+        if (mode is not (1 or 2)) return;
+
+        // Fenêtre autonome : agrandie avant même d'apparaître, sans saut
+        // visible. En mode onglets, cette fenêtre porteuse n'est jamais montrée.
+        if (mode == 1) WindowState = WindowState.Maximized;
+
+        RoutedEventHandler? onLoaded = null;
+        onLoaded = (_, _) =>
+        {
+            RootPanel.Loaded -= onLoaded;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (Window.GetWindow(RootPanel) is not { } host) return;
+                // Une autre session a déjà mis la fenêtre des onglets en plein écran.
+                if (UI.FullscreenController.IsFullscreen(host)) return;
+
+                if (mode == 1) host.WindowState = WindowState.Maximized;
+                else ToggleFullscreen();
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
+        };
+        RootPanel.Loaded += onLoaded;
+    }
+
+    private void OnFullscreenChanged(bool fullscreen)
+    {
         FullscreenButton.ToolTip = fullscreen
             ? "Quitter le plein écran (Ctrl+Maj+F)"
             : "Plein écran (Ctrl+Maj+F)";
+        if (!fullscreen) HideFullscreenBar();
+    }
 
     // MARK: - Capture d'écran
 
@@ -1121,14 +1188,42 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     /// </summary>
     private async void Paste_Click(object sender, RoutedEventArgs e)
     {
+        // Une saisie est en cours (Ctrl+Maj+V contourne le bouton grisé) : on
+        // ne l'interrompt pas par surprise, le bouton « Arrêter » est là pour ça.
+        if (_typing)
+        {
+            StatsText.Text = "Saisie en cours — « Arrêter » pour l'interrompre.";
+            return;
+        }
+        if (_pasteBusy || RejectedByViewOnly()) return;
+
         if (ReadClipboardText() is not { } text) return;
+
+        // Synchronisation active et texte déjà présent côté distant : Ctrl+V
+        // suffit, sans nouvel aller-retour.
+        if (_clipboardSync && _remoteClipboardWritable == true
+            && _remoteClipKnown is not null && SameClipboardText(text, _remoteClipKnown))
+        {
+            _session.SendChord(new[] { Vk.Ctrl }, Vk.Letter('V'));
+            StatsText.Text = $"Collé ({text.Length} car.)";
+            return;
+        }
 
         if (_remoteClipboardWritable != false && text.Length <= MaxRemoteClipboardLength)
         {
-            PasteButton.IsEnabled = false;
+            _pasteBusy = true;
+            UpdateInputControls();
             bool pasted;
-            try { pasted = await TryPasteViaRemoteClipboardAsync(text); }
-            finally { PasteButton.IsEnabled = true; }
+            try
+            {
+                await WaitForClipboardSyncIdleAsync();
+                pasted = await TryPasteViaRemoteClipboardAsync(text);
+            }
+            finally
+            {
+                _pasteBusy = false;
+                UpdateInputControls();
+            }
 
             if (pasted) return;
         }
@@ -1137,12 +1232,30 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     }
 
     /// <summary>
+    /// Laisse finir un échange de synchronisation en cours : sa réponse
+    /// pourrait sinon être prise pour celle de la vérification du collage.
+    /// </summary>
+    private async Task WaitForClipboardSyncIdleAsync()
+    {
+        for (int i = 0; i < 80 && _clipboardSyncBusy; i++)
+            await Task.Delay(50);
+    }
+
+    /// <summary>
     /// Colle en simulant la frappe, sans passer par le presse-papiers distant.
     /// Utile quand l'application distante ignore Ctrl+V — certains terminaux
-    /// attendent Ctrl+Maj+V.
+    /// attendent Ctrl+Maj+V. Pendant une saisie, le même bouton l'interrompt :
+    /// un long texte immobilise sinon la machine distante sans recours.
     /// </summary>
     private async void PasteAsTyping_Click(object sender, RoutedEventArgs e)
     {
+        if (_typing)
+        {
+            _pasteCts?.Cancel();
+            return;
+        }
+        if (RejectedByViewOnly()) return;
+
         if (ReadClipboardText() is { } text) await PasteByTypingAsync(text);
     }
 
@@ -1161,6 +1274,10 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         {
             StatsText.Text = "Envoi vers le presse-papiers distant…";
             await _connection.SetRemoteClipboardAsync(_node.Id, text);
+            // Référence de la synchronisation : ce texte n'est pas à recopier en
+            // local. La lecture suivante confirmera ce que la machine a gardé.
+            _remoteClipKnown = text;
+            _remoteClipRebaseline = true;
 
             if (_remoteClipboardWritable is null)
             {
@@ -1168,6 +1285,8 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
                 // attend devant son écran. Le repli, lui, fonctionne toujours.
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 var remote = await _connection.GetRemoteClipboardAsync(_node.Id, timeout.Token);
+                _remoteClipKnown = remote;
+                _remoteClipRebaseline = false;
                 _remoteClipboardWritable = SameBeginning(remote, text);
 
                 if (_remoteClipboardWritable == false)
@@ -1256,20 +1375,25 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
     private CancellationTokenSource? _pasteCts;
 
+    /// <summary>Vrai pendant une saisie : le bouton « Taper » devient « Arrêter ».</summary>
+    private bool _typing;
+
     private async Task SendClipboardTextAsync(string text)
     {
         // Une frappe déjà en cours est annulée : deux saisies simultanées
         // entrelaceraient les caractères.
         _pasteCts?.Cancel();
-        _pasteCts = new CancellationTokenSource();
-        var token = _pasteCts.Token;
+        var cts = new CancellationTokenSource();
+        _pasteCts = cts;
+        var token = cts.Token;
 
-        PasteButton.IsEnabled = false;
+        SetTypingState(true);
         try
         {
             StatsText.Text = $"Saisie de {text.Length} caractères…";
             await _session.SendTextAsync(text, token);
             if (!token.IsCancellationRequested) StatsText.Text = "Texte saisi.";
+            else StatsText.Text = "Saisie interrompue.";
         }
         catch (OperationCanceledException)
         {
@@ -1277,8 +1401,35 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         }
         finally
         {
-            PasteButton.IsEnabled = true;
+            // Seule la dernière saisie lancée rétablit les boutons.
+            if (ReferenceEquals(_pasteCts, cts))
+            {
+                _pasteCts = null;
+                SetTypingState(false);
+            }
+            cts.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Bascule le bloc de collage entre l'état normal et l'état « saisie en
+    /// cours » : Coller est grisé, Taper devient Arrêter.
+    /// </summary>
+    private void SetTypingState(bool typing)
+    {
+        _typing = typing;
+        UpdateInputControls();
+        BarTypingGlyph.Text = typing ? "\uE71A" : "\uE765";
+        BarTypingLabel.Text = typing ? "Arrêter" : "Taper";
+        BarTypingButton.ToolTip = typing
+            ? "Interrompre la saisie en cours"
+            : "Coller en simulant la frappe (Ctrl+Maj+Alt+V)";
+        PasteTypingGlyph.Text = typing ? "\uE71A" : "\uE765"; // Stop / Clavier
+        PasteTypingLabel.Text = typing ? "Arrêter" : "Taper";
+        PasteTypingButton.ToolTip = typing
+            ? "Interrompre la saisie en cours"
+            : "Coller en simulant la frappe : lent, mais fonctionne partout, "
+              + "même là où Ctrl+V est ignoré (Ctrl+Maj+Alt+V)";
     }
 
     // MARK: - Alimentation
