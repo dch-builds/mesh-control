@@ -32,8 +32,8 @@ mises à jour.
 - Décodage natif du protocole KVM (tuiles JPEG, trames jumbo)
 - Cadence réglable de 5 à 40 images/s, trois niveaux de qualité
 - Souris, molette, boutons latéraux et clavier complet (codes VK Windows). La
-  touche Windows n'est pas transmise — le poste local l'intercepte de toute
-  façon — et s'envoie par le menu « Raccourcis »
+  touche Windows n'est pas transmise (le poste local l'intercepte de toute
+  façon) et s'envoie par le menu « Raccourcis »
 - Raccourcis prédéfinis adaptés à Windows ou Linux
 - Raccourcis locaux : Ctrl+Maj+R redemande une image complète, Ctrl+Maj+A
   bascule l'ajustement à la fenêtre, Ctrl+Maj+D débloque le clavier distant et
@@ -58,16 +58,16 @@ mises à jour.
   de la machine, même au-delà de la reprise automatique
 - Fichiers et dossiers glissés depuis l'Explorateur sur l'écran distant : une
   boîte demande le dossier d'arrivée et propose les emplacements courants de
-  la machine — bureau (OneDrive compris), téléchargements et documents de
+  la machine : bureau (OneDrive compris), téléchargements et documents de
   chaque utilisateur, bureau public, disques ; sous Linux, les dossiers
   personnels, `/tmp` et `/`. « Parcourir… » permet de naviguer dans les
   dossiers de la machine pour en choisir un autre ; le chemin reste aussi
   modifiable à la main, et le dernier dossier choisi est reproposé.
   Progression dans la barre d'état
-- Le flux s'interrompt dès que la session n'est plus regardée — onglet passé à
-  l'arrière-plan, fenêtre réduite — et reprend sur une image complète
+- Le flux s'interrompt dès que la session n'est plus regardée (onglet passé à
+  l'arrière-plan, fenêtre réduite) et reprend sur une image complète
 - Presse-papiers dans les deux sens. Le collage écrit le presse-papiers de la
-  machine distante puis envoie Ctrl+V — instantané, quelle que soit la longueur
+  machine distante puis envoie Ctrl+V : instantané, quelle que soit la longueur
   du texte. Si le serveur refuse l'écriture (`clipboardset`) ou si l'agent ne la
   confirme pas, la saisie caractère par caractère prend le relais ; elle reste
   accessible à la demande (bouton « Taper » ou Ctrl+Maj+Alt+V), pour les
@@ -84,8 +84,8 @@ mises à jour.
   suivante, Ctrl+Maj+Début et Ctrl+Maj+Fin pour aller d'un bout à l'autre. Une
   glissière paraît sur le bord droit dès que l'on remonte, et toute frappe
   ramène en bas
-- Sélection à la souris : glisser pour sélectionner, double-clic pour un mot —
-  chemins et adresses compris —, triple-clic pour une ligne. Ctrl+C copie la
+- Sélection à la souris : glisser pour sélectionner, double-clic pour un mot
+  (chemins et adresses compris), triple-clic pour une ligne. Ctrl+C copie la
   sélection (sans sélection, il interrompt la commande), Ctrl+Maj+C copie la
   sélection ou tout le terminal ; clic du milieu pour coller
 - Clic droit : copier, coller, tout copier, rechercher, effacer, taille du
@@ -96,8 +96,8 @@ mises à jour.
 - Session fermée : Entrée la rouvre. Les messages de l'agent (attente de
   l'accord de l'utilisateur, refus) s'affichent dans le terminal, et un
   terminal resté muet le signale au bout de quelques secondes
-- Menu « Commandes » (Ctrl+Maj+K), écrit pour le shell ouvert — cmd,
-  PowerShell ou Linux : dossiers courants (bureau, téléchargements, documents,
+- Menu « Commandes » (Ctrl+Maj+K), écrit pour le shell ouvert (cmd,
+  PowerShell ou Linux) : dossiers courants (bureau, téléchargements, documents,
   AppData de l'utilisateur connecté, même depuis un shell SYSTEM et avec
   OneDrive), informations (utilisateurs, disques, processus, services,
   logiciels, mises à jour, erreurs système), réseau et maintenance (SFC, DISM,
@@ -156,8 +156,8 @@ mises à jour.
   jeton de connexion
 - Fonctionnement dans la zone de notification, démarrage automatique possible
 - Reconnexion automatique après coupure réseau. Le canal de contrôle est
-  surveillé : un websocket resté ouvert mais muet — veille du poste, coupure
-  Wi-Fi, proxy qui oublie la session — est repéré en moins de deux minutes.
+  surveillé : un websocket resté ouvert mais muet (veille du poste, coupure
+  Wi-Fi, proxy qui oublie la session) est repéré en moins de deux minutes.
   L'inventaire est relu à la sortie de veille, au retour du réseau, au retour
   dans la fenêtre et toutes les cinq minutes : l'état des machines ne peut plus
   rester figé
@@ -173,7 +173,7 @@ dotnet build MeshControl.csproj -c Release
 
 ## Publication
 
-Produit une application autonome — aucun prérequis .NET sur les postes cibles —
+Produit une application autonome (aucun prérequis .NET sur les postes cibles),
 puis l'empaquette pour Velopack :
 
 ```powershell
@@ -183,7 +183,7 @@ puis l'empaquette pour Velopack :
 
 Les fichiers de l'application vont dans `dist/`, les paquets dans `Releases/` :
 `Setup.exe` pour une première installation, et un paquet delta qui ne contient
-que les différences avec la version précédente — quelques centaines de
+que les différences avec la version précédente : quelques centaines de
 kilooctets, là où l'installeur complet en fait 67 mégaoctets.
 
 Les releases sont publiées sur
@@ -198,12 +198,12 @@ aucun droit administrateur : elle se fait dans le profil de l'utilisateur.
 ## Configuration
 
 L'adresse du serveur se règle au premier lancement ou dans le volet des
-réglages. Les identifiants sont chiffrés par DPAPI — liés à la session Windows
-de l'utilisateur — et stockés dans `%APPDATA%\Mesh Control\`.
+réglages. Les identifiants sont chiffrés par DPAPI (liés à la session Windows
+de l'utilisateur) et stockés dans `%APPDATA%\Mesh Control\`.
 
 Lorsque le serveur impose un second facteur, le code n'est demandé qu'une fois :
 l'application obtient du serveur un cookie d'appareil de confiance, valable
-`twoFactorCookieDurationDays` jours — 30 par défaut. Le volet des réglages
+`twoFactorCookieDurationDays` jours (30 par défaut). Le volet des réglages
 permet d'aller plus loin et de créer un **jeton de connexion** propre au poste,
 qui n'expire pas : c'est ce qu'il faut pour un démarrage automatique et des
 reconnexions sans intervention. Le jeton se révoque depuis l'application, ou
@@ -251,3 +251,20 @@ publiées.
 Windows est une marque du groupe Microsoft. Linux® est une marque déposée de
 Linus Torvalds. Les autres marques appartiennent à leurs propriétaires
 respectifs.
+
+## Un mot sur l'IA
+
+Une partie de ce code a été écrite avec l'aide d'un assistant d'intelligence
+artificielle (Claude, d'Anthropic) ; les commits concernés le mentionnent. Je
+préfère le dire clairement.
+
+Il n'a pas été généré à l'aveugle. J'ai conçu les fonctions, décidé de chaque
+modification et testé l'application sur les machines réelles que je gère avec
+elle au quotidien. Le code est aussi passé par un audit de sécurité dédié, dont
+les points relevés ont été corrigés dans la version 1.2.15. Tout est ici, à
+découvert : vous pouvez le lire, le compiler vous-même et vérifier que les
+binaires publiés y correspondent.
+
+Si le code écrit avec l'aide d'une IA vous pose problème, je le comprends tout
+à fait : sans rancune, passez votre chemin. Pour tous les autres, retours,
+signalements de bugs et suggestions sont les bienvenus.

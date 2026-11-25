@@ -31,7 +31,7 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 - Native decoding of the KVM protocol (JPEG tiles, jumbo frames)
 - Frame rate from 5 to 40 fps, three quality levels
 - Mouse, wheel, side buttons and full keyboard (Windows VK codes). The Windows
-  key is not forwarded — the local PC intercepts it anyway — and can be sent
+  key is not forwarded (the local PC intercepts it anyway) and can be sent
   from the "Shortcuts" menu
 - Predefined shortcuts for Windows or Linux
 - Local shortcuts: Ctrl+Shift+R requests a full frame, Ctrl+Shift+A toggles
@@ -55,14 +55,14 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 - Restart, sleep or shut down from the toolbar (restart: Ctrl+Shift+B). After a
   restart, the session resumes on its own when the machine comes back
 - Files and folders dragged from Explorer onto the remote screen: a dialog asks
-  for the destination and suggests the machine's usual locations — desktop
+  for the destination and suggests the machine's usual locations: desktop
   (OneDrive included), downloads and documents of each user, public desktop,
   drives; on Linux, home folders, `/tmp` and `/`. "Browse…" lets you pick
   another folder on the machine; the path can also be typed, and the last one
   is suggested again. Progress in the status bar
-- The stream pauses as soon as nobody is watching — tab in the background,
-  window minimized — and resumes with a full frame
-- Two-way clipboard. Paste writes the remote clipboard and then sends Ctrl+V —
+- The stream pauses as soon as nobody is watching (tab in the background,
+  window minimized) and resumes with a full frame
+- Two-way clipboard. Paste writes the remote clipboard and then sends Ctrl+V:
   instant, whatever the length. If the server refuses the write
   (`clipboardset`) or the agent does not confirm it, character-by-character
   typing takes over; it is also available on demand ("Type" button or
@@ -79,8 +79,8 @@ Written in C# / WPF on .NET 10. Its only external dependency is
   Ctrl+Shift+Home and Ctrl+Shift+End to jump to either end. A scrollbar appears
   on the right edge as soon as you scroll up, and any keystroke brings you back
   to the bottom
-- Mouse selection: drag to select, double-click for a word — paths and
-  addresses included —, triple-click for a line. Ctrl+C copies the selection
+- Mouse selection: drag to select, double-click for a word (paths and
+  addresses included), triple-click for a line. Ctrl+C copies the selection
   (with no selection, it interrupts the command), Ctrl+Shift+C copies the
   selection or the whole terminal; middle-click pastes
 - Right-click menu: copy, paste, copy all, commands, search, clear, text size,
@@ -91,8 +91,8 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 - Closed session: press Enter to reopen it. Agent messages (waiting for the
   user's consent, access denied) are shown in the terminal, and a terminal that
   stays silent says so after a few seconds
-- "Commands" menu (Ctrl+Shift+K), written for the shell actually open — cmd,
-  PowerShell or Linux: common folders (desktop, downloads, documents, AppData of
+- "Commands" menu (Ctrl+Shift+K), written for the shell actually open (cmd,
+  PowerShell or Linux): common folders (desktop, downloads, documents, AppData of
   the logged-in user, even from a SYSTEM shell and with OneDrive), information
   (users, disks, processes, services, software, updates, system errors),
   network and maintenance (SFC, DISM, print spooler, print queue, scheduled
@@ -149,8 +149,8 @@ Written in C# / WPF on .NET 10. Its only external dependency is
   as long as it allows, or indefinitely with a login token
 - Runs in the notification area, optional start with Windows
 - Automatic reconnection after a network drop. The control channel is
-  monitored: a websocket left open but silent — PC asleep, Wi-Fi drop, proxy
-  forgetting the session — is detected within two minutes. The device list is
+  monitored: a websocket left open but silent (PC asleep, Wi-Fi drop, proxy
+  forgetting the session) is detected within two minutes. The device list is
   refreshed when waking from sleep, when the network comes back, when the
   window is focused and every five minutes
 - Error log for troubleshooting
@@ -165,7 +165,7 @@ dotnet build MeshControl.csproj -c Release
 
 ## Publishing
 
-Produces a self-contained application — no .NET prerequisite on target PCs —
+Produces a self-contained application (no .NET prerequisite on target PCs),
 then packages it with Velopack:
 
 ```powershell
@@ -175,7 +175,7 @@ then packages it with Velopack:
 
 Application files go to `dist/`, packages to `Releases/`: `Setup.exe` for a
 first install, and a delta package that only holds the differences with the
-previous version — a few hundred kilobytes, where the full installer weighs
+previous version: a few hundred kilobytes, where the full installer weighs
 about 70 megabytes.
 
 Releases are published on
@@ -189,12 +189,12 @@ administrator rights: it goes into the user's profile.
 ## Configuration
 
 The server address is set on first launch or in the settings pane. Credentials
-are encrypted with DPAPI — bound to the user's Windows session — and stored in
+are encrypted with DPAPI (bound to the user's Windows session) and stored in
 `%APPDATA%\Mesh Control\`.
 
 When the server enforces a second factor, the code is asked only once: the
 application obtains a trusted-device cookie from the server, valid for
-`twoFactorCookieDurationDays` days — 30 by default. The settings pane can go
+`twoFactorCookieDurationDays` days (30 by default). The settings pane can go
 further and create a **login token** dedicated to the PC, which does not
 expire: that is what unattended start-up and reconnections need. The token can
 be revoked from the application, or from "My Account" on the server; signing
@@ -242,3 +242,18 @@ servers through their published interfaces.
 Windows is a trademark of the Microsoft group of companies. Linux® is a
 registered trademark of Linus Torvalds. Other trademarks belong to their
 respective owners.
+
+## A word on AI
+
+Part of this code was written with the help of an AI assistant (Claude, by
+Anthropic); the commits concerned say so. I want to be upfront about it.
+
+It was not generated blindly. I designed the features, decided every change,
+and tested the application on the real machines I manage with it every day.
+The code also went through a dedicated security review, and the issues it
+found were fixed in version 1.2.15. Everything is here, in the open: you can
+read it, build it yourself and check that the published binaries match.
+
+If AI-assisted code is a deal-breaker for you, I completely understand: no
+hard feelings, feel free to move on. For everyone else, feedback, bug reports
+and suggestions are very welcome.
