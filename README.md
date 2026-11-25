@@ -105,6 +105,13 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 - Zoom with Ctrl+wheel, Ctrl+Shift+Plus and Ctrl+Shift+Minus; Ctrl+Shift+0
   restores the default size. The chosen size applies to later terminals
 - Full screen with Ctrl+Shift+F, like the remote desktop
+- Remote desktop without leaving the terminal ("Bureau" button,
+  Ctrl+Shift+D): as a thumbnail docked in the bottom-right corner, to watch the
+  screen while typing, or in a tab. The keyboard goes to the terminal or the
+  desktop depending on the last click (blue frame when it is the desktop). The
+  thumbnail resizes from its top-left corner, collapses to its header (the
+  image stream is then paused), and moves to a tab without dropping the
+  connection
 
 **Files**
 - Clickable breadcrumb navigation, file type badges

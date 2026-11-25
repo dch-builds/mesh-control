@@ -124,6 +124,13 @@ public sealed class AppSettings
     public int TerminalFontSize { get; set; } = 13;
 
     /// <summary>
+    /// Taille du bureau à distance ancré dans un terminal (en bas à droite),
+    /// en pixels. Retenue d'une session à l'autre, comme la police.
+    /// </summary>
+    public double DesktopDockWidth { get; set; } = 520;
+    public double DesktopDockHeight { get; set; } = 330;
+
+    /// <summary>
     /// Regrouper les sessions dans une fenêtre à onglets. Sinon, chaque session
     /// ouvre sa propre fenêtre (comportement historique).
     /// </summary>

@@ -49,6 +49,11 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
         TerminalHost.Child = _terminal;
         SearchBar.Attach(_terminal);
 
+        // Bureau à distance ancré : fermé avec le terminal, et le clavier
+        // revient au shell quand il le rend.
+        DockedDesktop.Attach(connection, node, this);
+        DockedDesktop.KeyboardReturned += () => _terminal.Focus();
+
         _fullscreen = new UI.SessionFullscreen(RootPanel, FullscreenHint, Toolbar);
         _fullscreen.Changed += OnFullscreenChanged;
         // En mode onglets, une autre session a pu changer l'état de la fenêtre
@@ -214,6 +219,7 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
 
     private void Terminal_PreviewTextInput(object sender, TextCompositionEventArgs e)
     {
+        if (DockedDesktop.HasKeyboard) return;
         if (_session.State != SshSessionState.Connected) return;
         if (InputFieldHasFocus) return;
         if (string.IsNullOrEmpty(e.Text)) return;
@@ -227,6 +233,10 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
     /// </summary>
     private void Terminal_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        // Le bureau ancré a le clavier : ses frappes traversent ce panneau
+        // (événements « Preview », de l'extérieur vers l'intérieur) et lui
+        // reviennent, pas au shell.
+        if (DockedDesktop.HasKeyboard) return;
         if (InputFieldHasFocus) return;
 
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
@@ -257,6 +267,12 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
         if (ctrl && shift && e.Key == Key.R)
         {
             SearchBar.Toggle();
+            e.Handled = true;
+            return;
+        }
+        if (ctrl && shift && e.Key == Key.D)
+        {
+            DockedDesktop.Toggle();
             e.Handled = true;
             return;
         }
@@ -350,6 +366,21 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
     /// peut pas demander des identifiants sans les montrer.
     /// </summary>
     private readonly UI.SessionFullscreen _fullscreen;
+
+    // MARK: - Bureau à distance
+
+    private void Desktop_Click(object sender, RoutedEventArgs e) =>
+        DockedDesktop.ShowMenu(DesktopButton, () =>
+        {
+            // Le clavier revient au shell, sauf s'il vient d'être donné au bureau.
+            if (!DockedDesktop.HasKeyboard) _terminal.Focus();
+        });
+
+    /// <summary>
+    /// Appelé par la fenêtre à onglets quand elle intercepte un raccourci :
+    /// seul le bureau ancré transmet des touches maintenues.
+    /// </summary>
+    void MeshControl.UI.ISessionWindow.ReleaseKeyboard() => DockedDesktop.ReleaseKeyboard();
 
     private void Fullscreen_Click(object sender, RoutedEventArgs e) => ToggleFullscreen();
 

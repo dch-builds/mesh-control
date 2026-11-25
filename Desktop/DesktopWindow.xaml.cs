@@ -169,7 +169,13 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
         // Prendre le focus dès que le panneau est prêt, pour que le clavier
         // fonctionne sans clic préalable.
-        RootPanel.Loaded += (_, _) => RootPanel.Focus();
+        // Sauf en vignette (voir DesktopWindow.Docked) : le clavier y reste au
+        // terminal tant qu'on ne clique pas sur l'écran distant, et le
+        // panneau se recharge à chaque retour sur l'onglet du terminal.
+        RootPanel.Loaded += (_, _) =>
+        {
+            if (!_docked) RootPanel.Focus();
+        };
 
         // La barre d'état se rafraîchit à intervalle fixe : la recalculer à
         // chaque tuile reçue ferait travailler l'UI des dizaines de fois par
@@ -188,9 +194,11 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
         // En mode onglets, la fenêtre hôte a pu changer d'état pendant qu'une
         // autre session était affichée : on se réaligne en revenant ici.
+        // En vignette, le plein écran de la fenêtre hôte est celui du
+        // terminal : la vignette ne doit pas s'y aligner.
         RootPanel.IsVisibleChanged += (_, _) =>
         {
-            _fullscreen.Sync();
+            if (!_docked) _fullscreen.Sync();
             UpdateStreamPause();
         };
 
@@ -1047,6 +1055,14 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
     private void ToggleFullscreen()
     {
+        // Vignette : passer en grand, c'est la sortir du terminal.
+        if (_docked)
+        {
+            _session.ReleaseModifiers();
+            UndockRequested?.Invoke();
+            return;
+        }
+
         _fullscreen.Toggle();
         // Le clavier doit continuer d'arriver à la machine distante après la
         // bascule : le changement de style de fenêtre fait perdre le focus.
@@ -1073,6 +1089,9 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
             RootPanel.Loaded -= onLoaded;
             Dispatcher.BeginInvoke(() =>
             {
+                // Vignette : la fenêtre hôte est celle du terminal, qui n'a
+                // pas demandé à être agrandie.
+                if (_docked) return;
                 if (Window.GetWindow(RootPanel) is not { } host) return;
                 // Une autre session a déjà mis la fenêtre des onglets en plein écran.
                 if (UI.FullscreenController.IsFullscreen(host)) return;

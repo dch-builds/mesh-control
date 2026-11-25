@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="clr-namespace:MeshControl.UI"
         xmlns:ssh="clr-namespace:MeshControl.Ssh"
+        xmlns:desk="clr-namespace:MeshControl.Desktop"
         Title="Terminal SSH — Mesh Control" Height="620" Width="920"
         WindowStartupLocation="CenterScreen" Background="#1B1B1F">
     <DockPanel x:Name="RootPanel">
@@ -38,6 +39,18 @@
                      focus : on y saisit vraiment quelque chose. -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
                             HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <!-- Bureau à distance de la même machine : en vignette ancrée en
+                         bas à droite du terminal, pour garder l'écran sous les yeux en
+                         tapant, ou en grand dans un onglet (voir DesktopDock). -->
+                    <Button x:Name="DesktopButton" Style="{StaticResource ToolButton}"
+                            Click="Desktop_Click" Margin="0,0,6,0" Focusable="False"
+                            ToolTip="Bureau à distance : en vignette dans le terminal, ou dans un onglet (Ctrl+Maj+D)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                                       VerticalAlignment="Center" Margin="0,1,6,0"/>
+                            <TextBlock Text="Bureau ▾" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                     <Button Style="{StaticResource ToolButton}"
                             Click="Paste_Click" Margin="0,0,6,0" Focusable="False"
                             ToolTip="Coller le presse-papiers dans le terminal (Ctrl+Maj+V, ou clic du milieu)">
@@ -132,6 +145,9 @@
             <Border x:Name="TerminalHost" Background="#1B1B1F" Padding="10,8,0,0"/>
 
             <ssh:TerminalSearchBar x:Name="SearchBar"/>
+
+            <!-- Bureau à distance ancré (Ctrl+Maj+D), au-dessus du terminal. -->
+            <desk:DesktopDock x:Name="DockedDesktop"/>
 
             <!-- En plein écran, la barre d'outils disparaît : sans ce rappel,
                  le moyen d'en sortir serait invisible. Échap n'est pas utilisé,

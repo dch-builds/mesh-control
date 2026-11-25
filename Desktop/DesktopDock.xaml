@@ -1,0 +1,135 @@
+<UserControl x:Class="MeshControl.Desktop.DesktopDock"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             HorizontalAlignment="Right" VerticalAlignment="Bottom"
+             Margin="0,0,22,14" Visibility="Collapsed">
+    <!-- Vignette du bureau à distance, ancrée en bas à droite d'un terminal.
+         Marge à droite : la glissière de l'historique du terminal reste
+         accessible. Masquée tant qu'aucun bureau n'est ouvert. -->
+    <UserControl.Resources>
+        <!-- Bouton d'en-tête, discret : icône seule, sans fond au repos.
+             Non focalisable : le clavier reste au terminal ou au bureau. -->
+        <Style x:Key="DockButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="Margin" Value="2,0,0,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="5">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{StaticResource ControlHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- Cadre : accentué quand le bureau a le clavier, pour savoir sans
+         hésiter où partira la prochaine frappe. -->
+    <Border x:Name="Frame" CornerRadius="8" BorderThickness="1"
+            Background="{StaticResource CardBrush}">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="BorderBrush" Value="{StaticResource SeparatorBrush}"/>
+                <Style.Triggers>
+                    <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="16" ShadowDepth="2"
+                              Direction="270" Opacity="0.45"/>
+        </Border.Effect>
+
+        <Grid>
+            <DockPanel>
+                <!-- En-tête : machine, état, actions. Un clic sur sa partie
+                     vide donne le clavier au bureau ; un double-clic réduit
+                     ou rétablit la vignette. -->
+                <Border x:Name="Header" DockPanel.Dock="Top" Background="Transparent"
+                        Padding="18,4,5,4"
+                        MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" MinWidth="0"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal"
+                                    VerticalAlignment="Center" Margin="0,0,8,0">
+                            <Ellipse x:Name="StatusDot" Width="7" Height="7"
+                                     Fill="{StaticResource OfflineBrush}"
+                                     VerticalAlignment="Center" Margin="0,0,7,0"/>
+                            <TextBlock Text="&#xE7F4;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       VerticalAlignment="Center" Margin="0,1,6,0"/>
+                            <TextBlock x:Name="TitleText" FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="StateText" Style="{StaticResource CaptionText}"
+                                       FontSize="11" VerticalAlignment="Center"
+                                       Margin="8,0,0,0" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                    VerticalAlignment="Center">
+                            <Button x:Name="ReconnectButton" Style="{StaticResource DockButton}"
+                                    Content="&#xE72C;" Visibility="Collapsed"
+                                    Click="Reconnect_Click"
+                                    ToolTip="Rouvrir la session du bureau à distance"/>
+                            <Button x:Name="CollapseButton" Style="{StaticResource DockButton}"
+                                    Content="&#xE921;" Click="Collapse_Click"
+                                    ToolTip="Réduire la vignette (Ctrl+Maj+D depuis le terminal)"/>
+                            <Button x:Name="UndockButton" Style="{StaticResource DockButton}"
+                                    Content="&#xE8A7;" Click="Undock_Click"/>
+                            <Button Style="{StaticResource DockButton}"
+                                    Content="&#xE711;" Click="Close_Click"
+                                    ToolTip="Fermer le bureau à distance"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Contenu du bureau à distance, repris de sa fenêtre porteuse.
+                     ClipToBounds : agrandie par la loupe, l'image déborderait
+                     sur le terminal. -->
+                <Border x:Name="ContentHost" Background="#1B1D21" ClipToBounds="True"
+                        Margin="1,0,1,1"/>
+            </DockPanel>
+
+            <!-- Poignée de redimensionnement : la vignette est ancrée en bas à
+                 droite, c'est donc son coin supérieur gauche qui bouge. -->
+            <Thumb x:Name="ResizeGrip" Width="16" Height="16"
+                   HorizontalAlignment="Left" VerticalAlignment="Top"
+                   Cursor="SizeNWSE" Focusable="False"
+                   DragDelta="ResizeGrip_DragDelta"
+                   DragCompleted="ResizeGrip_DragCompleted"
+                   ToolTip="Redimensionner">
+                <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid Background="Transparent">
+                            <Path Data="M 4,12 L 12,4 M 4,8 L 8,4" StrokeThickness="1.2"
+                                  Stroke="{StaticResource TextSecondaryBrush}"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Thumb.Template>
+            </Thumb>
+        </Grid>
+    </Border>
+</UserControl>

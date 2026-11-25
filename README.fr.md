@@ -110,6 +110,12 @@ mises à jour.
 - Zoom par Ctrl+molette, Ctrl+Maj+Plus et Ctrl+Maj+Moins ; Ctrl+Maj+0 revient à
   la taille d'origine. La taille choisie vaut pour les terminaux suivants
 - Plein écran par Ctrl+Maj+F, comme le bureau à distance
+- Bureau à distance sans quitter le terminal (bouton « Bureau », Ctrl+Maj+D) :
+  en vignette ancrée en bas à droite, pour suivre l'écran en tapant, ou dans un
+  onglet. Le clavier va au terminal ou au bureau selon le dernier clic (cadre
+  bleu quand c'est le bureau). La vignette se redimensionne par son coin
+  supérieur gauche, se réduit à son en-tête (le flux d'images est alors
+  suspendu), et passe en onglet sans couper la connexion
 
 **Fichiers**
 - Navigation par fil d'Ariane cliquable, pastilles par type de fichier
