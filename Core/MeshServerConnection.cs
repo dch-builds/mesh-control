@@ -7,7 +7,7 @@ namespace MeshControl.Core;
 
 public enum ConnectionState { Disconnected, Connecting, Connected, Failed, Reconnecting }
 
-/// <summary>Erreurs de haut niveau, équivalent de MeshError.</summary>
+/// <summary>Erreurs de haut niveau, présentables à l'utilisateur.</summary>
 public class MeshException(string message) : Exception(message);
 
 /// <summary>

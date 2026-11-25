@@ -527,13 +527,13 @@ public sealed class AppSettings
 
     // MARK: - Chiffrement DPAPI
 
-    // NE PAS renommer au prétexte que l'application s'appelle désormais Mesh
-    // Control : cette valeur n'est pas un libellé mais une entropie, qui entre
-    // dans le chiffrement. La changer rend indéchiffrables le mot de passe, le
-    // jeton de connexion et le cookie de second facteur déjà enregistrés —
-    // silencieusement, puisque Unprotect renvoie une chaîne vide en cas d'échec.
-    // L'utilisateur ne verrait qu'une authentification refusée, sans explication.
-    private static readonly byte[] Entropy = Encoding.UTF8.GetBytes("MeshControl.v1");
+    // NE PAS MODIFIER. Valeur fixée par les premières versions : ce n'est pas un
+    // libellé mais une entropie, qui entre dans le chiffrement. La changer rend
+    // indéchiffrables le mot de passe, le jeton de connexion et le cookie de
+    // second facteur déjà enregistrés — silencieusement, puisque Unprotect
+    // renvoie une chaîne vide en cas d'échec. L'utilisateur ne verrait qu'une
+    // authentification refusée, sans explication.
+    private static readonly byte[] Entropy = Convert.FromHexString("57444D52656D6F74652E7631");
 
     private static string Protect(string plain)
     {

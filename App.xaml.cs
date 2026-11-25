@@ -24,11 +24,6 @@ public partial class App : Application
     {
         VelopackApp.Build().Run();
 
-        // Avant tout le reste : la reprise déplace les dossiers de données, et
-        // Log comme AppSettings créent le leur dès le premier appel. Un dossier
-        // créé trop tôt, même vide, bloquerait le déplacement.
-        LegacyMigration.Run();
-
         var app = new App();
         app.InitializeComponent();
         // Le thème doit être en place avant la première fenêtre : ses couleurs
@@ -51,9 +46,6 @@ public partial class App : Application
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
         Log.StartSession(Version);
-
-        // Le compte rendu de la reprise attendait d'avoir un journal où aller.
-        LegacyMigration.WriteReport();
 
         // Les erreurs sont journalisées intégralement (type, message, pile) mais
         // présentées simplement : une pile d'appels brute n'aide pas un

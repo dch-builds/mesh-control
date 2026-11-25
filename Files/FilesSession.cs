@@ -92,7 +92,6 @@ public sealed class TransferProgress
 /// Navigation de fichiers via un tunnel meshrelay p=5 : les commandes JSON sont
 /// envoyées en trames BINAIRES, et toute trame entrante dont le premier octet
 /// n'est pas '{' est un fragment de téléchargement.
-///
 /// </summary>
 public sealed class FilesSession : IDisposable
 {

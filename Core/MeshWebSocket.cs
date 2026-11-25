@@ -14,7 +14,6 @@ public abstract record WsMessage
 /// <summary>
 /// Fin wrapper autour de ClientWebSocket : en-têtes personnalisés, confiance
 /// optionnelle des certificats auto-signés, et réception asynchrone.
-///
 /// </summary>
 public sealed class MeshWebSocket : IDisposable
 {

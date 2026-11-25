@@ -24,8 +24,8 @@ public readonly record struct DecodedTile(byte[] Pixels, int Stride, int Width, 
 /// touche au WriteableBitmap sur le thread UI, par lots. Cela évite de saturer
 /// l'UI sous le flot de tuiles — le principal levier de fluidité côté client.
 ///
-/// WriteableBitmap a son origine en haut à gauche : il est
-/// top-left. On dessine donc la tuile directement à (x, y), sans inversion.
+/// WriteableBitmap a son origine en haut à gauche, comme les coordonnées des
+/// tuiles KVM : on dessine donc la tuile directement à (x, y), sans inversion.
 /// </summary>
 public sealed class KVMFramebuffer
 {

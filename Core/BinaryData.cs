@@ -2,7 +2,6 @@ namespace MeshControl.Core;
 
 /// <summary>
 /// Les protocoles KVM/relais de MeshCentral sont big-endian sur le fil.
-///
 /// </summary>
 public static class BinaryData
 {

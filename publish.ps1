@@ -36,8 +36,7 @@ $project = Join-Path $PSScriptRoot 'MeshControl.csproj'
 #    collision avec celui des journaux, utilisé par Log.cs ;
 #  - ne plus le changer ensuite. Velopack identifie l'application par lui : une
 #    installation posée sous un autre packId ne verra jamais les releases
-#    publiées sous celui-ci, et restera indéfiniment à sa version. Le passage de
-#    « MeshControl » à « MeshControl » a imposé une réinstallation.
+#    publiées sous celui-ci, et restera indéfiniment à sa version.
 $packId    = 'MeshControl'
 $packTitle = 'Mesh Control'
 $authors   = 'David CHIESA'
