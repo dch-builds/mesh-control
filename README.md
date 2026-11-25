@@ -98,6 +98,10 @@ Written in C# / WPF on .NET 10. Its only external dependency is
   network and maintenance (SFC, DISM, print spooler, print queue, scheduled
   restart). Anything that changes the machine is only typed, to be confirmed
   with Enter
+- Your own commands at the top of the same menu: label, target shell (any,
+  cmd, PowerShell, Linux), run directly or only typed, several lines allowed.
+  "Ajouter la sélection" starts from the text selected in the terminal. Saved
+  in the user's settings
 - Answers terminal queries (cursor position, device attributes): the Windows
   console needs them to display anything on some machines
 - Search the scrollback with Ctrl+Shift+R: matches are highlighted, Enter and
@@ -148,7 +152,8 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 - Sessions grouped in tabs: Ctrl+Tab and Ctrl+Shift+Tab to cycle, Ctrl+1 to
   Ctrl+9 to jump to a session, Ctrl+F4 or middle-click to close it. These
   shortcuts are only captured once two sessions are open: with a single one,
-  they keep their meaning on the remote machine
+  they keep their meaning on the remote machine. When tabs overflow, the tab
+  strip scrolls (wheel or arrows) and the active tab stays in view
 - MeshCentral web page of a machine with Ctrl+Shift+W, wherever you are: for
   the machine selected in the list, the one highlighted in the quick search
   palette, and the one shown in a remote desktop session

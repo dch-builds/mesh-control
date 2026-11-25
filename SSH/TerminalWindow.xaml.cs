@@ -287,6 +287,24 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
             Placement = underButton ? PlacementMode.Bottom : PlacementMode.Center,
         };
 
+        // Commandes de l'utilisateur en tête : ce sont ses plus fréquentes.
+        var mine = CustomCommandsForShell();
+        if (mine.Count > 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "Mes commandes", IsEnabled = false });
+            foreach (var command in mine)
+            {
+                var item = new MenuItem
+                {
+                    Header = command.Run ? command.Label : command.Label + "…",
+                    ToolTip = QuickCommandToolTip(command),
+                };
+                item.Click += (_, _) => SendQuickCommand(command);
+                menu.Items.Add(item);
+            }
+            menu.Items.Add(new Separator());
+        }
+
         foreach (var group in QuickCommands.For(_node.OsFamily, SelectedShell))
         {
             var submenu = new MenuItem { Header = group.Title };
@@ -309,6 +327,24 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
             }
             menu.Items.Add(submenu);
         }
+
+        menu.Items.Add(new Separator());
+
+        // Ajout : la sélection du terminal, si elle existe, sert de point de
+        // départ — on retient ainsi une commande qu'on vient de taper.
+        var selection = _terminal.GetSelectedText()?.Trim();
+        var add = new MenuItem
+        {
+            Header = string.IsNullOrEmpty(selection)
+                ? "Ajouter une commande…"
+                : "Ajouter la sélection à mes commandes…",
+        };
+        add.Click += (_, _) => OpenCustomCommands(selection ?? "");
+        menu.Items.Add(add);
+
+        var manage = new MenuItem { Header = "Gérer mes commandes…" };
+        manage.Click += (_, _) => OpenCustomCommands(null);
+        menu.Items.Add(manage);
 
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem
@@ -347,6 +383,48 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
             });
         }
         return panel;
+    }
+
+    // MARK: - Commandes personnalisées
+
+    /// <summary>Famille du shell ouvert, au sens des commandes personnalisées.</summary>
+    private CustomCommandShell CurrentCustomShell =>
+        _node.OsFamily != OSFamily.Windows
+            ? CustomCommandShell.Unix
+            : SelectedShell is ShellKind.PowerShell or ShellKind.UserPowerShell
+                ? CustomCommandShell.PowerShell
+                : CustomCommandShell.Cmd;
+
+    /// <summary>
+    /// Commandes de l'utilisateur destinées au shell ouvert. Relues à chaque
+    /// ouverture du menu : un autre terminal a pu les modifier.
+    /// </summary>
+    private List<QuickCommand> CustomCommandsForShell()
+    {
+        var shell = CurrentCustomShell;
+        return AppSettings.Load().CustomTerminalCommands
+            .Where(c => !string.IsNullOrWhiteSpace(c.Command)
+                        && (c.Shell == CustomCommandShell.Any || c.Shell == shell))
+            .Select(c => new QuickCommand(
+                string.IsNullOrWhiteSpace(c.Label) ? c.Command : c.Label,
+                // Plusieurs lignes : chacune part avec Entrée, comme tapée.
+                c.Command.Replace("\r\n", "\r").Replace('\n', '\r'),
+                c.Run))
+            .ToList();
+    }
+
+    /// <param name="newCommand">
+    /// Commande à créer (texte de départ, éventuellement vide), ou null pour
+    /// ouvrir simplement la liste.
+    /// </param>
+    private void OpenCustomCommands(string? newCommand)
+    {
+        var dialog = new CustomCommandsWindow(CurrentCustomShell, newCommand);
+        // Owner nul accepté : en mode onglets, cette fenêtre n'est pas affichée
+        // et WPF refuserait une fenêtre invisible comme propriétaire.
+        if (Window.GetWindow(RootPanel) is { IsVisible: true } owner) dialog.Owner = owner;
+        dialog.ShowDialog();
+        _terminal.Focus();
     }
 
     private void SendQuickCommand(QuickCommand command)

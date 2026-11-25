@@ -7,6 +7,45 @@
         MinWidth="900" MinHeight="360"
         WindowStartupLocation="CenterScreen" Background="#1B1D21">
 
+    <ui:ChromeWindow.Resources>
+        <!-- Flèche de défilement du bandeau d'onglets. Cliquable dans la barre
+             de titre (IsHitTestVisibleInChrome), non focalisable : le clavier
+             reste à la session affichée. -->
+        <Style x:Key="TabScrollButton" TargetType="RepeatButton">
+            <Setter Property="shell:WindowChrome.IsHitTestVisibleInChrome" Value="True"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Width" Value="24"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Delay" Value="300"/>
+            <Setter Property="Interval" Value="60"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{StaticResource RowHoverBrush}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </ui:ChromeWindow.Resources>
+
     <TabControl x:Name="Tabs" Background="Transparent" BorderThickness="0"
                 Padding="0" SelectionChanged="Tabs_SelectionChanged">
 
@@ -44,8 +83,13 @@
                                                        RelativeSource={RelativeSource TemplatedParent}}"
                                                    FontSize="12" Margin="0,0,7,0"
                                                    VerticalAlignment="Center"/>
-                                        <ContentPresenter ContentSource="Header"
-                                                          VerticalAlignment="Center"/>
+                                        <!-- Titre tronqué : un nom de machine à rallonge
+                                             occupait sinon la moitié du bandeau. Le nom
+                                             complet reste dans l'info-bulle. -->
+                                        <TextBlock Text="{Binding Header,
+                                                       RelativeSource={RelativeSource TemplatedParent}}"
+                                                   MaxWidth="220" TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
                                         <Button x:Name="CloseBtn" Content="✕" FontSize="9"
                                                 Width="20" Height="20" Margin="8,0,0,0"
                                                 Cursor="Hand" Focusable="False"
@@ -114,7 +158,26 @@
                          Les onglets y restent cliquables grâce au style des
                          onglets ; l'espace libre à leur droite sert de poignée. -->
                     <Border x:Name="TabStrip" DockPanel.Dock="Top" Background="#141619">
-                        <TabPanel IsItemsHost="True" Margin="6,0,6,0"/>
+                        <!-- Une seule rangée qui défile (molette, flèches) : le
+                             TabPanel d'origine passait à la ligne, et la barre de
+                             titre coupait la seconde rangée. Les flèches ne
+                             paraissent que si les onglets débordent. -->
+                        <DockPanel Margin="6,0,6,0">
+                            <RepeatButton x:Name="ScrollTabsLeft" DockPanel.Dock="Left"
+                                          Content="&#xE76B;" Style="{StaticResource TabScrollButton}"
+                                          Click="ScrollTabsLeft_Click" Visibility="Collapsed"
+                                          ToolTip="Onglets précédents (ou molette sur les onglets)"/>
+                            <RepeatButton x:Name="ScrollTabsRight" DockPanel.Dock="Right"
+                                          Content="&#xE76C;" Style="{StaticResource TabScrollButton}"
+                                          Click="ScrollTabsRight_Click" Visibility="Collapsed"
+                                          ToolTip="Onglets suivants (ou molette sur les onglets)"/>
+                            <ScrollViewer x:Name="TabScroller"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Disabled"
+                                          CanContentScroll="False" Focusable="False">
+                                <StackPanel IsItemsHost="True" Orientation="Horizontal"/>
+                            </ScrollViewer>
+                        </DockPanel>
                     </Border>
                     <Border Background="#1B1D21">
                         <ContentPresenter ContentSource="SelectedContent"/>

@@ -131,6 +131,12 @@ public sealed class AppSettings
     public double DesktopDockHeight { get; set; } = 330;
 
     /// <summary>
+    /// Commandes ajoutées par l'utilisateur au menu « Commandes » du terminal,
+    /// dans l'ordre du menu.
+    /// </summary>
+    public List<CustomTerminalCommand> CustomTerminalCommands { get; set; } = new();
+
+    /// <summary>
     /// Regrouper les sessions dans une fenêtre à onglets. Sinon, chaque session
     /// ouvre sa propre fenêtre (comportement historique).
     /// </summary>

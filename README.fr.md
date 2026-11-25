@@ -103,6 +103,10 @@ mises à jour.
   logiciels, mises à jour, erreurs système), réseau et maintenance (SFC, DISM,
   spouleur, file d'impression, redémarrage programmé). Ce qui modifie la
   machine est seulement tapé, à valider par Entrée
+- Commandes personnelles dans ce même menu, en tête : libellé, shell visé
+  (tous, cmd, PowerShell, Linux), exécution directe ou simple frappe, plusieurs
+  lignes possibles. « Ajouter la sélection » reprend le texte sélectionné dans
+  le terminal. Enregistrées dans les réglages de l'utilisateur
 - Répond aux requêtes du shell (position du curseur, identification) : la
   console Windows en a besoin pour s'afficher sur certains postes
 - Recherche dans l'historique par Ctrl+Maj+R : les occurrences sont surlignées,
@@ -152,7 +156,9 @@ mises à jour.
 - Sessions regroupées en onglets : Ctrl+Tab et Ctrl+Maj+Tab pour circuler,
   Ctrl+1 à Ctrl+9 pour atteindre une session, Ctrl+F4 ou clic du milieu pour la
   fermer. Ces raccourcis ne sont captés qu'à partir de deux sessions ouvertes :
-  seuls, ils gardent tout leur sens sur la machine distante
+  seuls, ils gardent tout leur sens sur la machine distante. Quand les onglets
+  débordent, le bandeau défile (molette ou flèches) et l'onglet actif reste
+  visible
 - Page web MeshCentral d'une machine par Ctrl+Maj+W, où que l'on se trouve :
   sur la machine sélectionnée dans la liste, sur celle en surbrillance dans la
   palette de recherche rapide, et sur celle affichée par une session de bureau

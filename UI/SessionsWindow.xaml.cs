@@ -256,7 +256,68 @@ public partial class SessionsWindow : ChromeWindow
         if (!ReferenceEquals(e.OriginalSource, Tabs)) return;
         UpdateTitle();
         FocusCurrentContent();
+        ScrollSelectedTabIntoView();
     }
+
+    // MARK: - Défilement du bandeau d'onglets
+
+    /// <summary>Pas de défilement d'un clic sur une flèche, en pixels.</summary>
+    private const double TabScrollStep = 180;
+
+    /// <summary>Zone défilante du bandeau, une fois le gabarit appliqué.</summary>
+    private ScrollViewer? _tabScroller;
+
+    /// <summary>
+    /// Branche le défilement du bandeau : molette sur les onglets, flèches
+    /// affichées seulement quand ils débordent.
+    /// </summary>
+    private void HookTabScroller()
+    {
+        if (_tabScroller is not null) return;
+        if (Tabs.Template?.FindName("TabScroller", Tabs) is not ScrollViewer scroller) return;
+
+        _tabScroller = scroller;
+        scroller.ScrollChanged += (_, _) => UpdateTabScrollButtons();
+        // La molette fait défiler la rangée horizontalement : sans cela, elle
+        // ne ferait rien, le défilement vertical étant désactivé.
+        scroller.PreviewMouseWheel += (_, e) =>
+        {
+            if (scroller.ScrollableWidth <= 0) return;
+            scroller.ScrollToHorizontalOffset(scroller.HorizontalOffset - e.Delta);
+            e.Handled = true;
+        };
+        UpdateTabScrollButtons();
+    }
+
+    private void UpdateTabScrollButtons()
+    {
+        if (_tabScroller is not { } scroller) return;
+        if (Tabs.Template?.FindName("ScrollTabsLeft", Tabs) is not UIElement left) return;
+        if (Tabs.Template?.FindName("ScrollTabsRight", Tabs) is not UIElement right) return;
+
+        var overflow = scroller.ScrollableWidth > 0.5;
+        left.Visibility = right.Visibility = overflow ? Visibility.Visible : Visibility.Collapsed;
+        left.IsEnabled = scroller.HorizontalOffset > 0.5;
+        right.IsEnabled = scroller.HorizontalOffset < scroller.ScrollableWidth - 0.5;
+    }
+
+    private void ScrollTabsLeft_Click(object sender, RoutedEventArgs e) =>
+        _tabScroller?.ScrollToHorizontalOffset(_tabScroller.HorizontalOffset - TabScrollStep);
+
+    private void ScrollTabsRight_Click(object sender, RoutedEventArgs e) =>
+        _tabScroller?.ScrollToHorizontalOffset(_tabScroller.HorizontalOffset + TabScrollStep);
+
+    /// <summary>
+    /// Amène l'onglet actif dans la partie visible du bandeau : Ctrl+Tab ou
+    /// l'ouverture d'une session ne doivent pas sélectionner un onglet caché.
+    /// Différé : l'onglet tout juste ajouté n'est pas encore mesuré.
+    /// </summary>
+    private void ScrollSelectedTabIntoView() =>
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            HookTabScroller();
+            (Tabs.SelectedItem as TabItem)?.BringIntoView();
+        }), System.Windows.Threading.DispatcherPriority.Loaded);
 
     /// <summary>
     /// Donne le focus clavier au contenu de l'onglet actif. Sans cela, les
@@ -317,6 +378,8 @@ public partial class SessionsWindow : ChromeWindow
         strip.Visibility = !_tabStripHidden && Tabs.Items.Count > 1
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+        HookTabScroller();
 
         if (strip is Border border) UpdateTitleBar(border);
     }
