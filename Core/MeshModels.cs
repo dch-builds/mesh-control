@@ -90,6 +90,11 @@ public sealed class Mesh
             return null;
         if (!json.TryGetProperty("name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
             return null;
+        // Groupe supprimé : MeshCentral le garde, marqué « deleted », et
+        // l'interface web l'ignore. Ses machines ne doivent pas reparaître ici.
+        if (json.TryGetProperty("deleted", out var deleted)
+            && deleted.ValueKind is not (JsonValueKind.Null or JsonValueKind.False or JsonValueKind.Undefined))
+            return null;
         return new Mesh
         {
             Id = idEl.GetString()!,
@@ -292,7 +297,27 @@ public sealed class MeshNode
     {
         get
         {
-            var os = OsDescription?.ToLowerInvariant();
+            // Lu pour chaque machine à chaque filtrage et à chaque tri : le
+            // résultat est gardé tant que la description et le nom n'ont pas
+            // changé, au lieu de refaire minuscules et recherches à chaque fois.
+            var description = OsDescription;
+            var name = Name;
+            if (_osFamilyCache is { } cached
+                && ReferenceEquals(cached.Description, description) && ReferenceEquals(cached.Name, name))
+                return cached.Family;
+
+            var family = ComputeOsFamily(description, name);
+            _osFamilyCache = (description, name, family);
+            return family;
+        }
+    }
+
+    private (string? Description, string Name, OSFamily Family)? _osFamilyCache;
+
+    private static OSFamily ComputeOsFamily(string? osDescription, string name)
+    {
+        {
+            var os = osDescription?.ToLowerInvariant();
             if (!string.IsNullOrEmpty(os))
             {
                 if (os.Contains("windows")) return OSFamily.Windows;
@@ -304,7 +329,7 @@ public sealed class MeshNode
                     || os.Contains("centos") || os.Contains("raspbian") || os.Contains("alpine") || os.Contains("bsd"))
                     return OSFamily.Linux;
             }
-            var hint = (string.IsNullOrEmpty(OsDescription) ? Name : OsDescription!).ToLowerInvariant();
+            var hint = (string.IsNullOrEmpty(osDescription) ? name : osDescription!).ToLowerInvariant();
             if (hint.Contains("iphone") || hint.Contains("ipad") || hint.Contains("ipod") || hint.Contains("android"))
                 return OSFamily.Mobile;
             return OSFamily.Other;

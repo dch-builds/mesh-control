@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
@@ -43,6 +44,7 @@ public partial class MainWindow : ChromeWindow
     public MainWindow()
     {
         InitializeComponent();
+        BuildFilterChips();
         CertificateTrust.Initialize(_settings);
         _refreshTimer.Tick += (_, _) =>
         {
@@ -93,6 +95,8 @@ public partial class MainWindow : ChromeWindow
                 RunSelected(DeviceAction.Rename);
                 args.Handled = true;
             }
+
+            if (!args.Handled) HandleListShortcut(args);
         };
         Closed += (_, _) =>
         {
@@ -117,6 +121,7 @@ public partial class MainWindow : ChromeWindow
         _tray = new TrayIcon();
         _tray.OpenRequested += RestoreMainWindow;
         _tray.QuickSearchRequested += ShowQuickSearch;
+        _tray.BalloonClicked += OnBalloonClicked;
         _tray.ExitRequested += () =>
         {
             _exiting = true;
@@ -158,7 +163,7 @@ public partial class MainWindow : ChromeWindow
         if (!_trayHintShown)
         {
             _trayHintShown = true;
-            _tray?.ShowMessage("Mesh Control reste actif",
+            ShowTrayMessage("Mesh Control reste actif",
                 $"L'application continue de tourner ici. Raccourci : {_settings.QuickSearchHotkey}");
         }
     }
@@ -305,7 +310,8 @@ public partial class MainWindow : ChromeWindow
             _allRows,
             RunActionFromQuickSearch,
             IsActionAvailable,
-            node => _settings.IsFavorite(node.Id));
+            node => _settings.IsFavorite(node.Id),
+            _settings.RecentNodeIds);
         _quickSearch.Closed += (_, _) => _quickSearch = null;
         _quickSearch.Show();
         _quickSearch.Activate();
@@ -366,6 +372,7 @@ public partial class MainWindow : ChromeWindow
     {
         bool on = _settings.FolderView;
         FolderPane.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        FolderPane.Width = Math.Clamp(_settings.FolderPaneWidth, MinFolderPaneWidth, MaxFolderPaneWidth);
         ToggleViewButton.ToolTip = on ? "Revenir à la liste groupée"
                                       : "Afficher les dossiers à gauche";
         ToggleViewGlyph.Foreground = (System.Windows.Media.Brush)FindResource(
@@ -381,32 +388,264 @@ public partial class MainWindow : ChromeWindow
     {
         if (!_settings.FolderView) return;
 
-        // Segoe MDL2 Assets : E71D liste complète, E735 étoile, ED25 dossier.
-        // Attention, E8B7 — que la documentation donne pour « Folder » — ne
-        // dessine rien dans cette police et s'affiche en carré vide.
+        // Segoe MDL2 Assets : E71D liste complète, E735 étoile, ED25 dossier,
+        // E718 punaise, ED1A œil barré. Attention, E8B7 — que la documentation
+        // donne pour « Folder » — ne dessine rien dans cette police et
+        // s'affiche en carré vide.
         var rows = new List<FolderRow>
         {
-            new(FolderRow.AllKey, "Toutes les machines", "", "#8A8A8E",
-                _allRows.Count, _allRows.Count(r => r.IsOnline)),
+            new(FolderRow.AllKey, "Toutes les machines", "", "#8A8A8E", 0, 0),
         };
 
-        var favorites = _allRows.Where(r => r.IsFavorite).ToList();
-        if (favorites.Count > 0)
-            rows.Add(new FolderRow(FavoritesGroup, "Favoris", "", "#FFB300",
-                                   favorites.Count, favorites.Count(r => r.IsOnline)));
+        if (_allRows.Any(r => r.IsFavorite))
+            rows.Add(new FolderRow(FavoritesGroup, "Favoris", "", "#FFB300", 0, 0));
 
-        rows.AddRange(_allRows
-            .GroupBy(r => r.RealGroupName, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new FolderRow(g.Key, g.Key, "", "#8A8A8E",
-                                       g.Count(), g.Count(r => r.IsOnline))));
+        // Dossiers épinglés juste sous les favoris, puis les autres ; les
+        // masqués sont regroupés sous une entrée unique, en bas.
+        var folders = _allRows
+            .Select(r => r.RealGroupName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(name => !IsHiddenFolder(name))
+            .OrderBy(name => IsPinnedFolder(name) ? 0 : 1)
+            .ThenBy(name => name, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in folders)
+        {
+            rows.Add(IsPinnedFolder(name)
+                ? new FolderRow(name, name, "", "#0A84FF", 0, 0, isPinned: true)
+                : new FolderRow(name, name, "", "#8A8A8E", 0, 0));
+        }
+
+        var hidden = HiddenFolderNames().Count;
+        if (hidden > 0)
+            rows.Add(new FolderRow(FolderRow.HiddenKey,
+                hidden == 1 ? "1 dossier masqué" : $"{hidden} dossiers masqués", "", "#8A8A8E", 0, 0));
 
         _restoringFolder = true;
         FolderList.ItemsSource = rows;
+        FolderList.Items.Filter = FolderMatchesFilter;
+        RefreshFolderCounts();
         var wanted = _selectedFolderKey ?? _settings.SelectedFolder ?? FolderRow.AllKey;
         FolderList.SelectedItem = rows.FirstOrDefault(f => f.Key == wanted) ?? rows[0];
         _selectedFolderKey = (FolderList.SelectedItem as FolderRow)?.Key;
         _restoringFolder = false;
+    }
+
+    // Ensembles tirés des réglages, consultés pour chaque machine à chaque
+    // filtrage : une recherche dans une liste coûtait un parcours par machine.
+    // Remis à null quand la liste d'origine change.
+    private HashSet<string>? _pinnedSet;
+    private HashSet<string>? _hiddenSet;
+    private HashSet<string>? _recentSet;
+
+    private bool IsPinnedFolder(string name)
+        => (_pinnedSet ??= new HashSet<string>(_settings.PinnedFolders, StringComparer.OrdinalIgnoreCase))
+            .Contains(name);
+
+    private bool IsHiddenFolder(string name)
+        => (_hiddenSet ??= new HashSet<string>(_settings.HiddenFolders, StringComparer.OrdinalIgnoreCase))
+            .Contains(name);
+
+    private bool IsRecent(string nodeId)
+        => (_recentSet ??= new HashSet<string>(_settings.RecentNodeIds)).Contains(nodeId);
+
+    /// <summary>Dossiers masqués qui existent encore dans le parc.</summary>
+    private List<string> HiddenFolderNames() => _allRows
+        .Select(r => r.RealGroupName)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Where(IsHiddenFolder)
+        .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    /// <summary>Machines d'une entrée du volet, en ligne ou non.</summary>
+    private IEnumerable<DeviceRow> RowsOfFolder(string key) => key switch
+    {
+        FolderRow.AllKey => _allRows.Where(r => !IsHiddenFolder(r.RealGroupName)),
+        FolderRow.HiddenKey => _allRows.Where(r => IsHiddenFolder(r.RealGroupName)),
+        FavoritesGroup => _allRows.Where(r => r.IsFavorite),
+        _ => _allRows.Where(r => string.Equals(r.RealGroupName, key, StringComparison.OrdinalIgnoreCase)),
+    };
+
+    /// <summary>
+    /// Compteurs du volet, mis à jour en place à chaque événement du serveur :
+    /// sans cela, une machine qui se connecte ne faisait pas bouger le
+    /// compteur de son dossier tant que la composition du parc restait la même.
+    /// </summary>
+    private void RefreshFolderCounts()
+    {
+        if (!_settings.FolderView || FolderList.ItemsSource is not List<FolderRow> folders) return;
+
+        // Sans filtre, le volet compte les machines en ligne ; avec des
+        // pastilles actives, celles qui y répondent : le chiffre d'un dossier
+        // annonce alors ce que la liste montrera en l'ouvrant.
+        var filtered = AnyFilterActive;
+        Func<DeviceRow, bool> matches = filtered ? r => MatchesActiveFilters(r) : r => r.IsOnline;
+
+        var byFolder = _allRows
+            .GroupBy(r => r.RealGroupName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => (Total: g.Count(), Matching: g.Count(matches)),
+                          StringComparer.OrdinalIgnoreCase);
+
+        foreach (var folder in folders)
+        {
+            if (folder.IsRealFolder)
+            {
+                var (total, matching) = byFolder.GetValueOrDefault(folder.Key);
+                folder.SetCounts(total, matching, filtered);
+            }
+            else
+            {
+                var rows = RowsOfFolder(folder.Key).ToList();
+                folder.SetCounts(rows.Count, rows.Count(matches), filtered);
+            }
+        }
+    }
+
+    // MARK: - Volet des dossiers : filtre, largeur, menu
+
+    private bool FolderMatchesFilter(object item)
+    {
+        var query = FolderFilterBox.Text.Trim();
+        return query.Length == 0 || item is not FolderRow folder || !folder.IsRealFolder
+               || folder.Name.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void FolderFilterBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var empty = string.IsNullOrEmpty(FolderFilterBox.Text);
+        FolderFilterPlaceholder.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+        ClearFolderFilterButton.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+        FolderList.Items.Refresh();
+    }
+
+    /// <summary>Entrée ouvre le premier dossier qui correspond ; Échap efface le filtre.</summary>
+    private void FolderFilterBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && FolderFilterBox.Text.Length > 0)
+        {
+            FolderFilterBox.Clear();
+            e.Handled = true;
+        }
+        else if (e.Key is Key.Enter or Key.Down)
+        {
+            var first = FolderList.Items.OfType<FolderRow>().FirstOrDefault(f => f.IsRealFolder);
+            if (first is not null) FolderList.SelectedItem = first;
+            e.Handled = true;
+        }
+    }
+
+    private void ClearFolderFilter_Click(object sender, RoutedEventArgs e)
+    {
+        FolderFilterBox.Clear();
+        FolderFilterBox.Focus();
+    }
+
+    private const double MinFolderPaneWidth = 180;
+    private const double MaxFolderPaneWidth = 520;
+
+    private void FolderPaneResizer_DragDelta(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+        => FolderPane.Width = Math.Clamp(FolderPane.Width + e.HorizontalChange,
+                                         MinFolderPaneWidth, MaxFolderPaneWidth);
+
+    private void FolderPaneResizer_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        _settings.FolderPaneWidth = FolderPane.Width;
+        _settings.Save();
+    }
+
+    /// <summary>
+    /// Clic droit sur un dossier : actions sur ses machines, et rangement du
+    /// volet (épingler, masquer). Le menu est composé à chaque ouverture, ses
+    /// entrées dépendant du dossier visé et de l'état de ses machines.
+    /// </summary>
+    private void FolderList_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (ItemsControl.ContainerFromElement(FolderList, (DependencyObject)e.OriginalSource)
+                is not ListBoxItem { DataContext: FolderRow folder }) return;
+        e.Handled = true;
+
+        var menu = new ContextMenu
+        {
+            PlacementTarget = FolderList,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint,
+        };
+
+        void Add(string header, bool enabled, Action action)
+        {
+            var item = new MenuItem { Header = header, IsEnabled = enabled };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+        }
+
+        // Actions sur les machines : pas sur « Toutes les machines », où un
+        // clic malheureux toucherait tout le parc.
+        if (folder.Key != FolderRow.AllKey)
+        {
+            var nodes = RowsOfFolder(folder.Key).Select(r => r.Node).ToList();
+            var offline = nodes.Where(n => !n.IsOnline).ToList();
+            var reachable = nodes.Where(IsReachable).ToList();
+
+            Add($"Réveiller les machines hors ligne ({offline.Count})", offline.Count > 0,
+                () => RunBulk(offline, DeviceAction.Wake));
+            Add($"Envoyer des fichiers aux machines en ligne ({reachable.Count})", reachable.Count > 0,
+                () => OpenSendFiles(reachable));
+            var anyUnwatched = offline.Any(n => !_watchOnline.Contains(n.Id));
+            Add(anyUnwatched || offline.Count == 0
+                    ? $"Me prévenir du retour des machines hors ligne ({offline.Count})"
+                    : $"Ne plus me prévenir de leur retour ({offline.Count})",
+                offline.Count > 0, () => SetWatched(offline, anyUnwatched));
+        }
+
+        if (folder.IsRealFolder)
+        {
+            if (menu.Items.Count > 0) menu.Items.Add(new Separator());
+            Add(folder.IsPinned ? "Désépingler" : "Épingler en haut du volet", true,
+                () => TogglePinnedFolder(folder.Key));
+            Add("Masquer ce dossier", true, () => SetFolderHidden(folder.Key, true));
+        }
+        else if (folder.Key == FolderRow.HiddenKey)
+        {
+            menu.Items.Add(new Separator());
+            foreach (var name in HiddenFolderNames())
+                Add($"Réafficher « {name} »", true, () => SetFolderHidden(name, false));
+            Add("Tout réafficher", true, () =>
+            {
+                _settings.HiddenFolders.Clear();
+                AfterFolderLayoutChanged();
+            });
+        }
+
+        if (menu.Items.Count > 0) menu.IsOpen = true;
+    }
+
+    private void TogglePinnedFolder(string name)
+    {
+        if (_settings.PinnedFolders.RemoveAll(f => string.Equals(f, name, StringComparison.OrdinalIgnoreCase)) == 0)
+            _settings.PinnedFolders.Add(name);
+        AfterFolderLayoutChanged();
+    }
+
+    private void SetFolderHidden(string name, bool hidden)
+    {
+        _settings.HiddenFolders.RemoveAll(f => string.Equals(f, name, StringComparison.OrdinalIgnoreCase));
+        if (hidden)
+        {
+            _settings.HiddenFolders.Add(name);
+            // Le dossier affiché disparaît du volet : on revient à tout le parc.
+            if (string.Equals(_selectedFolderKey, name, StringComparison.OrdinalIgnoreCase))
+                _selectedFolderKey = FolderRow.AllKey;
+            ShowToast($"« {name} » est masqué. Il reste accessible sous « dossiers masqués », en bas du volet.");
+        }
+        AfterFolderLayoutChanged();
+    }
+
+    /// <summary>Enregistre l'ordre du volet et recompose volet et liste.</summary>
+    private void AfterFolderLayoutChanged()
+    {
+        _pinnedSet = null;
+        _hiddenSet = null;
+        _settings.Save();
+        RebuildFolderPanel();
+        ApplyFilter();
     }
 
     private void FolderList_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1105,8 +1344,13 @@ public partial class MainWindow : ChromeWindow
         _rowsById.Clear();
         _virtualRows.Clear();
         _allRows = new List<DeviceRow>();
+        _chipScope = new List<DeviceRow>();
+        _lastPlan = new();
+        _lastDisplay = new();
         DeviceList.ItemsSource = null;
         CountText.Text = "";
+        EmptyState.Visibility = Visibility.Collapsed;
+        UpdateSelectionBar();
     }
 
     /// <summary>Informe discrètement que la connexion est en cours de rétablissement.</summary>
@@ -1176,10 +1420,14 @@ public partial class MainWindow : ChromeWindow
                 {
                     structureChanged = true;
                 }
-                // Le filtre « en ligne uniquement » repose sur la connectivité :
-                // la vue doit être recomposée, sinon une machine qui se connecte
-                // n'apparaîtrait jamais dans la liste filtrée.
-                if (existing.OnlineStateChanged && OnlineOnlyCheck.IsChecked == true)
+                // Les filtres « En ligne », « Hors ligne » et « En session »
+                // reposent sur la connectivité : la vue doit être recomposée,
+                // sinon une machine qui se connecte n'apparaîtrait jamais dans
+                // la liste filtrée.
+                if (existing.OnlineStateChanged
+                    && _activeFilters.ContainsKey(FilterGroup.State))
+                    structureChanged = true;
+                if (existing.SessionsChanged && IsFilterActive(DeviceFilter.InSession))
                     structureChanged = true;
                 // Même chose quand le tri choisi repose sur l'état en ligne :
                 // l'utilisateur a demandé que la liste suive les connexions.
@@ -1190,7 +1438,10 @@ public partial class MainWindow : ChromeWindow
             }
             else
             {
-                _rowsById[node.Id] = new DeviceRow(node, groupName, _settings.IsFavorite(node.Id));
+                _rowsById[node.Id] = new DeviceRow(node, groupName, _settings.IsFavorite(node.Id))
+                {
+                    IsWatched = _watchOnline.Contains(node.Id),
+                };
                 structureChanged = true;
             }
         }
@@ -1206,6 +1457,8 @@ public partial class MainWindow : ChromeWindow
         // même nœud, mais ont leur propre état affiché : elles doivent être
         // rafraîchies séparément.
         foreach (var copy in _virtualRows) copy.RefreshFromNode();
+
+        CheckWatchedNodes();
 
         if (!structureChanged)
         {
@@ -1239,6 +1492,9 @@ public partial class MainWindow : ChromeWindow
         CountText.Text = displayed >= _allRows.Count
             ? $"{_allRows.Count} appareils · {totalOnline} en ligne"
             : $"{displayed} affichés sur {_allRows.Count} · {totalOnline} en ligne";
+        UpdateFilterChips();
+        RefreshFolderCounts();
+        UpdateSelectionBar();
         UpdateTrayTooltip();
     }
 
@@ -1255,7 +1511,7 @@ public partial class MainWindow : ChromeWindow
     /// </summary>
     private readonly DispatcherTimer _searchTimer = new()
     {
-        Interval = TimeSpan.FromMilliseconds(150)
+        Interval = TimeSpan.FromMilliseconds(120)
     };
 
     private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -1281,7 +1537,7 @@ public partial class MainWindow : ChromeWindow
 
     // MARK: - Favoris et machines récentes
 
-    private const string FavoritesGroup = "★  Favoris";
+    private const string FavoritesGroup = MainWindowKeys.Favorites;
     private const string RecentGroup = "🕘  Récentes";
 
     /// <summary>
@@ -1297,6 +1553,7 @@ public partial class MainWindow : ChromeWindow
         var copy = new DeviceRow(row.Node, row.RealGroupName, row.IsFavorite)
         {
             GroupName = groupName,
+            IsWatched = row.IsWatched,
         };
         _virtualRows.Add(copy);
         return copy;
@@ -1346,6 +1603,7 @@ public partial class MainWindow : ChromeWindow
     private void RememberRecent(MeshNode node)
     {
         _settings.RememberRecent(node.Id);
+        _recentSet = null;
         _settings.Save();
         ApplyFilter();
     }
@@ -1495,7 +1753,210 @@ public partial class MainWindow : ChromeWindow
         }
     }
 
-    private void OnlineOnly_Changed(object sender, RoutedEventArgs e) => ApplyFilter();
+    // MARK: - Filtres rapides
+
+    private enum DeviceFilter { All, Online, Offline, InSession, Favorites, Recent, Windows, Linux, MacOS }
+
+    /// <summary>
+    /// Catégories de pastilles. Une pastille au plus par catégorie, et les
+    /// catégories se cumulent : « Windows » et « En ligne » donnent les machines
+    /// Windows en ligne.
+    /// </summary>
+    private enum FilterGroup { None, State, Set, System }
+
+    /// <summary>Pastille active de chaque catégorie. Vide : aucun filtre (« Tous »).</summary>
+    private readonly Dictionary<FilterGroup, DeviceFilter> _activeFilters = new();
+
+    private bool AnyFilterActive => _activeFilters.Count > 0;
+
+    /// <summary>
+    /// Machines sur lesquelles portent les compteurs des pastilles : celles du
+    /// dossier choisi et de la recherche en cours, avant le filtre des pastilles.
+    /// </summary>
+    private List<DeviceRow> _chipScope = new();
+
+    /// <summary>Pastilles affichées, avec le texte de leur compteur.</summary>
+    private readonly Dictionary<DeviceFilter, (ToggleButton Chip, TextBlock Count)> _filterChips = new();
+
+    private static readonly (DeviceFilter Filter, FilterGroup Group, string Label, string Tooltip)[] FilterDefinitions =
+    [
+        (DeviceFilter.All, FilterGroup.None, "Tous", "Retirer tous les filtres"),
+        (DeviceFilter.Online, FilterGroup.State, "En ligne", "Machines connectées au serveur"),
+        (DeviceFilter.Offline, FilterGroup.State, "Hors ligne", "Machines éteintes ou injoignables"),
+        (DeviceFilter.InSession, FilterGroup.State, "En session", "Machines où un utilisateur MeshCentral est connecté"),
+        (DeviceFilter.Favorites, FilterGroup.Set, "Favoris", "Machines épinglées"),
+        (DeviceFilter.Recent, FilterGroup.Set, "Récents", "Dernières machines ouvertes, de la plus récente à la plus ancienne"),
+        (DeviceFilter.Windows, FilterGroup.System, "Windows", "Machines sous Windows"),
+        (DeviceFilter.Linux, FilterGroup.System, "Linux", "Machines sous Linux"),
+        (DeviceFilter.MacOS, FilterGroup.System, "macOS", "Machines sous macOS"),
+    ];
+
+    private static FilterGroup GroupOf(DeviceFilter filter)
+        => FilterDefinitions.First(f => f.Filter == filter).Group;
+
+    private bool IsFilterActive(DeviceFilter filter) => filter == DeviceFilter.All
+        ? !AnyFilterActive
+        : _activeFilters.TryGetValue(GroupOf(filter), out var active) && active == filter;
+
+    /// <summary>Crée les pastilles. Leurs compteurs sont tenus par UpdateFilterChips.</summary>
+    private void BuildFilterChips()
+    {
+        var previousGroup = FilterGroup.None;
+        foreach (var (filter, group, label, tooltip) in FilterDefinitions)
+        {
+            var count = new TextBlock { Opacity = 0.7, Margin = new Thickness(6, 0, 0, 0) };
+            var content = new StackPanel { Orientation = Orientation.Horizontal };
+            content.Children.Add(new TextBlock { Text = label });
+            content.Children.Add(count);
+
+            var chip = new ToggleButton
+            {
+                Content = content,
+                ToolTip = tooltip,
+                Style = (Style)FindResource("FilterChip"),
+            };
+            // Un écart plus large entre deux catégories : on voit ce qui se
+            // cumule (d'une catégorie à l'autre) et ce qui s'exclut (au sein
+            // d'une même catégorie).
+            if (group != previousGroup && previousGroup != FilterGroup.None)
+                chip.Margin = new Thickness(10, 0, 6, 0);
+            previousGroup = group;
+
+            chip.Click += (_, _) => ToggleFilter(filter);
+            FilterChipsPanel.Children.Add(chip);
+            _filterChips[filter] = (chip, count);
+        }
+        SyncFilterChips();
+        UpdateFilterChips();
+    }
+
+    /// <summary>
+    /// Clic sur une pastille : « Tous » retire tout ; une autre remplace celle
+    /// de sa catégorie, ou se retire si elle était déjà active.
+    /// </summary>
+    private void ToggleFilter(DeviceFilter filter)
+    {
+        if (filter == DeviceFilter.All) _activeFilters.Clear();
+        else if (IsFilterActive(filter)) _activeFilters.Remove(GroupOf(filter));
+        else _activeFilters[GroupOf(filter)] = filter;
+
+        SyncFilterChips();
+        ApplyFilter();
+    }
+
+    /// <summary>État coché des pastilles, d'après les filtres actifs.</summary>
+    private void SyncFilterChips()
+    {
+        foreach (var (filter, (chip, _)) in _filterChips)
+            chip.IsChecked = IsFilterActive(filter);
+    }
+
+    /// <summary>
+    /// Message de liste vide : la recherche, un filtre ou un dossier vide en
+    /// est la cause, et le bouton rétablit tout d'un clic.
+    /// </summary>
+    private void UpdateEmptyState(int displayed, string query, bool folderFiltered)
+    {
+        if (displayed > 0 || _allRows.Count == 0)
+        {
+            EmptyState.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var labels = FilterDefinitions
+            .Where(f => f.Filter != DeviceFilter.All && IsFilterActive(f.Filter))
+            .Select(f => $"« {f.Label} »")
+            .ToList();
+        var causes = new List<string>();
+        if (!string.IsNullOrEmpty(query)) causes.Add($"la recherche « {query} »");
+        if (labels.Count == 1) causes.Add($"le filtre {labels[0]}");
+        else if (labels.Count > 1) causes.Add($"les filtres {string.Join(" + ", labels)}");
+
+        if (causes.Count == 0 && folderFiltered)
+        {
+            EmptyStateTitle.Text = "Ce dossier est vide";
+            EmptyStateDetail.Text = "Aucune machine n'y est rangée pour le moment.";
+            EmptyStateClearButton.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            EmptyStateTitle.Text = "Aucune machine ne correspond";
+            var where = folderFiltered ? " dans ce dossier" : "";
+            EmptyStateDetail.Text = $"Rien ne répond à {string.Join(" et ", causes)}{where}.";
+            EmptyStateClearButton.Visibility = Visibility.Visible;
+        }
+        EmptyState.Visibility = Visibility.Visible;
+    }
+
+    private void ClearFilters_Click(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Clear();
+        _searchTimer.Stop();
+        _activeFilters.Clear();
+        SyncFilterChips();
+        ApplyFilter();
+        SearchBox.Focus();
+    }
+
+    private bool MatchesFilter(DeviceRow row, DeviceFilter filter) => filter switch
+    {
+        DeviceFilter.Online => row.IsOnline,
+        DeviceFilter.Offline => !row.IsOnline,
+        DeviceFilter.Favorites => row.IsFavorite,
+        DeviceFilter.Recent => IsRecent(row.Node.Id),
+        DeviceFilter.InSession => row.IsOnline && row.Node.Sessions.Count > 0,
+        DeviceFilter.Windows => row.Node.OsFamily == OSFamily.Windows,
+        DeviceFilter.Linux => row.Node.OsFamily == OSFamily.Linux,
+        DeviceFilter.MacOS => row.Node.OsFamily == OSFamily.MacOS,
+        _ => true,
+    };
+
+    /// <summary>
+    /// La machine passe-t-elle tous les filtres actifs ? <paramref name="except"/>
+    /// ignore une catégorie : c'est ce que donnerait une autre pastille de
+    /// cette catégorie à la place de l'actuelle.
+    /// </summary>
+    private bool MatchesActiveFilters(DeviceRow row, FilterGroup except = FilterGroup.None)
+    {
+        foreach (var (group, filter) in _activeFilters)
+        {
+            if (group != except && !MatchesFilter(row, filter)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Compteurs des pastilles : chacun dit combien de machines resteraient en
+    /// l'activant, compte tenu des pastilles des autres catégories, du dossier
+    /// et de la recherche. Ainsi, avec « Windows » actif, « En ligne » compte
+    /// les machines Windows en ligne. Une pastille sans aucune machine dans le
+    /// périmètre disparaît (pas de « Linux 0 » sur un parc tout Windows) ; une
+    /// pastille que les autres filtres réduisent à zéro reste, en retrait.
+    /// </summary>
+    private void UpdateFilterChips()
+    {
+        foreach (var (filter, (chip, count)) in _filterChips)
+        {
+            var active = IsFilterActive(filter);
+            int n;
+            bool exists;
+            if (filter == DeviceFilter.All)
+            {
+                n = _chipScope.Count;
+                exists = true;
+            }
+            else
+            {
+                var group = GroupOf(filter);
+                n = _chipScope.Count(r => MatchesFilter(r, filter) && MatchesActiveFilters(r, group));
+                exists = n > 0 || filter == DeviceFilter.Online || _chipScope.Any(r => MatchesFilter(r, filter));
+            }
+            count.Text = n.ToString();
+            chip.Visibility = exists || active ? Visibility.Visible : Visibility.Collapsed;
+            chip.Opacity = n == 0 && !active && filter != DeviceFilter.All ? 0.45 : 1.0;
+        }
+        FilterChipsPanel.Visibility = _allRows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     // MARK: - Tri
 
@@ -1559,12 +2020,20 @@ public partial class MainWindow : ChromeWindow
 
     private void ApplyFilter()
     {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         var query = SearchBox.Text?.Trim() ?? "";
-        var onlineOnly = OnlineOnlyCheck.IsChecked == true;
-        var selectedId = (DeviceList.SelectedItem as DeviceRow)?.Node.Id;
+        var selectedIds = DeviceList.SelectedItems.OfType<DeviceRow>()
+            .Select(r => r.Node.Id).ToHashSet();
+
+        // Vue à deux volets : dossier choisi. Une recherche en cours reprend la
+        // main sur le dossier — sinon le champ paraîtrait ne rien trouver dès
+        // que la machine cherchée se range ailleurs.
+        var folderKey = _settings.FolderView && string.IsNullOrEmpty(query)
+                        && _selectedFolderKey is { } key && key != FolderRow.AllKey
+            ? key : null;
+        bool folderFiltered = folderKey is not null;
 
         IEnumerable<DeviceRow> source = _allRows;
-        if (onlineOnly) source = source.Where(r => r.IsOnline);
         if (!string.IsNullOrEmpty(query))
             source = source.Where(r =>
                 r.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
@@ -1573,71 +2042,126 @@ public partial class MainWindow : ChromeWindow
                 // Retrouver un poste par son adresse, ou par le collègue connecté dessus.
                 || (r.Node.Ip?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
                 || (r.IsOnline && r.Node.Sessions.Any(s => s.UserName.Contains(query, StringComparison.OrdinalIgnoreCase))));
+        else if (folderKey != FolderRow.HiddenKey)
+            // Dossiers masqués : hors de la liste, sauf pendant une recherche
+            // ou quand on ouvre l'entrée « dossiers masqués » du volet.
+            source = source.Where(r => !IsHiddenFolder(r.RealGroupName));
+
+        if (folderKey is not null)
+            source = source.Where(r => folderKey switch
+            {
+                FolderRow.HiddenKey => IsHiddenFolder(r.RealGroupName),
+                FavoritesGroup => r.IsFavorite,
+                _ => string.Equals(r.RealGroupName, folderKey, StringComparison.OrdinalIgnoreCase),
+            });
+
+        // Les pastilles comptent sur ce périmètre (recherche et dossier), avant
+        // leur propre filtre : elles disent ce que chacune donnerait ici.
+        _chipScope = source.ToList();
+        if (AnyFilterActive) source = _chipScope.Where(r => MatchesActiveFilters(r));
+        var set = _activeFilters.GetValueOrDefault(FilterGroup.Set, DeviceFilter.All);
 
         var rows = SortRows(source, byGroup: true).ToList();
 
-        // Vue à deux volets : restreindre au dossier choisi. Une recherche en
-        // cours reprend la main sur le dossier — sinon le champ paraîtrait ne
-        // rien trouver dès que la machine cherchée se range ailleurs.
-        bool folderFiltered = false;
-        if (_settings.FolderView && string.IsNullOrEmpty(query)
-            && _selectedFolderKey is { } folderKey && folderKey != FolderRow.AllKey)
+        // Favoris et Récents forment une liste plate : on a demandé ces
+        // machines-là, quel que soit leur dossier. Les récents gardent l'ordre
+        // d'utilisation, le plus récent en tête. Les dossiers masqués, eux,
+        // restent groupés : ils sont plusieurs.
+        bool flat = (folderFiltered && folderKey != FolderRow.HiddenKey)
+                    || set is DeviceFilter.Favorites or DeviceFilter.Recent;
+        if (set == DeviceFilter.Recent)
         {
-            rows = folderKey == FavoritesGroup
-                ? rows.Where(r => r.IsFavorite).ToList()
-                : rows.Where(r => string.Equals(r.RealGroupName, folderKey,
-                                      StringComparison.OrdinalIgnoreCase)).ToList();
-            folderFiltered = true;
+            var recent = _settings.RecentNodeIds
+                .Select((id, index) => (id, index))
+                .ToDictionary(x => x.id, x => x.index);
+            rows = rows.OrderBy(r => recent.GetValueOrDefault(r.Node.Id, int.MaxValue)).ToList();
+        }
+        else if (set == DeviceFilter.Favorites)
+        {
+            rows = SortRows(rows, byGroup: false).ToList();
         }
 
-        // Sections virtuelles en tête : favoris puis machines récentes. Une même
-        // machine peut apparaître deux fois (en favori et dans son dossier) ;
-        // c'est voulu, comme un raccourci vers l'entrée réelle.
-        _virtualRows.Clear();
-        var display = new List<DeviceRow>();
+        // Plan d'affichage : chaque ligne et la section où elle paraît. Sections
+        // virtuelles en tête, favoris puis machines récentes ; une même machine
+        // peut apparaître deux fois (en favori et dans son dossier), c'est voulu,
+        // comme un raccourci vers l'entrée réelle.
+        var plan = new List<(DeviceRow Source, string Group)>(rows.Count + 16);
 
-        // Dans un dossier précis, ni favoris ni récentes : on a demandé ce
-        // dossier-là, pas un florilège.
-        if (string.IsNullOrEmpty(query) && !folderFiltered)
+        // Dans un dossier précis ou sous un filtre, ni favoris ni récentes : on
+        // a demandé ces machines-là, pas un florilège.
+        if (string.IsNullOrEmpty(query) && !folderFiltered && !AnyFilterActive)
         {
             // Même ordre que les dossiers, mais les favoris de tous les
             // dossiers mêlés en une seule section.
-            var favorites = SortRows(rows.Where(r => r.IsFavorite), byGroup: false)
-                                .Select(r => Clone(r, FavoritesGroup));
-            display.AddRange(favorites);
+            foreach (var favorite in SortRows(rows.Where(r => r.IsFavorite), byGroup: false))
+                plan.Add((favorite, FavoritesGroup));
 
             // Récentes : dans l'ordre d'utilisation, favoris exclus (déjà en haut).
             var byId = rows.ToDictionary(r => r.Node.Id, r => r);
             foreach (var id in _settings.RecentNodeIds)
             {
                 if (byId.TryGetValue(id, out var row) && !row.IsFavorite)
-                    display.Add(Clone(row, RecentGroup));
+                    plan.Add((row, RecentGroup));
             }
         }
 
-        display.AddRange(rows);
+        foreach (var row in rows) plan.Add((row, row.GroupName));
 
-        // « Tout replier » actif : un dossier apparu depuis (nouvelle machine,
-        // section Favoris qui vient de se créer) doit l'être aussi, sinon il
-        // s'ouvrirait seul au milieu d'une liste repliée.
-        if (_allGroupsCollapsed)
+        // Même résultat que l'affichage en place (recherche affinée sans effet,
+        // événement serveur sans conséquence visible…) : on garde la vue telle
+        // quelle. Reconstruire une vue groupée régénère tous ses éléments ; s'en
+        // dispenser rend la frappe et les clics immédiats, et conserve
+        // défilement et sélection.
+        var unchanged = DeviceList.ItemsSource is not null && flat == _lastFlat
+                        && plan.Count == _lastPlan.Count;
+        for (var i = 0; unchanged && i < plan.Count; i++)
         {
-            foreach (var name in display.Select(r => r.GroupName).Distinct())
-                _collapsedGroups.Add(name);
+            unchanged = ReferenceEquals(plan[i].Source, _lastPlan[i].Source)
+                        && plan[i].Group == _lastPlan[i].Group;
         }
 
-        // Un seul dossier affiché : vue plate, pour ne pas coiffer la liste d'un
-        // en-tête de groupe unique qui répéterait le volet.
-        DeviceList.ItemsSource = folderFiltered
-            ? (System.Collections.IEnumerable)display
-            : BuildGroupedView(display);
+        List<DeviceRow> display;
+        if (unchanged)
+        {
+            display = _lastDisplay;
+        }
+        else
+        {
+            _virtualRows.Clear();
+            display = new List<DeviceRow>(plan.Count);
+            foreach (var (row, group) in plan)
+                display.Add(group == row.GroupName ? row : Clone(row, group));
+
+            // « Tout replier » actif : un dossier apparu depuis (nouvelle
+            // machine, section Favoris qui vient de se créer) doit l'être aussi,
+            // sinon il s'ouvrirait seul au milieu d'une liste repliée.
+            if (_allGroupsCollapsed)
+            {
+                foreach (var name in display.Select(r => r.GroupName).Distinct())
+                    _collapsedGroups.Add(name);
+            }
+
+            // Un seul dossier affiché : vue plate, pour ne pas coiffer la liste
+            // d'un en-tête de groupe unique qui répéterait le volet.
+            DeviceList.ItemsSource = flat
+                ? (System.Collections.IEnumerable)display
+                : BuildGroupedView(display);
+
+            _lastPlan = plan;
+            _lastFlat = flat;
+            _lastDisplay = display;
+        }
+        Highlight.SetQuery(DeviceList, query);
+        UpdateEmptyState(display.Count, query, folderFiltered);
 
         var totalOnline = _allRows.Count(r => r.IsOnline);
         CountText.Text = rows.Count == _allRows.Count
             ? $"{_allRows.Count} appareils · {totalOnline} en ligne"
             : $"{rows.Count} affichés sur {_allRows.Count} · {totalOnline} en ligne";
+        UpdateFilterChips();
+        RefreshFolderCounts();
         // Le bouton de repli n'a de sens qu'avec plusieurs dossiers affichés.
-        ToggleGroupsButton.Visibility = !folderFiltered
+        ToggleGroupsButton.Visibility = !flat
             && rows.Select(r => r.GroupName).Distinct().Skip(1).Any()
             ? Visibility.Visible : Visibility.Collapsed;
 
@@ -1649,9 +2173,23 @@ public partial class MainWindow : ChromeWindow
         UpdateToggleGroupsButton();
         UpdateTrayTooltip();
 
-        if (selectedId is not null)
-            DeviceList.SelectedItem = rows.FirstOrDefault(r => r.Node.Id == selectedId);
+        // Restaure la sélection, multiple comprise, sur les lignes réelles. Vue
+        // gardée telle quelle : la sélection n'a pas bougé.
+        if (selectedIds.Count > 0 && !unchanged)
+        {
+            foreach (var row in rows.Where(r => selectedIds.Contains(r.Node.Id)))
+                DeviceList.SelectedItems.Add(row);
+        }
+        UpdateSelectionBar();
+
+        Log.Debug($"Liste filtrée en {watch.Elapsed.TotalMilliseconds:F1} ms "
+                  + $"({display.Count} lignes, {(unchanged ? "vue conservée" : "vue reconstruite")})", "Interface");
     }
+
+    /// <summary>Dernier plan d'affichage appliqué, pour éviter une reconstruction inutile.</summary>
+    private List<(DeviceRow Source, string Group)> _lastPlan = new();
+    private List<DeviceRow> _lastDisplay = new();
+    private bool _lastFlat;
 
     // MARK: - Actions : double-clic = connexion directe
 
@@ -1660,7 +2198,9 @@ public partial class MainWindow : ChromeWindow
         // Le double-clic d'un bouton de la ligne (action rapide, étoile)
         // remonte jusqu'ici : il ne doit pas ouvrir en plus le bureau.
         if (IsInsideButton(e.OriginalSource as DependencyObject)) return;
-        if (DeviceList.SelectedItem is DeviceRow row) OpenDesktop(row.Node);
+        // La ligne sous le curseur, pas la sélection : avec la sélection
+        // multiple, SelectedItem peut désigner une autre machine.
+        if (DeviceRowAt(e.OriginalSource) is { } row) OpenDesktop(row.Node);
     }
 
     private bool IsInsideButton(DependencyObject? element)
@@ -1682,12 +2222,17 @@ public partial class MainWindow : ChromeWindow
     private void RowAction_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: DeviceRow row, CommandParameter: string name }) return;
-        if (!Enum.TryParse<DeviceAction>(name, out var action)) return;
 
         // La ligne devient la sélection : c'est sur elle que portera un F2 ou
         // un clic droit juste après.
-        DeviceList.SelectedItem = row;
-        RunAction(row.Node, action);
+        SelectOnly(row);
+
+        if (name == "Watch")
+        {
+            SetWatched([row.Node], !row.IsWatched);
+            return;
+        }
+        if (Enum.TryParse<DeviceAction>(name, out var action)) RunAction(row.Node, action);
     }
 
     /// <summary>Ouvre le bureau à distance, en signalant les cas impossibles.</summary>
@@ -1734,7 +2279,7 @@ public partial class MainWindow : ChromeWindow
     // MARK: - Envoi de fichiers vers plusieurs machines
 
     private void SendFiles_Click(object sender, RoutedEventArgs e)
-        => OpenSendFiles(SelectedNode is { IsOnline: true, HasAgent: true } node ? [node] : []);
+        => OpenSendFiles(SelectedNodes.Where(IsReachable).ToList());
 
     /// <summary>
     /// Ouvre la fenêtre d'envoi, ces machines déjà cochées et, le cas échéant,
@@ -1759,7 +2304,7 @@ public partial class MainWindow : ChromeWindow
 
         e.Effects = acceptable ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
-        if (acceptable) DeviceList.SelectedItem = row;
+        if (acceptable) SelectOnly(row!);
     }
 
     /// <summary>
@@ -1782,19 +2327,37 @@ public partial class MainWindow : ChromeWindow
 
     // MARK: - Actions : clic droit = menu contextuel
 
-    /// <summary>Sélectionne la ligne sous le curseur avant d'ouvrir le menu.</summary>
+    /// <summary>
+    /// Sélectionne la ligne sous le curseur avant d'ouvrir le menu. Une ligne
+    /// déjà sélectionnée garde la sélection multiple : le menu porte alors sur
+    /// toutes les machines choisies.
+    /// </summary>
     private void DeviceList_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
         var item = ItemsControl.ContainerFromElement(DeviceList, (DependencyObject)e.OriginalSource)
                    as ListBoxItem;
-        if (item is not null) item.IsSelected = true;
+        if (item is { IsSelected: false, DataContext: DeviceRow row }) SelectOnly(row);
     }
 
     /// <summary>Active/désactive les entrées selon l'état réel de la machine.</summary>
     private void DeviceMenu_Opened(object sender, RoutedEventArgs e)
     {
-        var node = (DeviceList.SelectedItem as DeviceRow)?.Node;
+        var nodes = SelectedNodes;
+        if (nodes.Count > 1)
+        {
+            ConfigureMenuForSelection(nodes);
+            return;
+        }
+        MenuCopyName.Header = "Copier le nom";
+        foreach (var single in SingleOnlyMenuItems) single.Visibility = Visibility.Visible;
+
+        var node = nodes.FirstOrDefault();
         bool reachable = node is { IsOnline: true, HasAgent: true };
+
+        MenuWatch.Visibility = node is { IsOnline: false } ? Visibility.Visible : Visibility.Collapsed;
+        MenuWatch.Header = node is not null && _watchOnline.Contains(node.Id)
+            ? "Ne plus me prévenir de son retour"
+            : "Me prévenir à son retour";
 
         MenuDesktop.IsEnabled = reachable;
         // Terminal et fichiers passent par l'agent : mêmes prérequis que le
@@ -1857,7 +2420,406 @@ public partial class MainWindow : ChromeWindow
         };
     }
 
-    private MeshNode? SelectedNode => (DeviceList.SelectedItem as DeviceRow)?.Node;
+    // MARK: - Sélection multiple
+
+    /// <summary>
+    /// Machines sélectionnées, sans doublon : une machine peut figurer deux
+    /// fois dans la liste (section Favoris et son dossier).
+    /// </summary>
+    private List<MeshNode> SelectedNodes => DeviceList.SelectedItems.OfType<DeviceRow>()
+        .Select(r => r.Node).DistinctBy(n => n.Id).ToList();
+
+    private static bool IsReachable(MeshNode node) => node is { IsOnline: true, HasAgent: true };
+
+    /// <summary>Ne garde que cette ligne sélectionnée.</summary>
+    private void SelectOnly(DeviceRow row)
+    {
+        if (DeviceList.SelectedItems.Count == 1 && ReferenceEquals(DeviceList.SelectedItem, row)) return;
+        DeviceList.SelectedItems.Clear();
+        DeviceList.SelectedItem = row;
+    }
+
+    private void DeviceList_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateSelectionBar();
+
+    private void ClearSelection_Click(object sender, RoutedEventArgs e)
+    {
+        DeviceList.UnselectAll();
+        DeviceList.Focus();
+    }
+
+    /// <summary>
+    /// Barre des actions groupées : visible à partir de deux machines, chaque
+    /// bouton actif seulement si une machine au moins s'y prête.
+    /// </summary>
+    private void UpdateSelectionBar()
+    {
+        var nodes = SelectedNodes;
+        if (nodes.Count < 2)
+        {
+            SelectionBar.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var online = nodes.Count(n => n.IsOnline);
+        SelectionText.Text = $"{nodes.Count} machines sélectionnées · {online} en ligne";
+        BulkWakeButton.IsEnabled = nodes.Any(n => !n.IsOnline);
+        var anyReachable = nodes.Any(IsReachable);
+        BulkRebootButton.IsEnabled = anyReachable;
+        BulkPowerOffButton.IsEnabled = anyReachable;
+        BulkSendFilesButton.IsEnabled = anyReachable;
+        BulkFavoriteButton.Content = nodes.Any(n => !_settings.IsFavorite(n.Id))
+            ? "Ajouter aux favoris" : "Retirer des favoris";
+        SelectionBar.Visibility = Visibility.Visible;
+    }
+
+    private void BulkWake_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Wake);
+    private void BulkReboot_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Reboot);
+    private void BulkPowerOff_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.PowerOff);
+    private void BulkFavorite_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.ToggleFavorite);
+    private void BulkSendFiles_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.SendFiles);
+
+    /// <summary>Entrées du menu qui ne valent que pour une machine à la fois.</summary>
+    private IEnumerable<FrameworkElement> SingleOnlyMenuItems =>
+    [
+        MenuDesktop, MenuTerminal, MenuFiles, MenuSsh, MenuToolsSeparator, MenuProcesses,
+        MenuOpenUrl, MenuShare, MenuRename, MenuInfo, MenuWebPage,
+    ];
+
+    /// <summary>Menu contextuel sur plusieurs machines : seules les actions groupées.</summary>
+    private void ConfigureMenuForSelection(List<MeshNode> nodes)
+    {
+        foreach (var single in SingleOnlyMenuItems) single.Visibility = Visibility.Collapsed;
+
+        var anyReachable = nodes.Any(IsReachable);
+        var offline = nodes.Where(n => !n.IsOnline).ToList();
+        MenuSendFiles.IsEnabled = anyReachable;
+        MenuWake.IsEnabled = offline.Count > 0;
+        MenuReboot.IsEnabled = anyReachable;
+        MenuSleep.IsEnabled = anyReachable;
+        MenuPowerOff.IsEnabled = anyReachable;
+
+        MenuWatch.Visibility = offline.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        MenuWatch.Header = offline.Any(n => !_watchOnline.Contains(n.Id))
+            ? $"Me prévenir de leur retour ({offline.Count})"
+            : $"Ne plus me prévenir de leur retour ({offline.Count})";
+
+        MenuFavorite.IsEnabled = true;
+        MenuFavorite.Header = nodes.Any(n => !_settings.IsFavorite(n.Id))
+            ? $"Ajouter aux favoris ({nodes.Count})"
+            : $"Retirer des favoris ({nodes.Count})";
+        MenuCopyName.IsEnabled = true;
+        MenuCopyName.Header = $"Copier les noms ({nodes.Count})";
+    }
+
+    /// <summary>Actions qui ont un sens sur plusieurs machines à la fois.</summary>
+    private static bool IsBulkAction(DeviceAction action) => action is DeviceAction.Wake
+        or DeviceAction.Reboot or DeviceAction.Sleep or DeviceAction.PowerOff
+        or DeviceAction.SendFiles or DeviceAction.ToggleFavorite or DeviceAction.CopyName;
+
+    private static string Machines(int count) => count == 1 ? "1 machine" : $"{count} machines";
+
+    /// <summary>Noms à confirmer, tronqués au-delà de dix.</summary>
+    private static string NameList(IReadOnlyList<MeshNode> nodes)
+    {
+        var names = nodes.Take(10).Select(n => $"• {n.Name}");
+        var more = nodes.Count > 10 ? $"\n… et {nodes.Count - 10} autres" : "";
+        return string.Join("\n", names) + more;
+    }
+
+    /// <summary>
+    /// Action sur plusieurs machines. Les ordres d'alimentation partent en un
+    /// seul message au serveur, après une confirmation qui liste les machines ;
+    /// celles qui ne peuvent pas les recevoir (hors ligne, sans agent) sont
+    /// écartées et signalées.
+    /// </summary>
+    private async void RunBulk(IReadOnlyList<MeshNode> nodes, DeviceAction action)
+    {
+        if (_connection is null || nodes.Count == 0) return;
+        var connection = _connection;
+        var reachable = nodes.Where(IsReachable).ToList();
+        var skipped = nodes.Count - reachable.Count;
+        var skippedNote = skipped > 0
+            ? $"\n\n{Machines(skipped)} hors ligne ou sans agent ne {(skipped == 1 ? "sera" : "seront")} pas concernée{(skipped == 1 ? "" : "s")}."
+            : "";
+
+        switch (action)
+        {
+            case DeviceAction.Wake:
+                var asleep = nodes.Where(n => !n.IsOnline).ToList();
+                if (asleep.Count == 0) return;
+                await RunPowerAsync(() => connection.WakeAsync(asleep.Select(n => n.Id)),
+                    $"Signal de réveil envoyé à {Machines(asleep.Count)}.");
+                break;
+
+            case DeviceAction.Reboot or DeviceAction.Sleep or DeviceAction.PowerOff:
+                if (reachable.Count == 0)
+                {
+                    ShowToast("Aucune machine de la sélection n'est joignable.");
+                    return;
+                }
+                var (verb, detail, type, done) = action switch
+                {
+                    DeviceAction.Reboot => ("Redémarrer", "Les travaux non enregistrés seront perdus.",
+                                            PowerActionType.Reboot, "de redémarrage"),
+                    DeviceAction.Sleep => ("Mettre en veille", "Elles ne répondront plus jusqu'à leur réveil.",
+                                           PowerActionType.Sleep, "de mise en veille"),
+                    _ => ("Éteindre", "Il faudra un réveil Wake-on-LAN ou une action physique pour les rallumer.",
+                          PowerActionType.PowerOff, "d'extinction"),
+                };
+                if (!Confirm($"{verb} {Machines(reachable.Count)} ?",
+                             $"{NameList(reachable)}\n\n{detail}{skippedNote}")) return;
+                await RunPowerAsync(() => connection.PowerActionAsync(reachable.Select(n => n.Id), type),
+                    $"Ordre {done} envoyé à {Machines(reachable.Count)}.");
+                break;
+
+            case DeviceAction.SendFiles:
+                OpenSendFiles(reachable);
+                break;
+
+            case DeviceAction.ToggleFavorite:
+                // Ajout si l'une d'elles n'est pas favorite, retrait sinon :
+                // comme une case à cocher sur une sélection mêlée.
+                var add = nodes.Any(n => !_settings.IsFavorite(n.Id));
+                foreach (var node in nodes.Where(n => _settings.IsFavorite(n.Id) != add))
+                {
+                    _settings.ToggleFavorite(node.Id);
+                    if (_rowsById.TryGetValue(node.Id, out var row)) row.IsFavorite = add;
+                }
+                _settings.Save();
+                ApplyFilter();
+                ShowToast(add ? $"{Machines(nodes.Count)} dans les favoris."
+                              : $"{Machines(nodes.Count)} retirée{(nodes.Count == 1 ? "" : "s")} des favoris.");
+                break;
+
+            case DeviceAction.CopyName:
+                try
+                {
+                    Clipboard.SetText(string.Join(Environment.NewLine, nodes.Select(n => n.Name)));
+                    ShowToast($"{nodes.Count} noms copiés.");
+                }
+                catch { /* presse-papiers occupé */ }
+                break;
+        }
+    }
+
+    // MARK: - Alerte de retour en ligne
+
+    /// <summary>
+    /// Machines dont on attend le retour en ligne. En mémoire seulement : une
+    /// alerte sert pendant qu'on attend, pas d'une semaine sur l'autre.
+    /// </summary>
+    private readonly HashSet<string> _watchOnline = new();
+
+    /// <summary>Machine visée par la dernière bulle de notification, le cas échéant.</summary>
+    private string? _balloonNodeId;
+
+    private void MenuWatch_Click(object sender, RoutedEventArgs e)
+    {
+        var offline = SelectedNodes.Where(n => !n.IsOnline).ToList();
+        if (offline.Count == 0) return;
+        SetWatched(offline, offline.Any(n => !_watchOnline.Contains(n.Id)));
+    }
+
+    /// <summary>Pose ou retire l'alerte de retour en ligne sur ces machines.</summary>
+    private void SetWatched(IReadOnlyList<MeshNode> nodes, bool watch)
+    {
+        foreach (var node in nodes)
+        {
+            if (watch && !node.IsOnline) _watchOnline.Add(node.Id);
+            else _watchOnline.Remove(node.Id);
+        }
+        RefreshWatchMarks();
+
+        if (nodes.Count == 1)
+            ShowToast(watch
+                ? $"Vous serez prévenu dès que « {nodes[0].Name} » sera en ligne."
+                : $"Alerte retirée pour « {nodes[0].Name} ».");
+        else
+            ShowToast(watch
+                ? $"Vous serez prévenu du retour de {Machines(nodes.Count)}."
+                : $"Alertes retirées pour {Machines(nodes.Count)}.");
+    }
+
+    /// <summary>Aligne les cloches des lignes (réelles et copies) sur les alertes posées.</summary>
+    private void RefreshWatchMarks()
+    {
+        foreach (var row in _rowsById.Values.Concat(_virtualRows))
+            row.IsWatched = _watchOnline.Contains(row.Node.Id);
+    }
+
+    /// <summary>
+    /// Appelée à chaque mise à jour de l'inventaire : une machine attendue qui
+    /// vient de se connecter déclenche une notification Windows, une seule fois.
+    /// </summary>
+    private void CheckWatchedNodes()
+    {
+        if (_watchOnline.Count == 0 || _connection is not { } connection) return;
+
+        var back = _watchOnline
+            .Select(id => connection.Nodes.TryGetValue(id, out var node) ? node : null)
+            .OfType<MeshNode>()
+            .Where(n => n.IsOnline)
+            .ToList();
+        if (back.Count == 0) return;
+
+        foreach (var node in back)
+        {
+            _watchOnline.Remove(node.Id);
+            Log.Info($"Retour en ligne signalé : {node.Name}", "Appareil");
+        }
+        RefreshWatchMarks();
+
+        var first = back[0];
+        var title = back.Count == 1 ? $"« {first.Name} » est en ligne" : $"{back.Count} machines sont en ligne";
+        var message = back.Count == 1
+            ? "Cliquez ici pour ouvrir le bureau à distance."
+            : string.Join(", ", back.Select(n => n.Name));
+        ShowTrayMessage(title, message, back.Count == 1 ? first.Id : null);
+        if (IsVisible)
+        {
+            ToastText.Text = back.Count == 1 ? $"« {first.Name} » est de retour en ligne." : $"{title}.";
+            ToastBanner.Visibility = Visibility.Visible;
+            ToastBanner.BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(140)));
+            _toastTimer.Stop();
+            _toastTimer.Start();
+        }
+    }
+
+    /// <summary>
+    /// Bulle de la zone de notification. nodeId désigne la machine à ouvrir si
+    /// l'on clique dessus ; sans elle, le clic ramène la fenêtre principale.
+    /// </summary>
+    private void ShowTrayMessage(string title, string message, string? nodeId = null)
+    {
+        _balloonNodeId = nodeId;
+        _tray?.ShowMessage(title, message);
+    }
+
+    private void OnBalloonClicked()
+    {
+        var nodeId = _balloonNodeId;
+        _balloonNodeId = null;
+        if (nodeId is not null && _connection?.Nodes.TryGetValue(nodeId, out var node) == true
+            && IsReachable(node))
+        {
+            OpenDesktop(node);
+            return;
+        }
+        RestoreMainWindow();
+    }
+
+    // MARK: - Clavier dans la liste
+
+    /// <summary>
+    /// Raccourcis de la liste : Entrée ouvre le bureau à distance, Ctrl+T le
+    /// terminal, Ctrl+E les fichiers, Échap défait une sélection multiple.
+    /// Ctrl+F renvoie à la recherche depuis n'importe où dans la fenêtre.
+    /// </summary>
+    private void HandleListShortcut(KeyEventArgs args)
+    {
+        if (IsSettingsOpen || DevicesPanel.Visibility != Visibility.Visible) return;
+        var ctrl = Keyboard.Modifiers == ModifierKeys.Control;
+
+        if (ctrl && args.Key == Key.F)
+        {
+            SearchBox.Focus();
+            SearchBox.SelectAll();
+            args.Handled = true;
+            return;
+        }
+
+        if (!DeviceList.IsKeyboardFocusWithin || Keyboard.FocusedElement is TextBox) return;
+
+        if (args.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            // La ligne qui porte le focus : c'est elle qu'on voit encadrée.
+            var row = (Keyboard.FocusedElement as ListBoxItem)?.DataContext as DeviceRow
+                      ?? DeviceList.SelectedItem as DeviceRow;
+            if (row is not null) OpenDesktop(row.Node);
+            args.Handled = true;
+        }
+        else if (ctrl && args.Key == Key.T)
+        {
+            RunSelected(DeviceAction.Terminal);
+            args.Handled = true;
+        }
+        else if (ctrl && args.Key == Key.E)
+        {
+            RunSelected(DeviceAction.Files);
+            args.Handled = true;
+        }
+        else if (args.Key == Key.Escape && DeviceList.SelectedItems.Count > 1)
+        {
+            DeviceList.UnselectAll();
+            args.Handled = true;
+        }
+    }
+
+    /// <summary>
+    /// Taper une lettre dans la liste bascule dans la recherche, la lettre
+    /// comprise : pas besoin de cliquer d'abord dans le champ.
+    /// </summary>
+    private void DeviceList_PreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        if (string.IsNullOrEmpty(e.Text) || char.IsControl(e.Text[0])) return;
+        if (char.IsWhiteSpace(e.Text[0]) && string.IsNullOrEmpty(SearchBox.Text)) return;
+
+        SearchBox.Focus();
+        SearchBox.Text += e.Text;
+        SearchBox.CaretIndex = SearchBox.Text.Length;
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Depuis la recherche : Flèche bas ou Entrée descend dans la liste ; Entrée
+    /// ouvre directement le bureau quand une seule machine correspond. Échap
+    /// efface la recherche.
+    /// </summary>
+    private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && !string.IsNullOrEmpty(SearchBox.Text))
+        {
+            ClearSearch_Click(sender, e);
+            e.Handled = true;
+            return;
+        }
+        if (e.Key is not (Key.Down or Key.Enter)) return;
+
+        // Résultat à jour avant de choisir : la frappe est filtrée en différé.
+        if (_searchTimer.IsEnabled)
+        {
+            _searchTimer.Stop();
+            ApplyFilter();
+        }
+
+        var rows = DeviceList.Items.OfType<DeviceRow>().ToList();
+        if (rows.Count == 0) return;
+        e.Handled = true;
+
+        if (e.Key == Key.Enter && rows.Select(r => r.Node.Id).Distinct().Count() == 1)
+        {
+            SelectOnly(rows[0]);
+            OpenDesktop(rows[0].Node);
+            return;
+        }
+        FocusFirstRow(rows);
+    }
+
+    /// <summary>Donne le focus clavier à la première ligne visible.</summary>
+    private void FocusFirstRow(List<DeviceRow> rows)
+    {
+        DeviceList.UpdateLayout();
+        foreach (var row in rows)
+        {
+            if (DeviceList.ItemContainerGenerator.ContainerFromItem(row) is ListBoxItem { IsVisible: true } item)
+            {
+                SelectOnly(row);
+                item.Focus();
+                return;
+            }
+        }
+        DeviceList.Focus();
+    }
 
     // MARK: - Dispatcheur d'actions
 
@@ -2080,9 +3042,19 @@ public partial class MainWindow : ChromeWindow
     private void MenuInfo_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.SystemInfo);
     private void MenuWebPage_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.WebPage);
 
+    /// <summary>
+    /// Action du menu, de la barre de sélection ou d'un raccourci. Sur
+    /// plusieurs machines, seules les actions groupées s'appliquent.
+    /// </summary>
     private void RunSelected(DeviceAction action)
     {
-        if (SelectedNode is { } node) RunAction(node, action);
+        var nodes = SelectedNodes;
+        if (nodes.Count > 1)
+        {
+            if (IsBulkAction(action)) RunBulk(nodes, action);
+            return;
+        }
+        if (nodes.Count == 1) RunAction(nodes[0], action);
     }
 
     private static bool Confirm(string title, string detail) =>
@@ -2249,7 +3221,7 @@ public partial class MainWindow : ChromeWindow
         // le bandeau serait invisible. On passe par une bulle système.
         if (!IsVisible)
         {
-            _tray?.ShowMessage("Mesh Control", message);
+            ShowTrayMessage("Mesh Control", message);
             return;
         }
 

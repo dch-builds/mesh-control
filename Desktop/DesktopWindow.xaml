@@ -130,9 +130,17 @@
                               VerticalContentAlignment="Center"
                               ToolTip="Qualité d'image"
                               SelectionChanged="QualityCombo_SelectionChanged">
-                        <ComboBoxItem Content="Basse"/>
-                        <ComboBoxItem Content="Équilibrée" IsSelected="True"/>
-                        <ComboBoxItem Content="Haute"/>
+                        <!-- Tag : valeur enregistrée dans les réglages
+                             (DefaultDesktopQuality), qui ne suit pas l'ordre de
+                             la liste : les modes dépannage et fluide sont venus
+                             après. -->
+                        <ComboBoxItem Content="Dépannage" Tag="3"
+                                      ToolTip="Liaison très lente : compression maximale, image réduite, 5 img/s au plus. « Image nette » (Ctrl+Maj+R) rend le texte lisible"/>
+                        <ComboBoxItem Content="Basse" Tag="0"/>
+                        <ComboBoxItem Content="Équilibrée" Tag="1" IsSelected="True"/>
+                        <ComboBoxItem Content="Haute" Tag="2"/>
+                        <ComboBoxItem Content="Fluide" Tag="4"
+                                      ToolTip="Pour suivre une vidéo : 40 img/s et bonne qualité d'image. Demande une bonne connexion"/>
                     </ComboBox>
 
                     <ComboBox x:Name="FrameRateCombo" Width="104" FontSize="12"
@@ -487,6 +495,34 @@
                     VerticalAlignment="Top" HorizontalAlignment="Right"
                     Margin="0,14,14,0"
                     ToolTip="Revenir à la vue entière (Ctrl+Maj+Z)"/>
+
+            <!-- Liaison lente repérée : propose le mode dépannage, sans
+                 l'imposer. En bas, pour ne pas masquer les rappels du haut. -->
+            <Border x:Name="SlowLinkBanner" Visibility="Collapsed"
+                    Background="{StaticResource CardBrush}"
+                    BorderBrush="{StaticResource SeparatorBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="14,8,8,8"
+                    VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                    Margin="16,0,16,18">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" BlurRadius="18" ShadowDepth="2"
+                                      Direction="270" Opacity="0.35"/>
+                </Border.Effect>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="&#xE7BA;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" Margin="0,1,10,0"/>
+                    <TextBlock Text="Connexion lente : l'image arrive en retard."
+                               Foreground="{StaticResource TextPrimaryBrush}" FontSize="12"
+                               VerticalAlignment="Center" Margin="0,0,14,0"
+                               TextTrimming="CharacterEllipsis"/>
+                    <Button Content="Passer en mode dépannage"
+                            Style="{StaticResource AccentToolButton}"
+                            Click="SlowLinkSwitch_Click" Margin="0,0,6,0"/>
+                    <Button Content="Ignorer" Style="{StaticResource ToolButton}"
+                            Click="SlowLinkDismiss_Click"/>
+                </StackPanel>
+            </Border>
 
             <!-- Rappel permanent de la vue seule : sans lui, on croirait la
                  session figée. Cliquable pour reprendre la main. -->

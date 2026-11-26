@@ -455,6 +455,9 @@ public sealed class MeshServerConnection : IDisposable
                     foreach (var m in meshesEl.EnumerateArray())
                         if (Mesh.From(m) is { } mesh) _meshes.Add(mesh);
                     _meshes.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                    // Un groupe supprimé emporte ses machines, même si le
+                    // serveur n'a pas envoyé d'événement pour chacune.
+                    PruneOrphanNodes();
                     DevicesChanged?.Invoke();
                 }
                 break;
@@ -534,10 +537,21 @@ public sealed class MeshServerConnection : IDisposable
     private void MergeNodeInventory(JsonElement grouped)
     {
         var seen = new HashSet<string>();
+        var orphans = 0;
 
         foreach (var group in grouped.EnumerateObject())
         {
             if (group.Value.ValueKind != JsonValueKind.Array) continue;
+
+            // Machines d'un groupe que le serveur ne nous liste pas (groupe
+            // supprimé, dont les fiches traînent encore en base) : l'interface
+            // web les écarte, on fait de même. Sans cela, elles gonflaient le
+            // compte des machines hors ligne.
+            if (!IsKnownMesh(group.Name))
+            {
+                orphans += group.Value.GetArrayLength();
+                continue;
+            }
 
             foreach (var item in group.Value.EnumerateArray())
             {
@@ -553,6 +567,25 @@ public sealed class MeshServerConnection : IDisposable
         // révoqués. Elles ne doivent pas survivre à un rafraîchissement.
         foreach (var id in _nodes.Keys.Where(id => !seen.Contains(id)).ToList())
             _nodes.TryRemove(id, out _);
+
+        if (orphans > 0)
+            Log.Info($"{orphans} machine(s) ignorée(s) : leur groupe n'existe plus sur le serveur", "Serveur");
+    }
+
+    /// <summary>
+    /// Le groupe fait-il partie de ceux que le serveur nous liste ? Tant que la
+    /// liste des groupes n'est pas arrivée, on ne filtre rien.
+    /// </summary>
+    private bool IsKnownMesh(string meshId)
+    {
+        return _meshes.Count == 0 || _meshes.Any(m => m.Id == meshId);
+    }
+
+    /// <summary>Retire les machines dont le groupe a disparu de la liste.</summary>
+    private void PruneOrphanNodes()
+    {
+        foreach (var node in _nodes.Values.Where(n => !IsKnownMesh(n.MeshId)).ToList())
+            _nodes.TryRemove(node.Id, out _);
     }
 
     /// <summary>
@@ -652,7 +685,8 @@ public sealed class MeshServerConnection : IDisposable
                 if (ev.TryGetProperty("node", out var addJson))
                 {
                     var meshId = GetString(ev, "meshid") ?? GetString(addJson, "meshid");
-                    if (meshId is not null && MeshNode.From(addJson, meshId) is { } added)
+                    if (meshId is not null && IsKnownMesh(meshId)
+                        && MeshNode.From(addJson, meshId) is { } added)
                     {
                         _nodes[added.Id] = added;
                         DevicesChanged?.Invoke();
@@ -810,11 +844,17 @@ public sealed class MeshServerConnection : IDisposable
     public bool IsLocalDevice(MeshNode node) =>
         _meshes.FirstOrDefault(m => m.Id == node.MeshId)?.MType == 3;
 
-    public Task WakeAsync(string nodeId) =>
-        SendJsonAsync(new { action = "wakedevices", nodeids = new[] { nodeId } });
+    public Task WakeAsync(string nodeId) => WakeAsync([nodeId]);
 
-    public Task PowerActionAsync(string nodeId, PowerActionType action) =>
-        SendJsonAsync(new { action = "poweraction", nodeids = new[] { nodeId }, actiontype = (int)action });
+    /// <summary>Réveil groupé : le serveur accepte une liste de machines.</summary>
+    public Task WakeAsync(IEnumerable<string> nodeIds) =>
+        SendJsonAsync(new { action = "wakedevices", nodeids = nodeIds.ToArray() });
+
+    public Task PowerActionAsync(string nodeId, PowerActionType action) => PowerActionAsync([nodeId], action);
+
+    /// <summary>Action d'alimentation groupée, en un seul message au serveur.</summary>
+    public Task PowerActionAsync(IEnumerable<string> nodeIds, PowerActionType action) =>
+        SendJsonAsync(new { action = "poweraction", nodeids = nodeIds.ToArray(), actiontype = (int)action });
 
     /// <summary>
     /// Renomme un appareil dans MeshCentral. Seul le nom affiché change : le nom

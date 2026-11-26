@@ -53,7 +53,14 @@ public enum MouseButton { Left, Right, Middle }
 
 public enum KeyAction : byte { Down = 0, Up = 1, ExtendedUp = 3, ExtendedDown = 4 }
 
-public enum DesktopQuality { Low, Balanced, High }
+/// <summary>
+/// Qualité d'image. Deux modes s'ajoutent aux trois niveaux :
+/// <see cref="Troubleshoot"/> pour les liaisons très lentes (compression
+/// maximale, image réduite, cadence plafonnée), et <see cref="Fluid"/> pour
+/// suivre une vidéo (cadence maximale, bonne qualité). Voir
+/// DesktopSession.SendCompressionSettings.
+/// </summary>
+public enum DesktopQuality { Low, Balanced, High, Troubleshoot, Fluid }
 
 public enum DesktopSessionState { Connecting, Connected, Reconnecting, Closed }
 
@@ -104,8 +111,102 @@ public sealed class DesktopSession : IDisposable
     public DesktopQuality Quality
     {
         get => _quality;
-        set { _quality = value; SendCompressionSettings(); }
+        set
+        {
+            if (value == _quality) return;
+            var scaleBefore = EffectiveScalePercent;
+            var wasTroubleshoot = IsTroubleshootMode;
+            _quality = value;
+
+            // Une image nette en cours n'a plus de sens hors du mode dépannage.
+            Interlocked.Increment(ref _sharpGeneration);
+            _sharpActive = false;
+
+            // Écran unique d'abord : l'échelle se calcule sur sa largeur.
+            if (IsTroubleshootMode && !wasTroubleshoot)
+            {
+                EnsureSingleDisplay();
+                RecomputeTroubleshootScale();
+            }
+            else if (!IsTroubleshootMode && wasTroubleshoot)
+            {
+                RestoreDisplayAfterTroubleshoot();
+            }
+
+            SendCompressionSettings();
+            // Le mode dépannage réduit l'échelle : l'agent renvoie alors une
+            // nouvelle taille d'écran, et l'image doit être reconstruite.
+            if (EffectiveScalePercent != scaleBefore) SendCommand(Kvm.Refresh);
+
+            ProbeNativeWidthLater();
+        }
     }
+
+    /// <summary>Vrai en mode dépannage (liaison très lente).</summary>
+    public bool IsTroubleshootMode => _quality == DesktopQuality.Troubleshoot;
+
+    /// <summary>Vrai en mode fluide (vidéo).</summary>
+    public bool IsFluidMode => _quality == DesktopQuality.Fluid;
+
+    /// <summary>
+    /// Largeur visée en mode dépannage : assez pour lire une fenêtre, assez
+    /// peu pour que chaque image reste légère. Un écran 1080p passe ainsi à
+    /// 66 %, un écran 4K à 33 %.
+    /// </summary>
+    private const int TroubleshootTargetWidth = 1280;
+
+    /// <summary>Échelle maximale en mode dépannage, quel que soit l'écran.</summary>
+    private const int TroubleshootMaxScale = 66;
+
+    /// <summary>Échelle du mode dépannage tant que la taille réelle de l'écran est inconnue.</summary>
+    private const int TroubleshootDefaultScale = 50;
+
+    /// <summary>Cadence plafonnée en mode dépannage, en images par seconde.</summary>
+    private const int TroubleshootMaxFrameRate = 5;
+
+    /// <summary>Qualité JPEG de l'image nette demandée en mode dépannage.</summary>
+    private const byte SharpQuality = 60;
+
+    /// <summary>Qualité JPEG du mode fluide : nette sans alourdir chaque trame.</summary>
+    private const byte FluidQuality = 65;
+
+    /// <summary>Intervalle entre trames du mode fluide : 25 ms, soit 40 img/s.</summary>
+    private const ushort FluidFrameTimerMs = 25;
+
+    /// <summary>
+    /// Échelle calculée pour le mode dépannage d'après la largeur réelle de
+    /// l'écran affiché. Ne bouge que par paliers de 5 points, pour qu'une
+    /// estimation légèrement différente ne relance pas un rafraîchissement.
+    /// </summary>
+    private int _troubleshootScale = TroubleshootDefaultScale;
+
+    /// <summary>
+    /// Échelle réellement demandée à l'agent : celle choisie, ou celle du mode
+    /// dépannage si elle est plus petite. Le choix de l'utilisateur est
+    /// conservé et revient quand on quitte ce mode.
+    /// </summary>
+    public int EffectiveScalePercent => IsTroubleshootMode
+        ? Math.Min(_scalePercent, _troubleshootScale)
+        : _scalePercent;
+
+    /// <summary>Cadence réellement demandée à l'agent, en images par seconde.</summary>
+    public int EffectiveFrameRate
+    {
+        get
+        {
+            var timer = EffectiveFrameTimerMs;
+            return timer > 0 ? 1000 / timer : 10;
+        }
+    }
+
+    private ushort EffectiveFrameTimerMs => _quality switch
+    {
+        // Une trame toutes les 200 ms au plus : moins de trames, c'est autant
+        // de tuiles en moins sur une liaison saturée.
+        DesktopQuality.Troubleshoot => Math.Max(_frameTimerMs, (ushort)(1000 / TroubleshootMaxFrameRate)),
+        DesktopQuality.Fluid => Math.Min(_frameTimerMs, FluidFrameTimerMs),
+        _ => _frameTimerMs,
+    };
 
     /// <summary>
     /// Intervalle entre deux trames côté agent, en millisecondes (100 ms = 10 img/s).
@@ -204,6 +305,9 @@ public sealed class DesktopSession : IDisposable
             if (_stopped) { socket.Close(); socket.Dispose(); return; }
             _socket = socket;
             _cts = new CancellationTokenSource();
+            // Voir la reconnexion : les premières tailles annoncées peuvent
+            // être à l'échelle par défaut de l'agent.
+            _scalingChangedAt = Stopwatch.GetTimestamp();
             SetState(DesktopSessionState.Connected);
             StartSenderLoop(socket, _cts.Token);
             StartReceiveLoop(socket, _cts.Token);
@@ -306,7 +410,10 @@ public sealed class DesktopSession : IDisposable
                     StartRtt(_cts.Token);
 
                     // La résolution a pu changer pendant la coupure ; les réglages
-                    // de compression ne survivent pas au nouveau tunnel.
+                    // de compression ne survivent pas au nouveau tunnel. Les
+                    // premières tailles annoncées peuvent être à l'échelle par
+                    // défaut de l'agent : elles ne servent pas d'estimation.
+                    _scalingChangedAt = Stopwatch.GetTimestamp();
                     SendCompressionSettings();
                     SendCommand(Kvm.Refresh);
                     return;
@@ -427,7 +534,9 @@ public sealed class DesktopSession : IDisposable
             {
                 SendControl(new { ctrlChannel = 102938, type = "rtt",
                                   time = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() });
-                try { await Task.Delay(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false); }
+                // Toutes les 5 s : assez souvent pour repérer une liaison
+                // saturée en une dizaine de secondes, pour un coût négligeable.
+                try { await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false); }
                 catch { return; }
             }
         }, ct);
@@ -666,6 +775,220 @@ public sealed class DesktopSession : IDisposable
     public void SendCtrlAltDel() => SendCommand(Kvm.CtrlAltDel);
     public void RequestRefresh() => SendCommand(Kvm.Refresh);
 
+    // MARK: - Mode dépannage : image nette à la demande
+
+    private bool _sharpActive;
+    private int _sharpGeneration;
+    private long _lastTileAt;
+
+    /// <summary>Vrai pendant la réception d'une image nette.</summary>
+    public bool IsSharpFrameActive => _sharpActive;
+
+    /// <summary>
+    /// Mode dépannage : demande une image complète en bonne qualité, puis
+    /// revient à la compression maximale. L'agent n'envoyant ensuite que les
+    /// zones qui changent, le reste de l'écran demeure net, et le texte
+    /// lisible, jusqu'à ce qu'il change. Hors de ce mode, simple
+    /// rafraîchissement.
+    /// </summary>
+    public void RequestSharpFrame()
+    {
+        if (!IsTroubleshootMode)
+        {
+            RequestRefresh();
+            return;
+        }
+
+        var generation = Interlocked.Increment(ref _sharpGeneration);
+        _sharpActive = true;
+        SendCompressionSettings();
+        SendCommand(Kvm.Refresh);
+        _ = EndSharpFrameAsync(generation);
+    }
+
+    /// <summary>
+    /// Rétablit la compression maximale une fois l'image nette reçue : quand
+    /// les tuiles cessent d'arriver, l'agent a fini de l'encoder. Si l'écran
+    /// change sans cesse (vidéo, animation), les tuiles ne s'arrêtent jamais :
+    /// on revient alors au bout de 8 secondes.
+    /// </summary>
+    private async Task EndSharpFrameAsync(int generation)
+    {
+        var start = Stopwatch.GetTimestamp();
+        var tilesAtStart = TilesReceived;
+        try
+        {
+            await Task.Delay(500).ConfigureAwait(false);
+            while (Volatile.Read(ref _sharpGeneration) == generation && !_stopped)
+            {
+                var quietMs = Stopwatch.GetElapsedTime(Volatile.Read(ref _lastTileAt)).TotalMilliseconds;
+                if (Stopwatch.GetElapsedTime(start).TotalSeconds > 8
+                    || (TilesReceived > tilesAtStart && quietMs > 400))
+                    break;
+                await Task.Delay(100).ConfigureAwait(false);
+            }
+        }
+        catch { /* arrêt : rien à rétablir */ }
+
+        if (Volatile.Read(ref _sharpGeneration) != generation || _stopped) return;
+        _sharpActive = false;
+        SendCompressionSettings();
+    }
+
+    // MARK: - Mode dépannage : échelle adaptée et écran unique
+
+    /// <summary>Délai pendant lequel une taille d'écran annoncée peut encore refléter l'ancienne échelle.</summary>
+    private const double ScalingSettleMs = 1500;
+
+    /// <summary>Dernière échelle envoyée à l'agent (1024 = 100 %), et quand elle a changé.</summary>
+    private ushort _scalingSent = 1024;
+    private long _scalingChangedAt = Stopwatch.GetTimestamp();
+
+    /// <summary>Largeur réelle de l'image affichée, déduite d'une taille d'écran annoncée. 0 si inconnue.</summary>
+    private int _estimatedNativeWidth;
+
+    private int _probeScheduled;
+
+    /// <summary>
+    /// Largeur réelle de ce que l'agent capture : d'après la géométrie des
+    /// écrans quand l'agent la fournit (Windows), sinon d'après la dernière
+    /// taille d'écran annoncée. 0 si inconnue.
+    /// </summary>
+    private int NativeWidth()
+    {
+        var screens = _displayList
+            .Where(d => d.HasGeometry && d.Id != RemoteDisplay.AllDisplays)
+            .ToList();
+        if (screens.Count > 0)
+        {
+            if (SelectedDisplay == RemoteDisplay.AllDisplays)
+                return screens.Max(d => d.X + d.Width) - screens.Min(d => d.X);
+            if (screens.FirstOrDefault(d => d.Id == SelectedDisplay) is { } current)
+                return current.Width;
+            if (screens.Count == 1)
+                return screens[0].Width;
+        }
+        return _estimatedNativeWidth;
+    }
+
+    /// <summary>
+    /// Recalcule l'échelle du mode dépannage. Si elle change, l'agent reçoit
+    /// la nouvelle échelle et renvoie une image complète.
+    /// </summary>
+    private void UpdateTroubleshootScale()
+    {
+        var before = EffectiveScalePercent;
+        if (!RecomputeTroubleshootScale())
+        {
+            ProbeNativeWidthLater();
+            return;
+        }
+        if (!IsTroubleshootMode || EffectiveScalePercent == before) return;
+
+        SendCompressionSettings();
+        SendCommand(Kvm.Refresh);
+    }
+
+    /// <summary>
+    /// Met à jour l'échelle du mode dépannage sans rien envoyer. Renvoie faux
+    /// si la largeur réelle est inconnue.
+    /// </summary>
+    private bool RecomputeTroubleshootScale()
+    {
+        var native = NativeWidth();
+        if (native <= 0) return false;
+
+        var fit = Math.Clamp(TroubleshootTargetWidth * 100 / native, 25, TroubleshootMaxScale);
+        if (Math.Abs(fit - _troubleshootScale) >= 5) _troubleshootScale = fit;
+        return true;
+    }
+
+    /// <summary>
+    /// Taille réelle encore inconnue en mode dépannage : une fois l'échelle
+    /// stabilisée, un rafraîchissement fait annoncer à l'agent une taille
+    /// d'écran fiable, d'où l'on déduit la largeur réelle.
+    /// </summary>
+    private void ProbeNativeWidthLater()
+    {
+        if (!IsTroubleshootMode || NativeWidth() > 0) return;
+        if (Interlocked.Exchange(ref _probeScheduled, 1) != 0) return;
+
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(TimeSpan.FromMilliseconds(ScalingSettleMs + 500)).ConfigureAwait(false); }
+            finally { Volatile.Write(ref _probeScheduled, 0); }
+            if (IsTroubleshootMode && !_stopped && State == DesktopSessionState.Connected
+                && NativeWidth() <= 0)
+                SendCommand(Kvm.Refresh);
+        });
+    }
+
+    /// <summary>
+    /// Écran affiché avant que le mode dépannage ne passe à un écran unique ;
+    /// rétabli en quittant le mode, sauf si l'utilisateur a choisi un écran
+    /// entre-temps.
+    /// </summary>
+    private int? _displayBeforeTroubleshoot;
+
+    /// <summary>
+    /// En mode dépannage, la vue « tous les écrans » d'un poste à plusieurs
+    /// moniteurs est remplacée par le premier écran : une image deux ou trois
+    /// fois plus large, c'est autant de données en plus.
+    /// </summary>
+    private void EnsureSingleDisplay()
+    {
+        if (!IsTroubleshootMode || SelectedDisplay != RemoteDisplay.AllDisplays) return;
+
+        var real = _displays.Where(id => id != RemoteDisplay.AllDisplays).ToList();
+        if (real.Count < 2) return;
+
+        _displayBeforeTroubleshoot = RemoteDisplay.AllDisplays;
+        ApplyDisplay(real.Min());
+        _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
+    }
+
+    private void RestoreDisplayAfterTroubleshoot()
+    {
+        if (_displayBeforeTroubleshoot is not { } previous) return;
+        _displayBeforeTroubleshoot = null;
+        ApplyDisplay(previous);
+        _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
+    }
+
+    // MARK: - Liaison lente
+
+    /// <summary>
+    /// Latence jugée trop forte pour un affichage normal. Le message « rtt »
+    /// passe dans le même tunnel que les images : quand la liaison sature, il
+    /// attend derrière elles, et sa latence grimpe bien au-delà de celle du
+    /// réseau. C'est précisément ce qu'on cherche à repérer.
+    /// </summary>
+    private const int SlowLinkLatencyMs = 1000;
+
+    private int _slowSamples;
+    private bool _slowLinkSignaled;
+
+    /// <summary>
+    /// Deux mesures de latence d'affilée au-dessus du seuil, hors mode
+    /// dépannage. Signalé une seule fois par session.
+    /// </summary>
+    public event Action? SlowLinkDetected;
+
+    private void TrackLatency(int latencyMs)
+    {
+        if (IsTroubleshootMode || _slowLinkSignaled)
+        {
+            _slowSamples = 0;
+            return;
+        }
+
+        _slowSamples = latencyMs >= SlowLinkLatencyMs ? _slowSamples + 1 : 0;
+        if (_slowSamples < 2) return;
+
+        _slowLinkSignaled = true;
+        _uiDispatcher.BeginInvoke(() => SlowLinkDetected?.Invoke());
+    }
+
     /// <summary>
     /// Horodatage du dernier choix d'écran fait par l'utilisateur. Changer
     /// d'écran modifie la résolution, ce qui relance un GetDisplays dont la
@@ -675,6 +998,14 @@ public sealed class DesktopSession : IDisposable
     private DateTime _displayChosenAt = DateTime.MinValue;
 
     public void SelectDisplay(int display)
+    {
+        // Choix explicite : il l'emporte sur l'écran que le mode dépannage
+        // aurait rétabli en sortant.
+        _displayBeforeTroubleshoot = null;
+        ApplyDisplay(display);
+    }
+
+    private void ApplyDisplay(int display)
     {
         SelectedDisplay = display;
         _displayChosenAt = DateTime.UtcNow;
@@ -703,7 +1034,9 @@ public sealed class DesktopSession : IDisposable
         {
             var clamped = Math.Clamp(value, 25, 100);
             if (clamped == _scalePercent) return;
+            var effectiveBefore = EffectiveScalePercent;
             _scalePercent = clamped;
+            if (EffectiveScalePercent == effectiveBefore) return;
             SendCompressionSettings();
             // L'agent renvoie un nouveau « screen size » à l'échelle demandée ;
             // ce rafraîchissement force la reconstruction complète de l'image.
@@ -716,15 +1049,31 @@ public sealed class DesktopSession : IDisposable
         // La qualité (compression JPEG) et le taux de rafraîchissement sont
         // réglables indépendamment : on peut vouloir une image nette peu
         // rafraîchie, ou l'inverse selon la bande passante.
+        // Mode dépannage : qualité JPEG 5, le plancher utile (en dessous, le
+        // texte devient illisible sans réel gain de taille). L'agent ne sait
+        // pas envoyer en niveaux de gris : la capture est toujours en couleur,
+        // seuls la compression, l'échelle et la cadence réduisent le débit.
+        // Mode fluide : qualité 65 à 40 img/s, pour suivre une vidéo sans
+        // flou marqué. Image nette (mode dépannage) : qualité 60, le temps
+        // d'une image complète.
         byte quality = _quality switch
         {
+            DesktopQuality.Troubleshoot => _sharpActive ? SharpQuality : (byte)5,
+            DesktopQuality.Fluid => FluidQuality,
             DesktopQuality.Low => 15,
             DesktopQuality.High => 80,
             _ => 50,
         };
 
         // 1024 = 100 %. L'agent attend cette unité, pas un pourcentage.
-        ushort scaling = (ushort)(1024 * _scalePercent / 100);
+        ushort scaling = (ushort)(1024 * EffectiveScalePercent / 100);
+        if (scaling != _scalingSent)
+        {
+            _scalingSent = scaling;
+            _scalingChangedAt = Stopwatch.GetTimestamp();
+        }
+
+        var frameTimer = EffectiveFrameTimerMs;
 
         // Type 1 = JPEG. Le type 4 (WebP) existe côté protocole mais aucun agent
         // MeshCentral ne l'implémente : Linux et macOS ignorent le champ, et
@@ -732,7 +1081,7 @@ public sealed class DesktopSession : IDisposable
         // sans effet.
         var payload = new List<byte> { 1, quality };
         payload.AppendBE(scaling);
-        payload.AppendBE(_frameTimerMs);
+        payload.AppendBE(frameTimer);
         SendCommand(Kvm.Compression, payload.ToArray());
     }
 
@@ -817,7 +1166,11 @@ public sealed class DesktopSession : IDisposable
                 // L'agent renvoie l'horodatage que nous avions émis : la
                 // différence donne l'aller-retour complet.
                 var elapsed = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - sent.GetInt64();
-                if (elapsed >= 0 && elapsed < 60000) LatencyMs = (int)elapsed;
+                if (elapsed >= 0 && elapsed < 60000)
+                {
+                    LatencyMs = (int)elapsed;
+                    TrackLatency((int)elapsed);
+                }
             }
             else if (type == "console" && root.TryGetProperty("msg", out var m) && m.ValueKind == JsonValueKind.String)
             {
@@ -972,6 +1325,7 @@ public sealed class DesktopSession : IDisposable
                 var y = body.BeUInt16(6);
                 if (x is null || y is null || body.Length <= 8) return;
                 TilesReceived++;
+                Volatile.Write(ref _lastTileAt, Stopwatch.GetTimestamp());
                 var imageData = new byte[body.Length - 8];
                 Array.Copy(body, 8, imageData, 0, imageData.Length);
 
@@ -1015,6 +1369,8 @@ public sealed class DesktopSession : IDisposable
                         : new RemoteDisplay(id, 0, 0, 0, 0))
                     .ToList();
 
+                EnsureSingleDisplay();
+                UpdateTroubleshootScale();
                 _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
                 break;
             }
@@ -1043,6 +1399,7 @@ public sealed class DesktopSession : IDisposable
                 if (_displays.Count == 0)
                     _displays.AddRange(geometry.Select(d => d.Id));
 
+                UpdateTroubleshootScale();
                 _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
                 break;
             }
@@ -1063,6 +1420,13 @@ public sealed class DesktopSession : IDisposable
     {
         ScreenWidth = w;
         ScreenHeight = h;
+
+        // Largeur réelle déduite de l'échelle en vigueur, seulement si elle
+        // n'a pas changé récemment : juste après un changement, l'agent peut
+        // encore annoncer une taille calculée sur l'ancienne échelle.
+        if (w > 0 && Stopwatch.GetElapsedTime(_scalingChangedAt).TotalMilliseconds > ScalingSettleMs)
+            _estimatedNativeWidth = (int)Math.Round(w * 1024.0 / _scalingSent);
+        UpdateTroubleshootScale();
 
         // Sans attendre l'interface, qui bloquerait le fil de réception : les
         // trames suivantes s'accumuleraient pendant ce temps.

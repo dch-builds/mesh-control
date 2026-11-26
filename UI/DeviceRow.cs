@@ -83,6 +83,9 @@ public sealed class DeviceRow : INotifyPropertyChanged
     /// <summary>Vrai si l'état en ligne a changé depuis le dernier affichage.</summary>
     public bool OnlineStateChanged => _shownOnline != Node.IsOnline;
 
+    /// <summary>Vrai si les sessions MeshCentral ont changé (filtre « En session »).</summary>
+    public bool SessionsChanged => _shownSessions != SessionsSignature();
+
     /// <summary>Vrai si le nom a changé (le tri en dépend).</summary>
     public bool NameChanged => !string.Equals(_shownName, Node.Name, StringComparison.Ordinal);
 
@@ -105,6 +108,7 @@ public sealed class DeviceRow : INotifyPropertyChanged
             // Les actions proposées au survol aussi : se connecter ou réveiller.
             Notify(nameof(RemoteActionsVisibility));
             Notify(nameof(WakeActionVisibility));
+            Notify(nameof(WatchIndicatorVisibility));
         }
         if (_shownLastConnect != Node.LastConnect) Notify(nameof(LastSeenLabel));
         if (NameChanged) Notify(nameof(Name));
@@ -132,6 +136,15 @@ public sealed class DeviceRow : INotifyPropertyChanged
 
     /// <summary>Nom du dossier préfixé de son pictogramme, pour l'affichage.</summary>
     public string GroupLabel => $"📁 {RealGroupName}";
+
+    /// <summary>
+    /// Vrai pour une copie affichée parmi les dernières connexions de la
+    /// recherche rapide.
+    /// </summary>
+    public bool IsRecent { get; init; }
+
+    /// <summary>Légende de la recherche rapide : dossier, précédé de « Récente ».</summary>
+    public string PaletteCaption => IsRecent ? $"🕘 Récente  ·  {GroupLabel}" : GroupLabel;
 
     /// <summary>
     /// Pictogramme selon la famille d'OS. On utilise des symboles Unicode
@@ -263,6 +276,34 @@ public sealed class DeviceRow : INotifyPropertyChanged
     /// <summary>Une machine éteinte n'a qu'une action utile : la réveiller.</summary>
     public Visibility WakeActionVisibility =>
         IsOnline ? Visibility.Collapsed : Visibility.Visible;
+
+    // MARK: - Alerte de retour en ligne
+
+    private bool _isWatched;
+    /// <summary>Une notification est attendue au retour en ligne de la machine.</summary>
+    public bool IsWatched
+    {
+        get => _isWatched;
+        set
+        {
+            if (Set(ref _isWatched, value))
+            {
+                Notify(nameof(WatchGlyph));
+                Notify(nameof(WatchTooltip));
+                Notify(nameof(WatchIndicatorVisibility));
+            }
+        }
+    }
+
+    /// <summary>Cloche pour poser l'alerte, cloche barrée pour la retirer.</summary>
+    public string WatchGlyph => IsWatched ? "" : "";
+
+    public string WatchTooltip => IsWatched
+        ? "Ne plus me prévenir de son retour"
+        : "Me prévenir à son retour en ligne";
+
+    public Visibility WatchIndicatorVisibility =>
+        IsWatched && !IsOnline ? Visibility.Visible : Visibility.Collapsed;
 
     // MARK: - Notification de changement
 

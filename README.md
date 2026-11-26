@@ -14,8 +14,23 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 
 **Devices**
 - List grouped by device group, collapsible, with live online status
-- Instant search (name, group, OS, IP address, logged-in MeshCentral user) and
-  an "online only" filter
+- Instant search (name, group, OS, IP address, logged-in MeshCentral user),
+  Ctrl+F from anywhere in the window, or just start typing in the list
+- Quick filter chips with live counters, one per category, combined across
+  categories (Windows + online): state (online, offline, in session),
+  favorites or recent, system (Windows, Linux, macOS); the counters follow the
+  selected folder, the current search and the other active chips
+- Optional folder pane on the left: online / total counter per folder
+  (matching / total while chips are active), a filter field, adjustable
+  width, folders pinned at the top or
+  hidden; right-click a folder to wake its machines, send them files or be
+  notified when they come back
+- Multiple selection (Ctrl+click, Shift+click, Ctrl+A) with grouped actions:
+  wake up, restart, shut down, send files, add to favorites
+- "Notify me when it is back": a Windows notification as soon as an offline
+  machine reconnects; clicking it opens the remote desktop
+- Keyboard in the list: Enter opens the remote desktop, Ctrl+T the terminal,
+  Ctrl+E the files
 - Sort order remembered across sessions: by name, online first, last seen or
   OS, within each group
 - Each row shows the IP address and the MeshCentral user connected to the
@@ -25,11 +40,17 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 - Light or dark theme for the whole application, selectable in the settings
 - Pinned favorites and recently used machines
 - Quick search palette on a global keyboard shortcut, usable even when the
-  application is in the background
+  application is in the background; it opens on your latest connections
 
 **Remote desktop**
 - Native decoding of the KVM protocol (JPEG tiles, jumbo frames)
 - Frame rate from 5 to 40 fps, three quality levels
+- Troubleshooting mode for very slow links: maximum compression, 5 fps at
+  most, picture scaled to about 1,280 pixels wide and a single screen on
+  multi-monitor machines. "Sharp image" (Ctrl+Shift+R) sends the screen once in
+  good quality, so text stays readable until it changes. When the link
+  saturates, a banner offers to switch to this mode
+- Fluid mode for watching a video: 40 fps in good quality, on a good connection
 - Mouse, wheel, side buttons and full keyboard (Windows VK codes). The Windows
   key is not forwarded (the local PC intercepts it anyway) and can be sent
   from the "Shortcuts" menu

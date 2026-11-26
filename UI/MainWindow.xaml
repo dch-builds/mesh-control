@@ -181,11 +181,12 @@
                                 <Grid Grid.Column="1" Margin="8,0,0,0">
                                     <!-- Champ sans bordure : le cadre est porté par le Border -->
                                     <TextBox x:Name="SearchBox" TextChanged="SearchBox_TextChanged"
+                                             PreviewKeyDown="SearchBox_PreviewKeyDown"
                                              BorderThickness="0" Background="Transparent"
                                              Padding="0" FontSize="13"
                                              VerticalContentAlignment="Center"/>
                                     <TextBlock x:Name="SearchPlaceholder"
-                                               Text="Rechercher un appareil…" FontSize="13"
+                                               Text="Rechercher un appareil… (Ctrl+F)" FontSize="13"
                                                Foreground="{StaticResource PlaceholderBrush}"
                                                VerticalAlignment="Center"
                                                IsHitTestVisible="False"/>
@@ -202,11 +203,6 @@
                                         ToolTip="Effacer"/>
                             </Grid>
                         </Border>
-
-                        <!-- Filtre : n'afficher que les machines connectées -->
-                        <CheckBox x:Name="OnlineOnlyCheck" Content="En ligne uniquement"
-                                  VerticalAlignment="Center" Margin="16,0,0,0"
-                                  Checked="OnlineOnly_Changed" Unchecked="OnlineOnly_Changed"/>
                     </StackPanel>
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
@@ -265,6 +261,11 @@
                     </StackPanel>
                 </Grid>
 
+                <!-- Filtres rapides : une pastille par critère, avec son compteur.
+                     Garnies par code (BuildFilterChips) ; une pastille dont le
+                     compteur tombe à zéro disparaît, sauf si elle est active. -->
+                <WrapPanel x:Name="FilterChipsPanel" DockPanel.Dock="Top" Margin="0,-2,0,12"/>
+
                 <!-- Vue à deux volets. La colonne de gauche est dimensionnée au
                      contenu : volet masqué, elle ne prend aucune place et la
                      liste occupe toute la largeur, comme dans la vue groupée. -->
@@ -278,46 +279,151 @@
                 <ui:CardBorder x:Name="FolderPane" Grid.Column="0" Visibility="Collapsed"
                         Style="{StaticResource Card}" Padding="6" Width="238"
                         Margin="0,0,14,0">
-                    <ListBox x:Name="FolderList"
-                             Style="{StaticResource DeviceListBoxStyle}"
-                             ItemContainerStyle="{StaticResource FolderItemStyle}"
-                             SelectionChanged="FolderList_SelectionChanged">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <Grid ToolTip="{Binding Tooltip}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Glyph}"
-                                               FontFamily="Segoe MDL2 Assets" FontSize="13"
-                                               Foreground="{Binding GlyphColor}"
-                                               VerticalAlignment="Center" Margin="1,0,10,0"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                               FontSize="12.5"
-                                               Foreground="{StaticResource TextPrimaryBrush}"
-                                               TextTrimming="CharacterEllipsis"
-                                               VerticalAlignment="Center"/>
-                                    <!-- Nombre de machines en ligne : c'est ce qu'on
-                                         cherche en ouvrant un dossier. Le total est
-                                         dans l'info-bulle. -->
-                                    <TextBlock Grid.Column="2" Text="{Binding Counter}"
-                                               FontSize="11" FontWeight="SemiBold"
-                                               Foreground="{StaticResource TextSecondaryBrush}"
-                                               Opacity="{Binding CounterOpacity}"
-                                               VerticalAlignment="Center" Margin="8,0,1,0"/>
+                    <DockPanel>
+                        <!-- Filtre des dossiers : sur une trentaine de dossiers,
+                             taper trois lettres va plus vite que défiler. -->
+                        <Border DockPanel.Dock="Top" Height="30" CornerRadius="7" Margin="2,2,2,6"
+                                Background="{StaticResource SubtleFillBrush}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="&#xE71C;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                           Foreground="{StaticResource PlaceholderBrush}"
+                                           VerticalAlignment="Center" Margin="10,0,0,0"
+                                           IsHitTestVisible="False"/>
+                                <Grid Grid.Column="1" Margin="8,0,0,0">
+                                    <TextBox x:Name="FolderFilterBox" BorderThickness="0"
+                                             Background="Transparent" Padding="0" FontSize="12"
+                                             VerticalContentAlignment="Center"
+                                             TextChanged="FolderFilterBox_TextChanged"
+                                             PreviewKeyDown="FolderFilterBox_PreviewKeyDown"/>
+                                    <TextBlock x:Name="FolderFilterPlaceholder" Text="Filtrer les dossiers"
+                                               FontSize="12" Foreground="{StaticResource PlaceholderBrush}"
+                                               VerticalAlignment="Center" IsHitTestVisible="False"/>
                                 </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                                <Button x:Name="ClearFolderFilterButton" Grid.Column="2"
+                                        Content="&#xE711;" FontFamily="Segoe MDL2 Assets"
+                                        FontSize="9" Width="20" Height="20"
+                                        Margin="0,0,6,0" Padding="0" Cursor="Hand"
+                                        Background="Transparent" BorderThickness="0"
+                                        Foreground="{StaticResource TextSecondaryBrush}"
+                                        Visibility="Collapsed" Click="ClearFolderFilter_Click"
+                                        ToolTip="Effacer"/>
+                            </Grid>
+                        </Border>
+
+                        <ListBox x:Name="FolderList"
+                                 Style="{StaticResource DeviceListBoxStyle}"
+                                 ItemContainerStyle="{StaticResource FolderItemStyle}"
+                                 SelectionChanged="FolderList_SelectionChanged"
+                                 PreviewMouseRightButtonUp="FolderList_PreviewMouseRightButtonUp">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid ToolTip="{Binding Tooltip}" Margin="0,0,4,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{Binding Glyph}"
+                                                   FontFamily="Segoe MDL2 Assets" FontSize="13"
+                                                   Foreground="{Binding GlyphColor}"
+                                                   Opacity="{Binding ContentOpacity}"
+                                                   VerticalAlignment="Center" Margin="1,0,10,0"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12.5"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   Opacity="{Binding ContentOpacity}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                        <!-- Compteur en pastille : la part comptée (en ligne,
+                                             ou répondant aux filtres) en couleur, le total en
+                                             retrait. Plus lisible qu'une jauge sous chaque nom. -->
+                                        <Border Grid.Column="2" CornerRadius="9" Padding="7,1,7,2"
+                                                Margin="8,0,0,0" VerticalAlignment="Center"
+                                                Background="{StaticResource SubtleFillBrush}"
+                                                Opacity="{Binding ContentOpacity}">
+                                            <TextBlock FontSize="10.5">
+                                                <Run Text="{Binding Matching, Mode=OneWay}" FontWeight="Bold"
+                                                     Foreground="{Binding CountColor}"/><Run
+                                                     Text="{Binding Total, Mode=OneWay, StringFormat=' / {0}'}"
+                                                     Foreground="{StaticResource TextSecondaryBrush}"/>
+                                            </TextBlock>
+                                        </Border>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
                 </ui:CardBorder>
+
+                <!-- Poignée de redimensionnement du volet, dans l'espace qui le
+                     sépare de la liste. -->
+                <Thumb x:Name="FolderPaneResizer" Grid.Column="0" Width="10"
+                       HorizontalAlignment="Right" Margin="0,0,2,0"
+                       Cursor="SizeWE" Visibility="{Binding Visibility, ElementName=FolderPane}"
+                       DragDelta="FolderPaneResizer_DragDelta"
+                       DragCompleted="FolderPaneResizer_DragCompleted"
+                       ToolTip="Tirer pour élargir le volet">
+                    <Thumb.Template>
+                        <ControlTemplate TargetType="Thumb">
+                            <Border Background="Transparent"/>
+                        </ControlTemplate>
+                    </Thumb.Template>
+                </Thumb>
 
                 <!-- Carte contenant la liste -->
                 <ui:CardBorder Grid.Column="1" Style="{StaticResource Card}" Padding="6">
+                    <DockPanel>
+                    <!-- Sélection multiple (Ctrl+clic, Maj+clic, Ctrl+A) : actions
+                         groupées. N'apparaît qu'à partir de deux machines. -->
+                    <Border x:Name="SelectionBar" DockPanel.Dock="Bottom" Visibility="Collapsed"
+                            Background="{StaticResource AccentSoftBrush}" CornerRadius="8"
+                            Padding="12,6,6,6" Margin="0,6,0,0">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}"
+                                    Content="&#xE711;" Margin="4,0,0,0"
+                                    Click="ClearSelection_Click" ToolTip="Désélectionner (Échap)"/>
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <Button x:Name="BulkWakeButton" Style="{StaticResource ToolButton}"
+                                        Padding="10,5" Margin="0,0,6,0" Content="Réveiller"
+                                        Click="BulkWake_Click"
+                                        ToolTip="Envoyer un signal Wake-on-LAN aux machines hors ligne"/>
+                                <Button x:Name="BulkRebootButton" Style="{StaticResource ToolButton}"
+                                        Padding="10,5" Margin="0,0,6,0" Content="Redémarrer…"
+                                        Click="BulkReboot_Click"/>
+                                <Button x:Name="BulkPowerOffButton" Style="{StaticResource ToolButton}"
+                                        Padding="10,5" Margin="0,0,6,0" Content="Éteindre…"
+                                        Click="BulkPowerOff_Click"/>
+                                <Button x:Name="BulkFavoriteButton" Style="{StaticResource ToolButton}"
+                                        Padding="10,5" Margin="0,0,6,0" Content="Ajouter aux favoris"
+                                        Click="BulkFavorite_Click"/>
+                                <Button x:Name="BulkSendFilesButton" Style="{StaticResource AccentToolButton}"
+                                        Padding="10,5" Click="BulkSendFiles_Click"
+                                        ToolTip="Envoyer des fichiers aux machines en ligne de la sélection">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE898;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                                                   VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                        <TextBlock Text="Envoyer des fichiers" FontSize="11.5"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <TextBlock x:Name="SelectionText" VerticalAlignment="Center"
+                                       FontSize="12" FontWeight="SemiBold"
+                                       Foreground="{StaticResource InfoTextBrush}"
+                                       TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+                        </DockPanel>
+                    </Border>
+                    <Grid>
                     <ListBox x:Name="DeviceList"
                              Style="{StaticResource DeviceListBoxStyle}"
                              ItemContainerStyle="{StaticResource DeviceItemStyle}"
+                             SelectionMode="Extended"
+                             SelectionChanged="DeviceList_SelectionChanged"
+                             PreviewTextInput="DeviceList_PreviewTextInput"
                              MouseDoubleClick="DeviceList_MouseDoubleClick"
                              PreviewMouseRightButtonDown="DeviceList_PreviewMouseRightButtonDown"
                              AllowDrop="True" DragOver="DeviceList_DragOver"
@@ -327,11 +433,14 @@
                         <ListBox.ContextMenu>
                             <ContextMenu x:Name="DeviceMenu" Opened="DeviceMenu_Opened">
                                 <MenuItem x:Name="MenuDesktop" Header="Bureau à distance"
+                                          InputGestureText="Entrée"
                                           FontWeight="SemiBold" Click="MenuDesktop_Click"/>
                                 <MenuItem x:Name="MenuTerminal" Header="Terminal"
+                                          InputGestureText="Ctrl+T"
                                           Click="MenuTerminal_Click"
                                           ToolTip="Invite de commandes / PowerShell via l'agent"/>
                                 <MenuItem x:Name="MenuFiles" Header="Fichiers"
+                                          InputGestureText="Ctrl+E"
                                           Click="MenuFiles_Click"
                                           ToolTip="Parcourir et transférer des fichiers"/>
                                 <MenuItem x:Name="MenuSendFiles" Header="Envoyer des fichiers…"
@@ -343,13 +452,16 @@
                                 <Separator/>
                                 <MenuItem x:Name="MenuWake" Header="Réveiller (Wake-on-LAN)"
                                           Click="MenuWake_Click"/>
+                                <MenuItem x:Name="MenuWatch" Header="Me prévenir à son retour"
+                                          Click="MenuWatch_Click"
+                                          ToolTip="Notification Windows dès que la machine se reconnecte"/>
                                 <MenuItem x:Name="MenuReboot" Header="Redémarrer…"
                                           Click="MenuReboot_Click"/>
                                 <MenuItem x:Name="MenuSleep" Header="Mettre en veille…"
                                           Click="MenuSleep_Click"/>
                                 <MenuItem x:Name="MenuPowerOff" Header="Éteindre…"
                                           Click="MenuPowerOff_Click"/>
-                                <Separator/>
+                                <Separator x:Name="MenuToolsSeparator"/>
                                 <MenuItem x:Name="MenuProcesses" Header="Processus…"
                                           Click="MenuProcesses_Click"
                                           ToolTip="Voir et arrêter les processus de la machine"/>
@@ -431,7 +543,7 @@
                                     </Grid.ColumnDefinitions>
 
                                     <!-- Pastille d'icône OS avec indicateur de statut -->
-                                    <Grid Grid.Column="0"
+                                    <Grid x:Name="IconPart" Grid.Column="0"
                                           Width="{DynamicResource DeviceIconSize}"
                                           Height="{DynamicResource DeviceIconSize}"
                                           Margin="0,0,12,0">
@@ -450,13 +562,15 @@
                                     </Grid>
 
                                     <!-- Nom + description -->
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding Name}"
+                                    <!-- Texte posé par ui:Highlight, qui surligne la
+                                         recherche en cours (portée par la liste). -->
+                                    <StackPanel x:Name="NamePart" Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock ui:Highlight.Text="{Binding Name}"
                                                    FontSize="{DynamicResource DeviceNameSize}"
                                                    FontWeight="SemiBold"
                                                    Foreground="{StaticResource TextPrimaryBrush}"
                                                    TextTrimming="CharacterEllipsis"/>
-                                        <TextBlock Text="{Binding Subtitle}"
+                                        <TextBlock ui:Highlight.Text="{Binding Subtitle}"
                                                    Style="{StaticResource CaptionText}"
                                                    TextTrimming="CharacterEllipsis"
                                                    Margin="0,1,0,0"/>
@@ -491,7 +605,20 @@
                                                     CommandParameter="Wake" Click="RowAction_Click"
                                                     Visibility="{Binding WakeActionVisibility}"
                                                     ToolTip="Réveiller (Wake-on-LAN)"/>
+                                            <Button Style="{StaticResource RowActionButton}"
+                                                    Content="{Binding WatchGlyph}" Tag="{Binding}"
+                                                    CommandParameter="Watch" Click="RowAction_Click"
+                                                    Visibility="{Binding WakeActionVisibility}"
+                                                    ToolTip="{Binding WatchTooltip}"/>
                                         </StackPanel>
+
+                                        <!-- Retour en ligne attendu : la cloche reste
+                                             visible, pour qu'on sache l'alerte posée. -->
+                                        <TextBlock Text="&#xE7ED;" FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="12" Foreground="{StaticResource AccentBrush}"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"
+                                                   Visibility="{Binding WatchIndicatorVisibility}"
+                                                   ToolTip="Vous serez prévenu dès son retour en ligne"/>
 
                                         <!-- Utilisateur MeshCentral connecté à la machine :
                                              à savoir avant de prendre la main. -->
@@ -542,10 +669,38 @@
                                                  Value="True">
                                         <Setter TargetName="HoverActions" Property="Visibility" Value="Visible"/>
                                     </DataTrigger>
+                                    <!-- Machine hors ligne en retrait : celles qu'on
+                                         peut prendre en main ressortent d'elles-mêmes. -->
+                                    <DataTrigger Binding="{Binding IsOnline}" Value="False">
+                                        <Setter TargetName="IconPart" Property="Opacity" Value="0.5"/>
+                                        <Setter TargetName="NamePart" Property="Opacity" Value="0.6"/>
+                                    </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
+
+                    <!-- Liste vide : dire pourquoi, et offrir la sortie. -->
+                    <StackPanel x:Name="EmptyState" Visibility="Collapsed"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Margin="24">
+                        <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="28"
+                                   Foreground="{StaticResource PlaceholderBrush}"
+                                   HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                        <TextBlock x:Name="EmptyStateTitle" Text="Aucune machine ne correspond"
+                                   FontSize="14" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   HorizontalAlignment="Center" TextAlignment="Center"/>
+                        <TextBlock x:Name="EmptyStateDetail" Style="{StaticResource CaptionText}"
+                                   HorizontalAlignment="Center" TextAlignment="Center"
+                                   TextWrapping="Wrap" MaxWidth="340" Margin="0,4,0,0"/>
+                        <Button x:Name="EmptyStateClearButton" Style="{StaticResource AccentToolButton}"
+                                Content="Effacer la recherche et les filtres"
+                                HorizontalAlignment="Center" Padding="12,6" Margin="0,14,0,0"
+                                Click="ClearFilters_Click"/>
+                    </StackPanel>
+                    </Grid>
+                    </DockPanel>
                 </ui:CardBorder>
                 </Grid>
             </DockPanel>
@@ -648,10 +803,15 @@
                             <TextBlock Text="Qualité d'image" Style="{StaticResource FieldLabel}"/>
                             <ComboBox x:Name="DefaultQualityCombo" FontSize="12"
                                       VerticalContentAlignment="Center" Margin="0,0,0,14">
-                                <ComboBoxItem Content="Basse — réseau lent"/>
-                                <ComboBoxItem Content="Équilibrée" IsSelected="True"/>
-                                <ComboBoxItem Content="Haute — image nette"/>
+                                <!-- Tag : valeur enregistrée (DefaultDesktopQuality). -->
+                                <ComboBoxItem Content="Dépannage — liaison très lente" Tag="3"/>
+                                <ComboBoxItem Content="Basse — réseau lent" Tag="0"/>
+                                <ComboBoxItem Content="Équilibrée" Tag="1" IsSelected="True"/>
+                                <ComboBoxItem Content="Haute — image nette" Tag="2"/>
+                                <ComboBoxItem Content="Fluide — vidéo" Tag="4"/>
                             </ComboBox>
+                            <TextBlock Style="{StaticResource FieldHint}" Margin="0,-10,0,14"
+                                       Text="Dépannage : compression maximale, image réduite et 5 img/s au plus, pour garder la main sur une connexion faible. Fluide : 40 img/s en bonne qualité, pour suivre une vidéo."/>
 
                             <TextBlock Text="Fluidité" Style="{StaticResource FieldLabel}"/>
                             <ComboBox x:Name="DefaultFrameRateCombo" FontSize="12"

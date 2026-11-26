@@ -31,6 +31,8 @@
     <SolidColorBrush x:Key="SubtleFillBrush" Color="#3A3A3C"/>
     <SolidColorBrush x:Key="SubtleFillHoverBrush" Color="#48484A"/>
     <SolidColorBrush x:Key="ChipBrush" Color="#3A3A3C"/>
+    <!-- Texte recherché, surligné dans la liste des appareils -->
+    <SolidColorBrush x:Key="SearchHighlightBrush" Color="#7A6417"/>
     <SolidColorBrush x:Key="RowHoverBrush" Color="#3A3A3C"/>
 
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="#5A5A5E"/>

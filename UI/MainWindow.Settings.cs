@@ -75,7 +75,8 @@ public partial class MainWindow
         _settingsOriginalQuickSearch = _settings.QuickSearchEnabled;
 
         // Bureau à distance
-        DefaultQualityCombo.SelectedIndex = Math.Clamp(_settings.DefaultDesktopQuality, 0, 2);
+        DefaultQualityCombo.SelectedItem =
+            Desktop.DesktopWindow.QualityItemFor(DefaultQualityCombo, _settings.DefaultDesktopQuality);
         SelectFrameRate(_settings.DefaultDesktopFrameRate);
         SelectScale(_settings.DefaultDesktopScale);
         DefaultFitCheck.IsChecked = _settings.DefaultDesktopFit;
@@ -165,7 +166,9 @@ public partial class MainWindow
         }
 
         // Bureau à distance
-        _settings.DefaultDesktopQuality = DefaultQualityCombo.SelectedIndex;
+        _settings.DefaultDesktopQuality = DefaultQualityCombo.SelectedItem is ComboBoxItem quality
+            ? Desktop.DesktopWindow.QualityOf(quality)
+            : 1;
         _settings.DefaultDesktopFrameRate = SelectedFrameRate();
         _settings.DefaultDesktopScale = SelectedScale();
         _settings.DefaultDesktopFit = DefaultFitCheck.IsChecked == true;

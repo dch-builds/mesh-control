@@ -24,6 +24,9 @@ public sealed class TrayIcon : IDisposable
     public event Action? QuickSearchRequested;
     public event Action? ExitRequested;
 
+    /// <summary>Clic sur la dernière bulle de notification affichée.</summary>
+    public event Action? BalloonClicked;
+
     /// <summary>Identifiant de notre icône auprès du shell (arbitraire mais stable).</summary>
     private const int IconId = 1;
 
@@ -136,6 +139,11 @@ public sealed class TrayIcon : IDisposable
             case NativeMethods.WM_RBUTTONUP:
             case NativeMethods.WM_CONTEXTMENU:
                 ShowMenu();
+                handled = true;
+                break;
+
+            case NativeMethods.NIN_BALLOONUSERCLICK:
+                BalloonClicked?.Invoke();
                 handled = true;
                 break;
         }
@@ -262,6 +270,8 @@ internal static class NativeMethods
     public const int WM_LBUTTONDBLCLK = 0x0203;
     public const int WM_RBUTTONUP = 0x0205;
     public const int WM_CONTEXTMENU = 0x007B;
+    /// <summary>Clic sur une bulle (WM_USER + 5), reçu dans le mot faible de lParam.</summary>
+    public const int NIN_BALLOONUSERCLICK = 0x0405;
 
     public const uint WS_POPUP = 0x80000000;
     /// <summary>Fenêtre outil : absente de la barre des tâches et du Alt+Tab.</summary>

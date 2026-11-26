@@ -18,6 +18,9 @@ namespace MeshControl.UI;
 public partial class QuickSearchWindow : Window
 {
     private readonly List<DeviceRow> _rows;
+
+    /// <summary>Dernières machines utilisées, la plus récente d'abord.</summary>
+    private readonly List<DeviceRow> _recent;
     private readonly Action<MeshNode, DeviceAction> _onAction;
     private readonly Func<MeshNode, DeviceAction, bool> _isAvailable;
     private readonly Func<MeshNode, bool> _isFavorite;
@@ -35,16 +38,27 @@ public partial class QuickSearchWindow : Window
     public QuickSearchWindow(IEnumerable<DeviceRow> rows,
                              Action<MeshNode, DeviceAction> onAction,
                              Func<MeshNode, DeviceAction, bool> isAvailable,
-                             Func<MeshNode, bool> isFavorite)
+                             Func<MeshNode, bool> isFavorite,
+                             IEnumerable<string>? recentNodeIds = null)
     {
         InitializeComponent();
         _rows = rows.ToList();
+
+        // Copies marquées « Récente » : la ligne d'origine reste telle quelle
+        // dans le reste de la liste et dans la fenêtre principale.
+        var byId = _rows.GroupBy(r => r.Node.Id).ToDictionary(g => g.Key, g => g.First());
+        _recent = (recentNodeIds ?? [])
+            .Distinct()
+            .Select(id => byId.GetValueOrDefault(id))
+            .OfType<DeviceRow>()
+            .Select(r => new DeviceRow(r.Node, r.RealGroupName, r.IsFavorite) { IsRecent = true })
+            .ToList();
         _onAction = onAction;
         _isAvailable = isAvailable;
         _isFavorite = isFavorite;
 
-        // Les machines joignables d'abord : ce sont celles auxquelles on veut se
-        // connecter dans l'immédiat.
+        // Les dernières connexions d'abord, puis les machines joignables : ce
+        // sont celles auxquelles on veut se connecter dans l'immédiat.
         UpdateResults("");
 
         // La palette est ouverte alors qu'une AUTRE application a le focus :
@@ -98,8 +112,13 @@ public partial class QuickSearchWindow : Window
         }
         else
         {
-            matches = _rows.OrderByDescending(r => r.IsOnline)
-                           .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase);
+            // Sans saisie : les dernières connexions en tête, dans l'ordre
+            // d'utilisation, puis les autres machines sans doublon.
+            var recentIds = _recent.Select(r => r.Node.Id).ToHashSet();
+            matches = _recent.Concat(
+                _rows.Where(r => !recentIds.Contains(r.Node.Id))
+                     .OrderByDescending(r => r.IsOnline)
+                     .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase));
         }
 
         var list = matches.Take(50).ToList();   // au-delà, affiner la recherche est plus rapide
@@ -110,6 +129,8 @@ public partial class QuickSearchWindow : Window
         {
             0 => "Aucune machine ne correspond.",
             1 => "1 résultat · Entrée bureau · Ctrl+Maj+W page web · Tab autres actions",
+            _ when string.IsNullOrEmpty(query) && _recent.Count > 0
+                => "Dernières connexions en tête · ↑↓ naviguer · Entrée bureau · Tab actions",
             _ => $"{list.Count} résultats · ↑↓ naviguer · Entrée bureau · Ctrl+Maj+W page web · Tab actions",
         };
     }

@@ -15,7 +15,24 @@ mises à jour.
 **Appareils**
 - Liste groupée par dossier, repliable, avec état en ligne en temps réel
 - Recherche instantanée (nom, dossier, système, adresse IP, utilisateur
-  MeshCentral connecté) et filtre « en ligne uniquement »
+  MeshCentral connecté), par Ctrl+F depuis toute la fenêtre ou en tapant
+  directement dans la liste
+- Filtres rapides en pastilles, avec leur compteur, une par catégorie et
+  cumulables d'une catégorie à l'autre (Windows + en ligne) : état (en ligne,
+  hors ligne, en session), favoris ou récents, système (Windows, Linux,
+  macOS) ; les compteurs suivent le dossier choisi, la recherche en cours et
+  les autres pastilles actives
+- Volet des dossiers à gauche, au choix : compteur en ligne / total par
+  dossier (répondant aux filtres / total quand des pastilles sont actives),
+  champ de filtre, largeur réglable, dossiers épinglés en tête ou
+  masqués ; clic droit sur un dossier pour réveiller ses machines, leur
+  envoyer des fichiers ou être prévenu de leur retour
+- Sélection multiple (Ctrl+clic, Maj+clic, Ctrl+A) et actions groupées :
+  réveiller, redémarrer, éteindre, envoyer des fichiers, mettre en favoris
+- « Me prévenir à son retour » : une notification Windows dès qu'une machine
+  hors ligne se reconnecte ; un clic dessus ouvre le bureau à distance
+- Clavier dans la liste : Entrée ouvre le bureau à distance, Ctrl+T le
+  terminal, Ctrl+E les fichiers
 - Tri retenu d'une session à l'autre : par nom, en ligne d'abord, dernière
   présence ou système, à l'intérieur de chaque dossier
 - Chaque ligne montre l'adresse IP et l'utilisateur MeshCentral connecté à la
@@ -26,11 +43,20 @@ mises à jour.
   (appliqué au redémarrage, proposé d'un clic)
 - Favoris épinglés et machines récemment utilisées
 - Palette de recherche rapide par raccourci clavier global, utilisable même
-  lorsque l'application est en arrière-plan
+  lorsque l'application est en arrière-plan ; elle s'ouvre sur les dernières
+  connexions
 
 **Bureau à distance**
 - Décodage natif du protocole KVM (tuiles JPEG, trames jumbo)
 - Cadence réglable de 5 à 40 images/s, trois niveaux de qualité
+- Mode dépannage pour les liaisons très lentes : compression maximale,
+  5 images/s au plus, image ramenée à environ 1 280 pixels de large et écran
+  unique sur un poste à plusieurs moniteurs. « Image nette » (Ctrl+Maj+R)
+  envoie une fois l'écran en bonne qualité : le texte reste lisible tant qu'il
+  ne change pas. Quand la liaison sature, un bandeau propose de passer dans ce
+  mode
+- Mode fluide pour suivre une vidéo : 40 images/s en bonne qualité, sur une
+  bonne connexion
 - Souris, molette, boutons latéraux et clavier complet (codes VK Windows). La
   touche Windows n'est pas transmise (le poste local l'intercepte de toute
   façon) et s'envoie par le menu « Raccourcis »

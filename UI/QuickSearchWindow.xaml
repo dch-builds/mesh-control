@@ -134,7 +134,7 @@
                                      TwoWay, incompatible avec une propriété en
                                      lecture seule comme GroupName. -->
                                 <TextBlock Style="{StaticResource CaptionText}"
-                                           Text="{Binding GroupLabel}"
+                                           Text="{Binding PaletteCaption}"
                                            TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
 

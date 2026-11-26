@@ -77,6 +77,18 @@ public sealed class AppSettings
     /// <summary>Dossier retenu d'une session à l'autre dans la vue à deux volets.</summary>
     public string? SelectedFolder { get; set; }
 
+    /// <summary>Dossiers épinglés en tête du volet, sous les favoris.</summary>
+    public List<string> PinnedFolders { get; set; } = new();
+
+    /// <summary>
+    /// Dossiers masqués : absents du volet et de la liste, sauf pendant une
+    /// recherche. Retrouvables sous l'entrée « Dossiers masqués » du volet.
+    /// </summary>
+    public List<string> HiddenFolders { get; set; } = new();
+
+    /// <summary>Largeur du volet des dossiers, ajustée en tirant sa bordure.</summary>
+    public double FolderPaneWidth { get; set; } = 238;
+
     /// <summary>Rechercher les mises à jour au démarrage.</summary>
     public bool CheckForUpdates { get; set; } = true;
 

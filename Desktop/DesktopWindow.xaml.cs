@@ -152,6 +152,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         _session.ScreenSizeChanged += OnScreenSizeChanged;
         _session.StateChanged += OnStateChanged;
         _session.DisplaysChanged += OnDisplaysChanged;
+        _session.SlowLinkDetected += OnSlowLinkDetected;
 
         // En mode onglets, cette fenêtre n'est jamais affichée : Loaded ne se
         // déclencherait pas et la session ne démarrerait jamais. StartSession()
@@ -245,9 +246,9 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // celles de l'écran distant : le préciser évite de croire à une
         // mauvaise détection de résolution.
         StatusResolution.Text = _session.ScreenWidth > 0
-            ? _session.ScalePercent == 100
+            ? _session.EffectiveScalePercent == 100
                 ? $"{_session.ScreenWidth} × {_session.ScreenHeight}"
-                : $"{_session.ScreenWidth} × {_session.ScreenHeight} · {_session.ScalePercent} %"
+                : $"{_session.ScreenWidth} × {_session.ScreenHeight} · {_session.EffectiveScalePercent} %"
             : "Résolution —";
 
         var total = _session.BytesReceived;
@@ -292,13 +293,14 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     /// </summary>
     private void ApplyDefaultsFromSettings()
     {
-        QualityCombo.SelectedIndex = Math.Clamp(_settings.DefaultDesktopQuality, 0, 2);
+        QualityCombo.SelectedItem = QualityItemFor(QualityCombo, _settings.DefaultDesktopQuality);
 
         var frameRate = DesktopSession.NearestFrameRate(_settings.DefaultDesktopFrameRate);
         FrameRateCombo.SelectedItem = FrameRateCombo.Items.Cast<ComboBoxItem>()
             .FirstOrDefault(item => FrameRateOf(item) == frameRate);
 
         FitCheck.IsChecked = _settings.DefaultDesktopFit;
+        UpdateModeControls();
 
         // Avant tout envoi : la valeur part avec les premiers réglages de
         // compression, sans provoquer un second aller-retour.
@@ -684,16 +686,115 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // _session est créé avant InitializeComponent (voir le constructeur),
         // donc il est déjà valide même si ce handler se déclenche pendant le
         // chargement du XAML.
-        _session.Quality = QualityCombo.SelectedIndex switch
+        if (QualityCombo.SelectedItem is not ComboBoxItem item) return;
+        _session.Quality = QualityFromSetting(QualityOf(item));
+        if (!_uiReady) return;
+
+        UpdateModeControls();
+        UpdateStatusBar();
+        if (_session.IsTroubleshootMode) SlowLinkBanner.Visibility = Visibility.Collapsed;
+        StatsText.Text = _session.Quality switch
         {
-            0 => DesktopQuality.Low,
-            2 => DesktopQuality.High,
-            _ => DesktopQuality.Balanced,
+            DesktopQuality.Troubleshoot => "Mode dépannage. « Image nette » (Ctrl+Maj+R) pour lire le texte.",
+            DesktopQuality.Fluid => "Mode fluide : 40 img/s, bonne qualité.",
+            _ => "",
         };
     }
 
+    /// <summary>Vrai pendant que le code aligne la liste de fluidité sur le mode.</summary>
+    private bool _syncingFrameRate;
+
+    /// <summary>
+    /// Aligne les contrôles sur le mode de qualité. Les modes dépannage et
+    /// fluide fixent eux-mêmes la cadence : la liste l'affiche, grisée, et
+    /// retrouve le choix de l'utilisateur quand on en sort. En dépannage, le
+    /// bouton « Rafraîchir » devient « Image nette ».
+    /// </summary>
+    private void UpdateModeControls()
+    {
+        var forced = _session.IsTroubleshootMode || _session.IsFluidMode;
+        var shown = forced
+            ? DesktopSession.NearestFrameRate(_session.EffectiveFrameRate)
+            : _session.FrameRate;
+
+        _syncingFrameRate = true;
+        try
+        {
+            FrameRateCombo.SelectedItem = FrameRateCombo.Items.Cast<ComboBoxItem>()
+                .FirstOrDefault(i => FrameRateOf(i) == shown) ?? FrameRateCombo.SelectedItem;
+        }
+        finally
+        {
+            _syncingFrameRate = false;
+        }
+
+        FrameRateCombo.IsEnabled = !forced;
+        FrameRateCombo.ToolTip = _session.Quality switch
+        {
+            DesktopQuality.Troubleshoot => "Fluidité fixée par le mode dépannage",
+            DesktopQuality.Fluid => "Fluidité fixée par le mode fluide",
+            _ => "Fluidité : taux de rafraîchissement de l'écran distant",
+        };
+
+        var troubleshoot = _session.IsTroubleshootMode;
+        _refreshLabel = troubleshoot ? "Image nette" : "Rafraîchir";
+        if (RefreshButton.Content is not TextBlock { Tag: "glyph" })
+            RefreshButton.Content = _refreshLabel;
+        RefreshButton.ToolTip = troubleshoot
+            ? "Recevoir une fois l'écran en bonne qualité, pour lire le texte (Ctrl+Maj+R)"
+            : "Redemander une image complète (Ctrl+Maj+R)";
+        ScheduleFitToolbar();
+    }
+
+    // MARK: - Liaison lente
+
+    private void OnSlowLinkDetected()
+    {
+        // En vignette, le bandeau couvrirait l'essentiel de l'image.
+        if (_session.IsTroubleshootMode || _docked) return;
+        SlowLinkBanner.Visibility = Visibility.Visible;
+    }
+
+    private void SlowLinkSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        SlowLinkBanner.Visibility = Visibility.Collapsed;
+        QualityCombo.SelectedItem = QualityItemFor(QualityCombo, 3);
+        if (!_docked) RootPanel.Focus();
+    }
+
+    private void SlowLinkDismiss_Click(object sender, RoutedEventArgs e)
+    {
+        SlowLinkBanner.Visibility = Visibility.Collapsed;
+        if (!_docked) RootPanel.Focus();
+    }
+
+    /// <summary>
+    /// Valeur enregistrée portée par un élément de la liste de qualité (son
+    /// Tag) : 0 basse, 1 équilibrée, 2 haute, 3 dépannage, 4 fluide.
+    /// </summary>
+    internal static int QualityOf(ComboBoxItem item) =>
+        item.Tag is string tag && int.TryParse(tag, out var value) ? value : 1;
+
+    /// <summary>Élément d'une liste de qualité correspondant à une valeur enregistrée.</summary>
+    internal static ComboBoxItem? QualityItemFor(ComboBox combo, int value)
+    {
+        var items = combo.Items.OfType<ComboBoxItem>().ToList();
+        return items.FirstOrDefault(i => QualityOf(i) == value)
+            ?? items.FirstOrDefault(i => QualityOf(i) == 1);
+    }
+
+    private static DesktopQuality QualityFromSetting(int value) => value switch
+    {
+        0 => DesktopQuality.Low,
+        2 => DesktopQuality.High,
+        3 => DesktopQuality.Troubleshoot,
+        4 => DesktopQuality.Fluid,
+        _ => DesktopQuality.Balanced,
+    };
+
     private void FrameRateCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (_syncingFrameRate) return;
         if (FrameRateCombo.SelectedItem is ComboBoxItem item && FrameRateOf(item) is { } fps)
             _session.FrameRate = fps;
     }
@@ -744,7 +845,12 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         }
     }
 
-    private void Refresh_Click(object sender, RoutedEventArgs e) => _session.RequestRefresh();
+    private void Refresh_Click(object sender, RoutedEventArgs e)
+    {
+        _session.RequestSharpFrame();
+        if (_session.IsTroubleshootMode)
+            StatsText.Text = "Image nette en cours de réception…";
+    }
 
     // MARK: - Raccourcis clavier distants
 
@@ -943,9 +1049,11 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
             item.IsChecked = value == _session.ScalePercent;
         }
 
-        ScaleMenu.Header = _session.ScalePercent == 100
-            ? "Échelle de l'image"
-            : $"Échelle de l'image  ({_session.ScalePercent} %)";
+        ScaleMenu.Header = _session.EffectiveScalePercent != _session.ScalePercent
+            ? $"Échelle de l'image  ({_session.EffectiveScalePercent} %, mode dépannage)"
+            : _session.ScalePercent == 100
+                ? "Échelle de l'image"
+                : $"Échelle de l'image  ({_session.ScalePercent} %)";
     }
 
     /// <summary>
