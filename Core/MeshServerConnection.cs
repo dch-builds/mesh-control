@@ -1249,9 +1249,38 @@ public sealed class MeshServerConnection : IDisposable
         }
     }
 
-    /// <summary>Arrête un processus distant par son identifiant.</summary>
+    /// <summary>
+    /// Arrête un processus distant par son identifiant, comme l'interface web
+    /// de MeshCentral : un message « pskill » que l'agent traite directement.
+    ///
+    /// La commande console « kill » utilisée auparavant passait par la console
+    /// de l'agent, qui exige le droit « Console » et ne renvoie rien quand elle
+    /// ignore l'ordre : l'arrêt échouait sans le moindre signe.
+    /// </summary>
     public Task KillProcessAsync(string nodeId, int pid)
-        => SendConsoleCommandAsync(nodeId, $"kill {pid}");
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+        return SendJsonAsync(new { action = "msg", type = "pskill", nodeid = nodeId, value = pid });
+    }
+
+    /// <summary>
+    /// Arrêt forcé, quand « pskill » n'a pas suffi : la machine exécute
+    /// « taskkill /F » (Windows) ou « kill -9 » (Linux, macOS) avec les droits
+    /// de l'agent. Passe par la fonction « Exécuter des commandes » du serveur.
+    /// </summary>
+    public Task ForceKillProcessAsync(string nodeId, int pid, bool windows)
+    {
+        if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
+        return SendJsonAsync(new
+        {
+            action = "runcommands",
+            nodeids = new[] { nodeId },
+            type = windows ? 1 : 3,
+            cmds = windows ? $"taskkill /F /PID {pid}" : $"kill -9 {pid}",
+            runAsUser = 0,
+            reply = false,
+        });
+    }
 
     /// <summary>Réponses console en attente (sysinfo, netinfo…).</summary>
     private TaskCompletionSource<string>? _consoleWaiter;

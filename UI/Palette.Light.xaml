@@ -25,6 +25,7 @@
     <SolidColorBrush x:Key="OnlineSoftBrush" Color="#E4F8E8"/>
     <SolidColorBrush x:Key="OfflineBrush" Color="#C7C7CC"/>
     <SolidColorBrush x:Key="DangerBrush" Color="#FF3B30"/>
+    <SolidColorBrush x:Key="DangerSoftBrush" Color="#FDE8E7"/>
 
     <!-- Champs, cases et boutons d'outil posés sur une carte -->
     <SolidColorBrush x:Key="ControlBrush" Color="#FFFFFF"/>

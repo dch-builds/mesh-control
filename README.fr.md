@@ -14,15 +14,25 @@ mises à jour.
 
 **Appareils**
 - Liste groupée par dossier, repliable, avec état en ligne en temps réel
-- Recherche instantanée (nom, dossier, système, adresse IP, utilisateur
-  MeshCentral connecté), par Ctrl+F depuis toute la fenêtre ou en tapant
+- Recherche instantanée, sans tenir compte des accents ni des majuscules
+  (nom, dossier, système, adresse IP, utilisateur MeshCentral connecté), par
+  Ctrl+F depuis toute la fenêtre ou en tapant
   directement dans la liste
 - Filtres rapides en pastilles, avec leur compteur, une par catégorie et
   cumulables d'une catégorie à l'autre (Windows + en ligne) : état (en ligne,
   hors ligne, en session), favoris ou récents, système (Windows, Linux,
   macOS) ; les compteurs suivent le dossier choisi, la recherche en cours et
   les autres pastilles actives
-- Volet des dossiers à gauche, au choix : compteur en ligne / total par
+- Deux dispositions. Avec la barre latérale : les vues (toutes, favoris,
+  récentes, en session) puis les dossiers, et la liste en cartes sous le titre
+  de la vue. Barre masquée : une liste dense en colonnes (nom, système,
+  adresse IP, utilisateur, dernière présence), triée d'un clic sur un en-tête
+- Un seul point d'état partout : vert en ligne, bleu quand un utilisateur
+  MeshCentral est connecté, vide hors ligne, pointillé quand la machine est
+  inactive depuis plus de 30 jours ; la dernière présence passe à l'orange
+  au-delà de 30 jours. Les noms se lisent code puis libellé, l'utilisateur
+  connecté apparaît en initiales (orange pour un collègue)
+- Dossiers de la barre latérale : compteur en ligne / total par
   dossier (répondant aux filtres / total quand des pastilles sont actives),
   champ de filtre, largeur réglable, dossiers épinglés en tête ou
   masqués ; clic droit sur un dossier pour réveiller ses machines, leur
@@ -170,7 +180,11 @@ mises à jour.
 
 **Administration**
 - Alimentation : réveil Wake-on-LAN, redémarrage, veille, extinction
-- Liste et arrêt des processus distants
+- Liste et arrêt des processus distants : recherche, processus d'utilisateurs
+  ou du système, colonnes triées d'un clic, plusieurs processus à la fois
+  (Suppr), actualisation automatique au choix. Chaque arrêt est vérifié : un
+  processus qui résiste est arrêté de force (taskkill /F, kill -9), et la
+  fenêtre dit lesquels ont réellement été arrêtés
 - Informations système : processeur, mémoire, disques, BIOS
 - Ouverture d'une URL sur la machine distante
 - Renommage d'un appareil (F2, menu contextuel ou palette) : le nom affiché

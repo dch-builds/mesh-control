@@ -57,6 +57,9 @@ public sealed class DeviceRow : INotifyPropertyChanged
     public string Name => Node.Name;
     public bool IsOnline => Node.IsOnline;
 
+    /// <summary>Une machine, pas un en-tête de dossier (voir GroupHeaderRow).</summary>
+    public bool IsHeader => false;
+
     // État affiché lors du dernier rafraîchissement. Indispensable : Node est
     // modifié en place par la connexion, donc comparer Node à lui-même ne
     // révélerait jamais de changement.
@@ -109,22 +112,39 @@ public sealed class DeviceRow : INotifyPropertyChanged
             Notify(nameof(RemoteActionsVisibility));
             Notify(nameof(WakeActionVisibility));
             Notify(nameof(WatchIndicatorVisibility));
+            Notify(nameof(StatusDotVisibility));
+        }
+        if (OnlineStateChanged || _shownLastConnect != Node.LastConnect || SessionsChanged)
+        {
+            Notify(nameof(StatusKind));
+            Notify(nameof(StatusTooltip));
+            Notify(nameof(PresenceText));
+            Notify(nameof(PresenceShort));
+            Notify(nameof(PresenceColor));
         }
         if (_shownLastConnect != Node.LastConnect) Notify(nameof(LastSeenLabel));
         if (NameChanged) Notify(nameof(Name));
         if (!string.Equals(_shownOsDescription, Node.OsDescription, StringComparison.Ordinal))
         {
             Notify(nameof(Subtitle));
+            Notify(nameof(OsDisplay));
             Notify(nameof(OsGlyph));
             Notify(nameof(OsGlyphColor));
             Notify(nameof(OsGlyphBackground));
         }
-        if (!string.Equals(_shownIp, Node.Ip, StringComparison.Ordinal)) Notify(nameof(Subtitle));
+        if (!string.Equals(_shownIp, Node.Ip, StringComparison.Ordinal))
+        {
+            Notify(nameof(Subtitle));
+            Notify(nameof(IpText));
+        }
         if (OnlineStateChanged || _shownSessions != SessionsSignature())
         {
             Notify(nameof(SessionLabel));
             Notify(nameof(SessionTooltip));
             Notify(nameof(SessionVisibility));
+            Notify(nameof(SessionInitials));
+            Notify(nameof(SessionAvatarBackground));
+            Notify(nameof(SessionAvatarForeground));
         }
 
         CaptureState();
@@ -248,6 +268,36 @@ public sealed class DeviceRow : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Initiales du premier utilisateur connecté, pour la pastille ronde :
+    /// « david.chiesa » ou « dchiesa » donnent « DC ». Suivies de « +N » quand
+    /// plusieurs utilisateurs sont dessus.
+    /// </summary>
+    public string SessionInitials
+    {
+        get
+        {
+            var users = SessionUsers();
+            if (users.Count == 0) return "";
+            var initials = InitialsOf(users[0].Name == "vous" ? CurrentUserName ?? "vous" : users[0].Name);
+            return users.Count > 1 ? $"{initials}+{users.Count - 1}" : initials;
+        }
+    }
+
+    private static string InitialsOf(string name)
+    {
+        var parts = name.Split(['.', '_', '-', ' ', '@'], StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2) return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}";
+        var single = parts.Length == 1 ? parts[0] : name;
+        return single.Length >= 2 ? single[..2].ToUpperInvariant() : single.ToUpperInvariant();
+    }
+
+    /// <summary>Vous : bleu ; un collègue : orange, pour qu'on le remarque avant de prendre la main.</summary>
+    private bool SessionIsMine => SessionUsers() is { Count: > 0 } users && users[0].Name == "vous" && users.Count == 1;
+
+    public string SessionAvatarBackground => Palette.Adapt(SessionIsMine ? "#E8F2FE" : "#FFF4E5");
+    public string SessionAvatarForeground => Palette.Adapt(SessionIsMine ? "#0A84FF" : "#B25E09");
+
     public string SessionTooltip
     {
         get
@@ -291,6 +341,7 @@ public sealed class DeviceRow : INotifyPropertyChanged
                 Notify(nameof(WatchGlyph));
                 Notify(nameof(WatchTooltip));
                 Notify(nameof(WatchIndicatorVisibility));
+                Notify(nameof(StatusDotVisibility));
             }
         }
     }
@@ -304,6 +355,80 @@ public sealed class DeviceRow : INotifyPropertyChanged
 
     public Visibility WatchIndicatorVisibility =>
         IsWatched && !IsOnline ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>Le point d'état cède la place à la cloche quand une alerte est posée.</summary>
+    public Visibility StatusDotVisibility =>
+        IsWatched && !IsOnline ? Visibility.Collapsed : Visibility.Visible;
+
+    // MARK: - État et présence
+
+    /// <summary>Au-delà, une machine hors ligne est dite inactive.</summary>
+    private static readonly TimeSpan InactiveAfter = TimeSpan.FromDays(30);
+
+    /// <summary>
+    /// État résumé en un seul point (voir le style StatusDot) : en ligne, en
+    /// session (un utilisateur MeshCentral est dessus), hors ligne, ou inactive
+    /// (hors ligne depuis plus de 30 jours).
+    /// </summary>
+    public string StatusKind => IsOnline
+        ? (Node.Sessions.Count > 0 ? "Session" : "Online")
+        : Node.LastConnect is { } seen && DateTime.Now - seen > InactiveAfter ? "Inactive" : "Offline";
+
+    public string StatusTooltip => StatusKind switch
+    {
+        "Session" => "En ligne, un utilisateur MeshCentral est connecté",
+        "Online" => "En ligne",
+        "Inactive" => $"Inactive : hors ligne {Node.LastSeenLabel}",
+        _ => $"Hors ligne, vue {Node.LastSeenLabel}",
+    };
+
+    /// <summary>Dernière présence, en clair (« il y a 3 j »), ou « en ligne ».</summary>
+    public string PresenceText => IsOnline ? "en ligne" : Node.LastSeenLabel;
+
+    /// <summary>Dernière présence en abrégé, pour la colonne « Vu ».</summary>
+    public string PresenceShort
+    {
+        get
+        {
+            if (IsOnline) return "en ligne";
+            if (Node.LastConnect is not { } seen) return "—";
+            var span = DateTime.Now - seen;
+            if (span.TotalHours < 1) return $"{Math.Max(1, (int)span.TotalMinutes)} min";
+            if (span.TotalDays < 1) return $"{(int)span.TotalHours} h";
+            if (span.TotalDays < 31) return $"{(int)span.TotalDays} j";
+            if (span.TotalDays < 365) return $"{(int)(span.TotalDays / 30)} mois";
+            return $"{(int)(span.TotalDays / 365)} an{((int)(span.TotalDays / 365) > 1 ? "s" : "")}";
+        }
+    }
+
+    /// <summary>
+    /// La présence vieillit en couleur : vert en ligne, gris récent, orange
+    /// au-delà de 30 jours, pâle au-delà de 6 mois. Les postes oubliés
+    /// ressortent sans qu'on lise les dates.
+    /// </summary>
+    public string PresenceColor
+    {
+        get
+        {
+            if (IsOnline) return Palette.Adapt("#248A3D");
+            if (Node.LastConnect is not { } seen) return Palette.Adapt("#8A8A8E");
+            var days = (DateTime.Now - seen).TotalDays;
+            return Palette.Adapt(days > 180 ? "#C7C7CC" : days > InactiveAfter.TotalDays ? "#B25E09" : "#8A8A8E");
+        }
+    }
+
+    /// <summary>Système sans le préfixe « Microsoft », pour la colonne Système.</summary>
+    public string OsDisplay
+    {
+        get
+        {
+            var os = Node.OsDescription;
+            if (string.IsNullOrEmpty(os)) return "—";
+            return os.StartsWith("Microsoft ", StringComparison.OrdinalIgnoreCase) ? os[10..] : os;
+        }
+    }
+
+    public string IpText => Node.Ip ?? "";
 
     // MARK: - Notification de changement
 

@@ -44,7 +44,9 @@ public partial class MainWindow : ChromeWindow
     public MainWindow()
     {
         InitializeComponent();
+        FitStartupSize();
         BuildFilterChips();
+        ColumnHeaderAlign.Attach(DeviceList, scrollbar => ColumnHeader.Padding = new Thickness(10, 4, 10 + scrollbar, 7));
         CertificateTrust.Initialize(_settings);
         _refreshTimer.Tick += (_, _) =>
         {
@@ -112,6 +114,18 @@ public partial class MainWindow : ChromeWindow
             // resterait actif après la fermeture de la fenêtre principale.
             Application.Current.Shutdown();
         };
+    }
+
+    /// <summary>
+    /// Taille d'ouverture : 1 240 × 820, assez pour la barre latérale et la
+    /// liste en colonnes côte à côte, ramenée à 92 % de la zone de travail sur
+    /// un petit écran pour que la fenêtre n'en déborde jamais.
+    /// </summary>
+    private void FitStartupSize()
+    {
+        var area = SystemParameters.WorkArea;
+        Width = Math.Max(MinWidth, Math.Min(Width, area.Width * 0.92));
+        Height = Math.Max(MinHeight, Math.Min(Height, area.Height * 0.92));
     }
 
     // MARK: - Zone de notification
@@ -234,7 +248,7 @@ public partial class MainWindow : ChromeWindow
     {
         LoginServerLabel.Text = _settings.Host;
         // Sans serveur, l'en-tête garderait sinon un vide à la place du nom.
-        SubtitleText.Text = string.IsNullOrEmpty(_settings.Host) ? "Contrôle à distance" : _settings.Host;
+        SetHeader(string.IsNullOrEmpty(_settings.Host) ? "Contrôle à distance" : _settings.Host, null);
         UserBox.Text = _settings.Username;
         RememberCheck.IsChecked = _settings.RememberCredentials;
         ApplyFolderView();
@@ -252,7 +266,7 @@ public partial class MainWindow : ChromeWindow
                 _settings.QuickSearchHotkey = readable;
                 _settings.Save();
             }
-            HotkeyHintText.Text = $"⌨ {readable} · recherche rapide";
+            HotkeyHintText.Text = readable;
             HotkeyHintBadge.Visibility = Visibility.Visible;
         }
         else
@@ -280,7 +294,8 @@ public partial class MainWindow : ChromeWindow
         {
             // Windows refuse le raccourci : presque toujours un conflit avec une
             // autre application. On le signale sans bloquer le reste de l'app.
-            SubtitleText.Text = $"{_settings.Host} · raccourci {_settings.QuickSearchHotkey} indisponible (déjà utilisé)";
+            SetHeader(_settings.Host, $"raccourci {_settings.QuickSearchHotkey} indisponible (déjà utilisé)",
+                      HeaderStatus.Warning);
         }
     }
 
@@ -362,21 +377,98 @@ public partial class MainWindow : ChromeWindow
     {
         _settings.FolderView = !_settings.FolderView;
         _settings.Save();
-        ApplyFolderView();
-        RebuildFolderPanel();
-        ApplyFilter();
+        var width = Math.Clamp(_settings.FolderPaneWidth, MinFolderPaneWidth, MaxFolderPaneWidth);
+
+        // La barre latérale s'ouvre en glissant ; à la fermeture, elle reste
+        // affichée le temps de se replier, puis disparaît.
+        _animateList = true;
+        if (_settings.FolderView)
+        {
+            ApplyFolderView();
+            RebuildFolderPanel();
+            ApplyFilter();
+            Motion.Width(FolderPane, 0, width);
+        }
+        else
+        {
+            ApplyFolderView(keepPaneForAnimation: true);
+            ApplyFilter();
+            Motion.Width(FolderPane, width, 0, completed: () =>
+            {
+                if (!_settings.FolderView) FolderPane.Visibility = Visibility.Collapsed;
+            });
+        }
     }
 
     /// <summary>Montre ou masque le volet, et met le bouton en accord.</summary>
-    private void ApplyFolderView()
+    private void ApplyFolderView(bool keepPaneForAnimation = false)
     {
         bool on = _settings.FolderView;
-        FolderPane.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        if (!keepPaneForAnimation) FolderPane.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
         FolderPane.Width = Math.Clamp(_settings.FolderPaneWidth, MinFolderPaneWidth, MaxFolderPaneWidth);
-        ToggleViewButton.ToolTip = on ? "Revenir à la liste groupée"
-                                      : "Afficher les dossiers à gauche";
+        ToggleViewButton.ToolTip = on ? "Masquer la barre latérale (liste en colonnes)"
+                                      : "Afficher la barre latérale";
         ToggleViewGlyph.Foreground = (System.Windows.Media.Brush)FindResource(
             on ? "AccentBrush" : "TextSecondaryBrush");
+
+        // Barre latérale : titre de la vue avec son compteur, lignes en carte.
+        // Masquée : liste dense en colonnes, compteur dans la barre d'outils.
+        SidebarTitleRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        ColumnHeader.Visibility = on ? Visibility.Collapsed : Visibility.Visible;
+        if (CountText.Parent is Panel current) current.Children.Remove(CountText);
+        if (on) TitleCountHost.Children.Add(CountText);
+        else ToolbarRight.Children.Insert(0, CountText);
+
+        DeviceList.ItemTemplateSelector = new DeviceListTemplateSelector
+        {
+            Header = (DataTemplate)DeviceList.FindResource("GroupHeaderTemplate"),
+            Card = (DataTemplate)DeviceList.FindResource("DeviceCardTemplate"),
+            Columns = (DataTemplate)DeviceList.FindResource("DeviceColumnsTemplate"),
+            UseColumns = !on,
+        };
+        ApplyColumnsPadding();
+
+        // Favoris et récentes sont des vues de la barre latérale : leurs
+        // pastilles feraient doublon.
+        if (on && _activeFilters.Remove(FilterGroup.Set)) SyncFilterChips();
+        UpdateFilterChips();
+    }
+
+    /// <summary>
+    /// Lignes en colonnes : plus basses que les cartes, d'après la densité
+    /// choisie. La marge gauche de l'en-tête suit celle des lignes.
+    /// </summary>
+    private void ApplyColumnsPadding()
+    {
+        if (_settings.FolderView)
+        {
+            DeviceList.Resources.Remove("DeviceRowPadding");
+            return;
+        }
+        var vertical = _settings.ListDensity switch { 0 => 2.0, 2 => 7.0, _ => 4.0 };
+        DeviceList.Resources["DeviceRowPadding"] = new Thickness(10, vertical, 10, vertical);
+    }
+
+    /// <summary>Titre de la vue, dans la disposition à barre latérale.</summary>
+    private void UpdateViewTitle(string query)
+    {
+        if (!_settings.FolderView) return;
+        ViewTitleText.Text = !string.IsNullOrEmpty(query)
+            ? $"Recherche « {query} »"
+            : _folderRows.FirstOrDefault(f => f.Key == (_selectedFolderKey ?? FolderRow.AllKey)) is { } folder
+                ? folder.Name
+                : "Toutes les machines";
+    }
+
+    /// <summary>Clic sur un en-tête de colonne : trie la liste par cette colonne.</summary>
+    private void ColumnHeader_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string tag } || !int.TryParse(tag, out var mode)) return;
+        _settings.DeviceSort = mode;
+        _settings.Save();
+        UpdateSortButton();
+        _animateList = true;
+        ApplyFilter();
     }
 
     /// <summary>
@@ -392,13 +484,20 @@ public partial class MainWindow : ChromeWindow
         // E718 punaise, ED1A œil barré. Attention, E8B7 — que la documentation
         // donne pour « Folder » — ne dessine rien dans cette police et
         // s'affiche en carré vide.
+        // Vues en tête (toutes, favoris, récentes, en session), puis les
+        // dossiers. Les intitulés de section ne se sélectionnent pas.
         var rows = new List<FolderRow>
         {
-            new(FolderRow.AllKey, "Toutes les machines", "", "#8A8A8E", 0, 0),
+            FolderRow.Section("Vues"),
+            new(FolderRow.AllKey, "Toutes les machines", "\uE71D", "#8A8A8E", 0, 0),
         };
 
         if (_allRows.Any(r => r.IsFavorite))
-            rows.Add(new FolderRow(FavoritesGroup, "Favoris", "", "#FFB300", 0, 0));
+            rows.Add(new FolderRow(FavoritesGroup, "Favoris", "\uE735", "#FFB300", 0, 0));
+        if (_settings.RecentNodeIds.Count > 0)
+            rows.Add(new FolderRow(FolderRow.RecentKey, "Récentes", "\uE81C", "#8A8A8E", 0, 0));
+        rows.Add(new FolderRow(FolderRow.SessionKey, "En session", "\uE77B", "#0A84FF", 0, 0));
+        rows.Add(FolderRow.Section("Dossiers"));
 
         // Dossiers épinglés juste sous les favoris, puis les autres ; les
         // masqués sont regroupés sous une entrée unique, en bas.
@@ -420,13 +519,36 @@ public partial class MainWindow : ChromeWindow
             rows.Add(new FolderRow(FolderRow.HiddenKey,
                 hidden == 1 ? "1 dossier masqué" : $"{hidden} dossiers masqués", "", "#8A8A8E", 0, 0));
 
-        _restoringFolder = true;
-        FolderList.ItemsSource = rows;
-        FolderList.Items.Filter = FolderMatchesFilter;
+        _folderRows = rows;
         RefreshFolderCounts();
         var wanted = _selectedFolderKey ?? _settings.SelectedFolder ?? FolderRow.AllKey;
-        FolderList.SelectedItem = rows.FirstOrDefault(f => f.Key == wanted) ?? rows[0];
-        _selectedFolderKey = (FolderList.SelectedItem as FolderRow)?.Key;
+        _selectedFolderKey = rows.Any(f => f.Key == wanted) ? wanted : FolderRow.AllKey;
+        ShowFolderRows();
+    }
+
+    /// <summary>Toutes les entrées du volet, avant le filtre des dossiers.</summary>
+    private List<FolderRow> _folderRows = new();
+
+    /// <summary>
+    /// Donne au volet les entrées qui répondent au filtre des dossiers, et y
+    /// rétablit la sélection sans relancer le filtrage des machines.
+    ///
+    /// La liste lui est passée déjà filtrée : le filtre de la vue WPF
+    /// (Items.Filter puis Items.Refresh) n'était pas appliqué, et le volet
+    /// gardait tous ses dossiers quoi qu'on tape.
+    /// </summary>
+    private void ShowFolderRows()
+    {
+        var query = FolderFilterBox.Text.Trim();
+        // Pendant un filtre, les intitulés de section n'ont plus rien à ranger.
+        var visible = query.Length == 0
+            ? _folderRows
+            : _folderRows.Where(f => !f.IsSection
+                                     && (!f.IsRealFolder || TextMatch.Contains(f.Name, query))).ToList();
+
+        _restoringFolder = true;
+        FolderList.ItemsSource = visible;
+        FolderList.SelectedItem = visible.FirstOrDefault(f => f.Key == _selectedFolderKey);
         _restoringFolder = false;
     }
 
@@ -462,6 +584,8 @@ public partial class MainWindow : ChromeWindow
         FolderRow.AllKey => _allRows.Where(r => !IsHiddenFolder(r.RealGroupName)),
         FolderRow.HiddenKey => _allRows.Where(r => IsHiddenFolder(r.RealGroupName)),
         FavoritesGroup => _allRows.Where(r => r.IsFavorite),
+        FolderRow.RecentKey => _allRows.Where(r => IsRecent(r.Node.Id)),
+        FolderRow.SessionKey => _allRows.Where(r => r.IsOnline && r.Node.Sessions.Count > 0),
         _ => _allRows.Where(r => string.Equals(r.RealGroupName, key, StringComparison.OrdinalIgnoreCase)),
     };
 
@@ -472,7 +596,8 @@ public partial class MainWindow : ChromeWindow
     /// </summary>
     private void RefreshFolderCounts()
     {
-        if (!_settings.FolderView || FolderList.ItemsSource is not List<FolderRow> folders) return;
+        if (!_settings.FolderView) return;
+        var folders = _folderRows;
 
         // Sans filtre, le volet compte les machines en ligne ; avec des
         // pastilles actives, celles qui y répondent : le chiffre d'un dossier
@@ -487,6 +612,7 @@ public partial class MainWindow : ChromeWindow
 
         foreach (var folder in folders)
         {
+            if (folder.IsSection) continue;
             if (folder.IsRealFolder)
             {
                 var (total, matching) = byFolder.GetValueOrDefault(folder.Key);
@@ -502,19 +628,12 @@ public partial class MainWindow : ChromeWindow
 
     // MARK: - Volet des dossiers : filtre, largeur, menu
 
-    private bool FolderMatchesFilter(object item)
-    {
-        var query = FolderFilterBox.Text.Trim();
-        return query.Length == 0 || item is not FolderRow folder || !folder.IsRealFolder
-               || folder.Name.Contains(query, StringComparison.OrdinalIgnoreCase);
-    }
-
     private void FolderFilterBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         var empty = string.IsNullOrEmpty(FolderFilterBox.Text);
         FolderFilterPlaceholder.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         ClearFolderFilterButton.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
-        FolderList.Items.Refresh();
+        ShowFolderRows();
     }
 
     /// <summary>Entrée ouvre le premier dossier qui correspond ; Échap efface le filtre.</summary>
@@ -654,6 +773,7 @@ public partial class MainWindow : ChromeWindow
         if (FolderList.SelectedItem is not FolderRow folder) return;
 
         _selectedFolderKey = folder.Key;
+        _animateList = true;
         _settings.SelectedFolder = folder.Key;
         _settings.Save();
         ApplyFilter();
@@ -724,6 +844,7 @@ public partial class MainWindow : ChromeWindow
 
     private void ShowLogin()
     {
+        ConnectionDot.Visibility = Visibility.Collapsed;
         // Premier lancement : sans adresse de serveur, se connecter n'a aucun
         // sens. On commence par la demander.
         if (string.IsNullOrWhiteSpace(_settings.Host))
@@ -925,7 +1046,11 @@ public partial class MainWindow : ChromeWindow
         ServerPanel.Visibility = Visibility.Collapsed;
         LoginPanel.Visibility = Visibility.Collapsed;
         LoadingPanel.Visibility = Visibility.Collapsed;
-        DevicesPanel.Visibility = Visibility.Visible;
+        if (DevicesPanel.Visibility != Visibility.Visible)
+        {
+            DevicesPanel.Visibility = Visibility.Visible;
+            Motion.FadeIn(DevicesPanel, 0, 240, slideY: 10);
+        }
         RefreshButton.Visibility = Visibility.Visible;
     }
 
@@ -1093,7 +1218,7 @@ public partial class MainWindow : ChromeWindow
                 await RememberThisDeviceAsync();
             }
 
-            SubtitleText.Text = $"{_settings.Host} · {_connection.UserInfo?.Name ?? user}";
+            SetHeader(_settings.Host, _connection.UserInfo?.Name ?? user, HeaderStatus.Connected);
             DeviceRow.CurrentUserName = _connection.UserInfo?.Name ?? user;
             ShowDevices();
         }
@@ -1263,7 +1388,7 @@ public partial class MainWindow : ChromeWindow
                     _reconnectAttempt = 0;
 
                     Log.Info("Reconnexion réussie", "Serveur");
-                    SubtitleText.Text = $"{_settings.Host} · {connection.UserInfo?.Name ?? _sessionUser}";
+                    SetHeader(_settings.Host, connection.UserInfo?.Name ?? _sessionUser, HeaderStatus.Connected);
                     DeviceRow.CurrentUserName = connection.UserInfo?.Name ?? _sessionUser;
                     ShowDevices();
                     SetStatus("");
@@ -1347,6 +1472,7 @@ public partial class MainWindow : ChromeWindow
         _chipScope = new List<DeviceRow>();
         _lastPlan = new();
         _lastDisplay = new();
+        _groupHeaders.Clear();
         DeviceList.ItemsSource = null;
         CountText.Text = "";
         EmptyState.Visibility = Visibility.Collapsed;
@@ -1356,7 +1482,7 @@ public partial class MainWindow : ChromeWindow
     /// <summary>Informe discrètement que la connexion est en cours de rétablissement.</summary>
     private void ShowReconnecting(int seconds)
     {
-        SubtitleText.Text = $"{_settings.Host} · reconnexion dans {seconds} s…";
+        SetHeader(_settings.Host, $"reconnexion dans {seconds} s…", HeaderStatus.Warning);
         _tray?.SetTooltip("Mesh Control — reconnexion en cours");
     }
 
@@ -1485,8 +1611,7 @@ public partial class MainWindow : ChromeWindow
     /// <summary>Met à jour les compteurs sans toucher à la liste.</summary>
     private void UpdateCounters()
     {
-        var displayed = (DeviceList.ItemsSource as System.Collections.IEnumerable)?
-            .Cast<object>().Count() ?? _allRows.Count;
+        var displayed = DeviceList.ItemsSource is null ? _allRows.Count : _shownRowCount;
         var totalOnline = _allRows.Count(r => r.IsOnline);
 
         CountText.Text = displayed >= _allRows.Count
@@ -1498,7 +1623,36 @@ public partial class MainWindow : ChromeWindow
         UpdateTrayTooltip();
     }
 
+    // MARK: - En-tête
+
+    private enum HeaderStatus { Unchanged, Idle, Connected, Warning }
+
+    /// <summary>
+    /// En-tête de la fenêtre : le serveur en gras, puis le compte ou l'état en
+    /// retrait, et le point d'état de la liaison.
+    /// </summary>
+    private void SetHeader(string? host, string? detail, HeaderStatus status = HeaderStatus.Unchanged)
+    {
+        HeaderHostRun.Text = string.IsNullOrEmpty(host) ? "Contrôle à distance" : host;
+        HeaderDetailRun.Text = string.IsNullOrEmpty(detail) ? "" : $"  ·  {detail}";
+
+        if (status == HeaderStatus.Unchanged) return;
+        ConnectionDot.Visibility = status == HeaderStatus.Idle ? Visibility.Collapsed : Visibility.Visible;
+        ConnectionDot.Fill = (System.Windows.Media.Brush)FindResource(
+            status == HeaderStatus.Connected ? "OnlineBrush" : "WarningTextBrush");
+        ConnectionDot.ToolTip = status == HeaderStatus.Connected ? "Connecté au serveur" : detail;
+    }
+
     // MARK: - Recherche
+
+    /// <summary>Un clic n'importe où dans le cadre place le curseur dans le champ.</summary>
+    private void SearchFrame_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (SearchBox.IsKeyboardFocusWithin) return;
+        SearchBox.Focus();
+        SearchBox.CaretIndex = SearchBox.Text.Length;
+        e.Handled = true;
+    }
 
     /// <summary>
     /// Filtrage différé pendant la frappe.
@@ -1520,6 +1674,7 @@ public partial class MainWindow : ChromeWindow
         var empty = string.IsNullOrEmpty(SearchBox.Text);
         SearchPlaceholder.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         ClearSearchButton.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+        SearchShortcutHint.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
 
         _searchTimer.Stop();
         _searchTimer.Start();
@@ -1559,22 +1714,6 @@ public partial class MainWindow : ChromeWindow
         return copy;
     }
 
-    /// <summary>
-    /// Construit la vue groupée en gardant Favoris et Récentes en tête, puis les
-    /// dossiers réels par ordre alphabétique.
-    /// </summary>
-    private System.ComponentModel.ICollectionView BuildGroupedView(List<DeviceRow> rows)
-    {
-        var ordered = rows
-            .OrderBy(r => r.GroupName == FavoritesGroup ? 0
-                        : r.GroupName == RecentGroup ? 1 : 2)
-            .ToList();
-
-        var view = new CollectionViewSource { Source = ordered };
-        view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DeviceRow.GroupName)));
-        return view.View;
-    }
-
     /// <summary>Épingle ou retire une machine des favoris.</summary>
     private void ToggleFavorite(MeshNode node)
     {
@@ -1611,11 +1750,16 @@ public partial class MainWindow : ChromeWindow
     // MARK: - Repli des dossiers
 
     /// <summary>
-    /// Dossiers repliés, par nom. La liste étant reconstruite à chaque événement
-    /// serveur, l'état doit vivre en dehors des Expander eux-mêmes : sinon ils
-    /// se rouvriraient à la première mise à jour de statut.
+    /// Dossiers repliés, par nom. Un dossier replié garde son en-tête dans la
+    /// liste plate, mais ses machines n'y sont pas placées.
     /// </summary>
     private HashSet<string> _collapsedGroups = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>En-têtes de dossier, conservés d'un filtrage à l'autre.</summary>
+    private readonly Dictionary<string, GroupHeaderRow> _groupHeaders = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Dossiers dont l'en-tête figure dans la liste affichée.</summary>
+    private List<string> _shownGroupNames = new();
 
     /// <summary>Enregistre les dossiers repliés pour les retrouver au prochain lancement.</summary>
     private void SaveCollapsedGroups()
@@ -1627,64 +1771,37 @@ public partial class MainWindow : ChromeWindow
     /// <summary>Vrai quand le bouton global doit tout déplier plutôt que tout replier.</summary>
     private bool _allGroupsCollapsed;
 
-    /// <summary>
-    /// Restaure l'état d'un dossier au moment où son Expander apparaît.
-    ///
-    /// Loaded peut se déclencher plusieurs fois pour un même Expander : la
-    /// virtualisation recycle les conteneurs quand on défile. On détache donc
-    /// systématiquement avant de rattacher, sinon les handlers s'accumuleraient
-    /// et chaque bascule serait comptée plusieurs fois — d'où des dossiers qui
-    /// se refermaient ou restaient ouverts sans logique apparente.
-    /// </summary>
-    private void GroupExpander_Loaded(object sender, RoutedEventArgs e)
+    private GroupHeaderRow HeaderFor(string name, int count)
     {
-        if (sender is not Expander expander) return;
-        var name = GroupNameOf(expander);
-        if (name is null) return;
-
-        // Détacher avant l'affectation : sinon elle déclencherait Expanded ou
-        // Collapsed et réécrirait l'état qu'on est justement en train de lire.
-        expander.Expanded -= GroupExpander_Toggled;
-        expander.Collapsed -= GroupExpander_Toggled;
-
-        expander.IsExpanded = !_collapsedGroups.Contains(name);
-
-        expander.Expanded += GroupExpander_Toggled;
-        expander.Collapsed += GroupExpander_Toggled;
+        if (!_groupHeaders.TryGetValue(name, out var header))
+            _groupHeaders[name] = header = new GroupHeaderRow(name);
+        header.Count = count;
+        header.IsCollapsed = _collapsedGroups.Contains(name);
+        return header;
     }
 
-    /// <summary>Mémorise le repli/dépli déclenché par l'utilisateur.</summary>
-    private void GroupExpander_Toggled(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Clic sur un en-tête de dossier : le replie ou le déplie. Intercepté avant
+    /// la liste, pour que l'en-tête ne devienne pas la sélection.
+    /// </summary>
+    private void DeviceList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not Expander expander) return;
-        var name = GroupNameOf(expander);
-        if (name is null) return;
+        if (e.OriginalSource is not DependencyObject source
+            || ItemsControl.ContainerFromElement(DeviceList, source) is not ListBoxItem { DataContext: GroupHeaderRow header })
+            return;
+        e.Handled = true;
 
-        if (expander.IsExpanded) _collapsedGroups.Remove(name);
-        else _collapsedGroups.Add(name);
+        if (!_collapsedGroups.Remove(header.Name)) _collapsedGroups.Add(header.Name);
         SaveCollapsedGroups();
+        ApplyFilter();
     }
 
-    /// <summary>Nom du dossier porté par l'Expander (via le groupe lié).</summary>
-    private static string? GroupNameOf(Expander expander)
-        => (expander.DataContext as CollectionViewGroup)?.Name as string;
-
-    /// <summary>
-    /// Tous les noms de groupes réellement affichés, sections virtuelles
-    /// comprises. _allRows ne porte que les dossiers réels : les copies placées
-    /// dans Favoris et Récentes vivent dans _virtualRows, et étaient donc
-    /// ignorées par le bouton « tout replier ».
-    /// </summary>
-    private IEnumerable<string> AllDisplayedGroupNames()
+    /// <summary>Pas de menu des machines sur un en-tête de dossier.</summary>
+    private void DeviceList_ContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // Les sections virtuelles n'existent que si elles contiennent quelque
-        // chose : les ajouter à l'aveugle mémoriserait des groupes fantômes.
-        foreach (var row in _virtualRows) names.Add(row.GroupName);
-        foreach (var row in _allRows) names.Add(row.GroupName);
-
-        return names;
+        if (e.OriginalSource is DependencyObject source
+            && ItemsControl.ContainerFromElement(DeviceList, source) is ListBoxItem { DataContext: GroupHeaderRow })
+            e.Handled = true;
     }
 
     private void ToggleGroups_Click(object sender, RoutedEventArgs e)
@@ -1693,64 +1810,23 @@ public partial class MainWindow : ChromeWindow
 
         // N'agir que sur les dossiers réellement affichés : un filtre de
         // recherche peut en masquer, et un Clear() global oublierait leur état.
-        var displayed = AllDisplayedGroupNames().ToList();
-        foreach (var name in displayed)
+        foreach (var name in _shownGroupNames)
         {
             if (_allGroupsCollapsed) _collapsedGroups.Add(name);
             else _collapsedGroups.Remove(name);
         }
 
-        ApplyGroupStatesToVisibleExpanders();
-        UpdateToggleGroupsButton();
         SaveCollapsedGroups();
-    }
-
-    /// <summary>
-    /// Applique l'état mémorisé aux Expander déjà affichés. Ceux qui ne le sont
-    /// pas encore (virtualisation) seront traités par GroupExpander_Loaded quand
-    /// ils entreront à l'écran, à partir du même HashSet.
-    /// </summary>
-    private void ApplyGroupStatesToVisibleExpanders()
-    {
-        foreach (var expander in FindVisualChildren<Expander>(DeviceList))
-        {
-            var name = GroupNameOf(expander);
-            if (name is null) continue;
-
-            bool expanded = !_collapsedGroups.Contains(name);
-            if (expander.IsExpanded == expanded) continue;   // rien à changer
-
-            // Même précaution que dans Loaded : l'affectation déclencherait le
-            // handler de bascule, qui réécrirait _collapsedGroups pendant qu'on
-            // est en train de l'appliquer.
-            expander.Expanded -= GroupExpander_Toggled;
-            expander.Collapsed -= GroupExpander_Toggled;
-            expander.IsExpanded = expanded;
-            expander.Expanded += GroupExpander_Toggled;
-            expander.Collapsed += GroupExpander_Toggled;
-        }
+        ApplyFilter();
     }
 
     private void UpdateToggleGroupsButton()
     {
         // Segoe MDL2 Assets : E70D chevron bas, E70E chevron haut.
-        ToggleGroupsGlyph.Text = _allGroupsCollapsed ? "" : "";
+        ToggleGroupsGlyph.Text = _allGroupsCollapsed ? "\uE70D" : "\uE70E";
         ToggleGroupsButton.ToolTip = _allGroupsCollapsed
             ? "Déplier tous les dossiers"
             : "Replier tous les dossiers";
-    }
-
-    /// <summary>Parcourt l'arbre visuel à la recherche d'un type d'élément.</summary>
-    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent)
-        where T : DependencyObject
-    {
-        int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent);
-        for (int i = 0; i < count; i++)
-        {
-            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
-            if (child is T typed) yield return typed;
-            foreach (var descendant in FindVisualChildren<T>(child)) yield return descendant;
-        }
     }
 
     // MARK: - Filtres rapides
@@ -1822,7 +1898,12 @@ public partial class MainWindow : ChromeWindow
                 chip.Margin = new Thickness(10, 0, 6, 0);
             previousGroup = group;
 
-            chip.Click += (_, _) => ToggleFilter(filter);
+            chip.Click += (_, _) =>
+            {
+                Motion.Pop(chip);
+                _animateList = true;
+                ToggleFilter(filter);
+            };
             FilterChipsPanel.Children.Add(chip);
             _filterChips[filter] = (chip, count);
         }
@@ -1885,7 +1966,11 @@ public partial class MainWindow : ChromeWindow
             EmptyStateDetail.Text = $"Rien ne répond à {string.Join(" et ", causes)}{where}.";
             EmptyStateClearButton.Visibility = Visibility.Visible;
         }
-        EmptyState.Visibility = Visibility.Visible;
+        if (EmptyState.Visibility != Visibility.Visible)
+        {
+            EmptyState.Visibility = Visibility.Visible;
+            Motion.FadeIn(EmptyState, 0, 220, slideY: 8);
+        }
     }
 
     private void ClearFilters_Click(object sender, RoutedEventArgs e)
@@ -1952,6 +2037,8 @@ public partial class MainWindow : ChromeWindow
                 exists = n > 0 || filter == DeviceFilter.Online || _chipScope.Any(r => MatchesFilter(r, filter));
             }
             count.Text = n.ToString();
+            if (_settings.FolderView && filter != DeviceFilter.All && GroupOf(filter) == FilterGroup.Set)
+                exists = active = false;
             chip.Visibility = exists || active ? Visibility.Visible : Visibility.Collapsed;
             chip.Opacity = n == 0 && !active && filter != DeviceFilter.All ? 0.45 : 1.0;
         }
@@ -2006,6 +2093,7 @@ public partial class MainWindow : ChromeWindow
         _settings.DeviceSort = mode;
         _settings.Save();
         UpdateSortButton();
+        _animateList = true;
         ApplyFilter();
     }
 
@@ -2014,6 +2102,9 @@ public partial class MainWindow : ChromeWindow
     {
         var mode = Math.Clamp(_settings.DeviceSort, 0, SortLabels.Length - 1);
         SortLabel.Text = SortLabels[mode];
+        SortArrowName.Visibility = mode == 0 ? Visibility.Visible : Visibility.Collapsed;
+        SortArrowSystem.Visibility = mode == 3 ? Visibility.Visible : Visibility.Collapsed;
+        SortArrowSeen.Visibility = mode is 1 or 2 ? Visibility.Visible : Visibility.Collapsed;
         foreach (var item in SortMenu.Items.OfType<MenuItem>())
             item.IsChecked = item.Tag is string tag && tag == mode.ToString();
     }
@@ -2035,13 +2126,14 @@ public partial class MainWindow : ChromeWindow
 
         IEnumerable<DeviceRow> source = _allRows;
         if (!string.IsNullOrEmpty(query))
+            // Sans accents ni casse (TextMatch) : « neg » trouve « Négoce ».
             source = source.Where(r =>
-                r.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || r.GroupName.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || (r.Node.OsDescription?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+                TextMatch.Contains(r.Name, query)
+                || TextMatch.Contains(r.GroupName, query)
+                || TextMatch.Contains(r.Node.OsDescription, query)
                 // Retrouver un poste par son adresse, ou par le collègue connecté dessus.
-                || (r.Node.Ip?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
-                || (r.IsOnline && r.Node.Sessions.Any(s => s.UserName.Contains(query, StringComparison.OrdinalIgnoreCase))));
+                || TextMatch.Contains(r.Node.Ip, query)
+                || (r.IsOnline && r.Node.Sessions.Any(s => TextMatch.Contains(s.UserName, query))));
         else if (folderKey != FolderRow.HiddenKey)
             // Dossiers masqués : hors de la liste, sauf pendant une recherche
             // ou quand on ouvre l'entrée « dossiers masqués » du volet.
@@ -2052,6 +2144,8 @@ public partial class MainWindow : ChromeWindow
             {
                 FolderRow.HiddenKey => IsHiddenFolder(r.RealGroupName),
                 FavoritesGroup => r.IsFavorite,
+                FolderRow.RecentKey => IsRecent(r.Node.Id),
+                FolderRow.SessionKey => r.IsOnline && r.Node.Sessions.Count > 0,
                 _ => string.Equals(r.RealGroupName, folderKey, StringComparison.OrdinalIgnoreCase),
             });
 
@@ -2069,7 +2163,7 @@ public partial class MainWindow : ChromeWindow
         // restent groupés : ils sont plusieurs.
         bool flat = (folderFiltered && folderKey != FolderRow.HiddenKey)
                     || set is DeviceFilter.Favorites or DeviceFilter.Recent;
-        if (set == DeviceFilter.Recent)
+        if (set == DeviceFilter.Recent || folderKey == FolderRow.RecentKey)
         {
             var recent = _settings.RecentNodeIds
                 .Select((id, index) => (id, index))
@@ -2081,46 +2175,82 @@ public partial class MainWindow : ChromeWindow
             rows = SortRows(rows, byGroup: false).ToList();
         }
 
-        // Plan d'affichage : chaque ligne et la section où elle paraît. Sections
+        // Entrées : chaque machine et la section où elle paraît. Sections
         // virtuelles en tête, favoris puis machines récentes ; une même machine
         // peut apparaître deux fois (en favori et dans son dossier), c'est voulu,
         // comme un raccourci vers l'entrée réelle.
-        var plan = new List<(DeviceRow Source, string Group)>(rows.Count + 16);
+        var entries = new List<(DeviceRow Source, string Group)>(rows.Count + 16);
 
         // Dans un dossier précis ou sous un filtre, ni favoris ni récentes : on
-        // a demandé ces machines-là, pas un florilège.
-        if (string.IsNullOrEmpty(query) && !folderFiltered && !AnyFilterActive)
+        // a demandé ces machines-là, pas un florilège. Avec la barre latérale
+        // non plus : favoris et récentes y sont des vues à part entière.
+        if (string.IsNullOrEmpty(query) && !folderFiltered && !AnyFilterActive && !_settings.FolderView)
         {
             // Même ordre que les dossiers, mais les favoris de tous les
             // dossiers mêlés en une seule section.
             foreach (var favorite in SortRows(rows.Where(r => r.IsFavorite), byGroup: false))
-                plan.Add((favorite, FavoritesGroup));
+                entries.Add((favorite, FavoritesGroup));
 
             // Récentes : dans l'ordre d'utilisation, favoris exclus (déjà en haut).
             var byId = rows.ToDictionary(r => r.Node.Id, r => r);
             foreach (var id in _settings.RecentNodeIds)
             {
                 if (byId.TryGetValue(id, out var row) && !row.IsFavorite)
-                    plan.Add((row, RecentGroup));
+                    entries.Add((row, RecentGroup));
             }
         }
 
-        foreach (var row in rows) plan.Add((row, row.GroupName));
+        foreach (var row in rows) entries.Add((row, row.GroupName));
+
+        // Plan : les entrées précédées de l'en-tête de leur dossier, sauf en
+        // liste plate ; un dossier replié garde son en-tête, sans ses machines.
+        // Les entrées d'un même dossier se suivent : les machines sont triées
+        // par dossier (SortRows) et les sections virtuelles sont en tête.
+        var plan = new List<(DeviceRow? Source, string Group)>(entries.Count + 64);
+        var groupCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (flat)
+        {
+            foreach (var entry in entries) plan.Add(entry);
+        }
+        else
+        {
+            foreach (var (_, group) in entries)
+                groupCounts[group] = groupCounts.GetValueOrDefault(group) + 1;
+
+            // « Tout replier » actif : un dossier apparu depuis (nouvelle
+            // machine, section Favoris qui vient de se créer) doit l'être aussi,
+            // sinon il s'ouvrirait seul au milieu d'une liste repliée.
+            if (_allGroupsCollapsed)
+            {
+                foreach (var name in groupCounts.Keys) _collapsedGroups.Add(name);
+            }
+
+            string? current = null;
+            foreach (var entry in entries)
+            {
+                if (!string.Equals(entry.Group, current, StringComparison.Ordinal))
+                {
+                    current = entry.Group;
+                    plan.Add((null, current));
+                }
+                if (!_collapsedGroups.Contains(entry.Group)) plan.Add(entry);
+            }
+        }
 
         // Même résultat que l'affichage en place (recherche affinée sans effet,
-        // événement serveur sans conséquence visible…) : on garde la vue telle
-        // quelle. Reconstruire une vue groupée régénère tous ses éléments ; s'en
-        // dispenser rend la frappe et les clics immédiats, et conserve
-        // défilement et sélection.
-        var unchanged = DeviceList.ItemsSource is not null && flat == _lastFlat
-                        && plan.Count == _lastPlan.Count;
+        // événement serveur sans conséquence visible…) : on garde la liste telle
+        // quelle, défilement et sélection compris.
+        var unchanged = DeviceList.ItemsSource is not null && plan.Count == _lastPlan.Count;
         for (var i = 0; unchanged && i < plan.Count; i++)
         {
             unchanged = ReferenceEquals(plan[i].Source, _lastPlan[i].Source)
                         && plan[i].Group == _lastPlan[i].Group;
         }
 
-        List<DeviceRow> display;
+        // Compteurs des en-têtes, à jour même quand la liste est gardée.
+        foreach (var (name, count) in groupCounts) HeaderFor(name, count);
+
+        List<object> display;
         if (unchanged)
         {
             display = _lastDisplay;
@@ -2128,31 +2258,25 @@ public partial class MainWindow : ChromeWindow
         else
         {
             _virtualRows.Clear();
-            display = new List<DeviceRow>(plan.Count);
+            display = new List<object>(plan.Count);
             foreach (var (row, group) in plan)
-                display.Add(group == row.GroupName ? row : Clone(row, group));
-
-            // « Tout replier » actif : un dossier apparu depuis (nouvelle
-            // machine, section Favoris qui vient de se créer) doit l'être aussi,
-            // sinon il s'ouvrirait seul au milieu d'une liste repliée.
-            if (_allGroupsCollapsed)
             {
-                foreach (var name in display.Select(r => r.GroupName).Distinct())
-                    _collapsedGroups.Add(name);
+                display.Add(row is null ? HeaderFor(group, groupCounts[group])
+                          : group == row.GroupName ? row
+                          : Clone(row, group));
             }
-
-            // Un seul dossier affiché : vue plate, pour ne pas coiffer la liste
-            // d'un en-tête de groupe unique qui répéterait le volet.
-            DeviceList.ItemsSource = flat
-                ? (System.Collections.IEnumerable)display
-                : BuildGroupedView(display);
+            DeviceList.ItemsSource = display;
+            if (_animateList && DeviceList.IsVisible) Motion.FadeIn(DeviceList, 0.3, 170, slideY: 6);
 
             _lastPlan = plan;
-            _lastFlat = flat;
             _lastDisplay = display;
         }
+        _shownGroupNames = groupCounts.Keys.ToList();
+        _shownRowCount = entries.Count;
         Highlight.SetQuery(DeviceList, query);
-        UpdateEmptyState(display.Count, query, folderFiltered);
+        _animateList = false;
+        UpdateEmptyState(entries.Count, query, folderFiltered);
+        UpdateViewTitle(query);
 
         var totalOnline = _allRows.Count(r => r.IsOnline);
         CountText.Text = rows.Count == _allRows.Count
@@ -2168,8 +2292,7 @@ public partial class MainWindow : ChromeWindow
         // Déduire le sens du bouton de l'état réel plutôt que de le mémoriser :
         // au lancement, les dossiers repliés sont restaurés depuis les réglages
         // et le bouton aurait sinon proposé « replier » alors que tout l'est.
-        var shown = display.Select(r => r.GroupName).Distinct().ToList();
-        _allGroupsCollapsed = shown.Count > 0 && shown.All(_collapsedGroups.Contains);
+        _allGroupsCollapsed = _shownGroupNames.Count > 0 && _shownGroupNames.All(_collapsedGroups.Contains);
         UpdateToggleGroupsButton();
         UpdateTrayTooltip();
 
@@ -2183,13 +2306,22 @@ public partial class MainWindow : ChromeWindow
         UpdateSelectionBar();
 
         Log.Debug($"Liste filtrée en {watch.Elapsed.TotalMilliseconds:F1} ms "
-                  + $"({display.Count} lignes, {(unchanged ? "vue conservée" : "vue reconstruite")})", "Interface");
+                  + $"({display.Count} lignes, {(unchanged ? "liste conservée" : "liste reconstruite")})", "Interface");
     }
 
     /// <summary>Dernier plan d'affichage appliqué, pour éviter une reconstruction inutile.</summary>
-    private List<(DeviceRow Source, string Group)> _lastPlan = new();
-    private List<DeviceRow> _lastDisplay = new();
-    private bool _lastFlat;
+    /// <summary>
+    /// Vrai quand le prochain filtrage vient d'un choix de l'utilisateur (vue,
+    /// pastille, tri, dossier) : la liste apparaît alors en fondu. Ni la frappe
+    /// ni les événements du serveur ne l'animent, la liste clignoterait.
+    /// </summary>
+    private bool _animateList;
+
+    private List<(DeviceRow? Source, string Group)> _lastPlan = new();
+    private List<object> _lastDisplay = new();
+
+    /// <summary>Machines de la liste filtrée, dossiers repliés compris.</summary>
+    private int _shownRowCount;
 
     // MARK: - Actions : double-clic = connexion directe
 
@@ -2469,7 +2601,11 @@ public partial class MainWindow : ChromeWindow
         BulkSendFilesButton.IsEnabled = anyReachable;
         BulkFavoriteButton.Content = nodes.Any(n => !_settings.IsFavorite(n.Id))
             ? "Ajouter aux favoris" : "Retirer des favoris";
-        SelectionBar.Visibility = Visibility.Visible;
+        if (SelectionBar.Visibility != Visibility.Visible)
+        {
+            SelectionBar.Visibility = Visibility.Visible;
+            Motion.FadeIn(SelectionBar, 0, 180, slideY: 10);
+        }
     }
 
     private void BulkWake_Click(object sender, RoutedEventArgs e) => RunSelected(DeviceAction.Wake);

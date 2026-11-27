@@ -14,13 +14,22 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 
 **Devices**
 - List grouped by device group, collapsible, with live online status
-- Instant search (name, group, OS, IP address, logged-in MeshCentral user),
+- Instant search, case and accent insensitive (name, group, OS, IP address,
+  logged-in MeshCentral user),
   Ctrl+F from anywhere in the window, or just start typing in the list
 - Quick filter chips with live counters, one per category, combined across
   categories (Windows + online): state (online, offline, in session),
   favorites or recent, system (Windows, Linux, macOS); the counters follow the
   selected folder, the current search and the other active chips
-- Optional folder pane on the left: online / total counter per folder
+- Two layouts. With the sidebar: views (all, favorites, recent, in session)
+  then folders, and the list in cards under the view title. Sidebar hidden: a
+  dense list in columns (name, system, IP address, user, last seen), sorted by
+  clicking a column header
+- One status dot everywhere: green online, blue when a MeshCentral user is
+  connected, hollow offline, dotted when inactive for more than 30 days; the
+  last seen time turns orange after 30 days. Names read as code then label,
+  the connected user shows as initials (orange for a colleague)
+- Folders in the sidebar: online / total counter per folder
   (matching / total while chips are active), a filter field, adjustable
   width, folders pinned at the top or
   hidden; right-click a folder to wake its machines, send them files or be
@@ -162,7 +171,10 @@ Written in C# / WPF on .NET 10. Its only external dependency is
 
 **Administration**
 - Power: Wake-on-LAN, restart, sleep, shut down
-- List and kill remote processes
+- List and kill remote processes: search, user or system processes, columns
+  sorted with a click, several processes at once (Delete), optional automatic
+  refresh. Each kill is checked: a process that resists is forced
+  (taskkill /F, kill -9), and the window says which ones were really stopped
 - System information: CPU, memory, disks, BIOS
 - Open a URL on the remote machine
 - Rename a device (F2, context menu or palette): the name shown in MeshCentral

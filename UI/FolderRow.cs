@@ -19,6 +19,22 @@ public sealed class FolderRow : INotifyPropertyChanged
     /// <summary>Clé spéciale du volet : les machines des dossiers masqués.</summary>
     public const string HiddenKey = "\u0000hidden";
 
+    /// <summary>Vue du volet : les dernières machines ouvertes.</summary>
+    public const string RecentKey = "\u0000recent";
+
+    /// <summary>Vue du volet : les machines où un utilisateur MeshCentral est connecté.</summary>
+    public const string SessionKey = "\u0000session";
+
+    /// <summary>Intitulé de section du volet (« Vues », « Dossiers »), non sélectionnable.</summary>
+    public static FolderRow Section(string title)
+        => new("\u0000section:" + title, title, "", "#8A8A8E", 0, 0) { IsSection = true };
+
+    /// <summary>Intitulé de section : pas de compteur, pas de sélection.</summary>
+    public bool IsSection { get; private init; }
+
+    public System.Windows.Visibility CounterVisibility
+        => IsSection ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+
     public FolderRow(string key, string name, string glyph, string glyphColor,
                      int total, int online, bool isPinned = false)
     {

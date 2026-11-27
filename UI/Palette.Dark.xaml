@@ -25,6 +25,7 @@
     <SolidColorBrush x:Key="OnlineSoftBrush" Color="#1D3B24"/>
     <SolidColorBrush x:Key="OfflineBrush" Color="#636366"/>
     <SolidColorBrush x:Key="DangerBrush" Color="#FF453A"/>
+    <SolidColorBrush x:Key="DangerSoftBrush" Color="#3F1F1D"/>
 
     <SolidColorBrush x:Key="ControlBrush" Color="#3A3A3C"/>
     <SolidColorBrush x:Key="ControlHoverBrush" Color="#48484A"/>

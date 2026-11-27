@@ -103,8 +103,8 @@ public partial class QuickSearchWindow : Window
         if (!string.IsNullOrEmpty(query))
         {
             matches = _rows
-                .Where(r => r.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                            || r.GroupName.Contains(query, StringComparison.OrdinalIgnoreCase))
+                .Where(r => TextMatch.Contains(r.Name, query)
+                            || TextMatch.Contains(r.GroupName, query))
                 // Les correspondances en début de nom passent devant.
                 .OrderByDescending(r => r.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
                 .ThenByDescending(r => r.IsOnline)
@@ -175,7 +175,7 @@ public partial class QuickSearchWindow : Window
         if (!string.IsNullOrEmpty(query))
         {
             items = items
-                .Where(a => a.Label.Contains(query, StringComparison.OrdinalIgnoreCase)
+                .Where(a => TextMatch.Contains(a.Label, query)
                             || Normalize(a.Info.Keywords).Contains(Normalize(query)))
                 .OrderByDescending(a => a.Label.StartsWith(query, StringComparison.OrdinalIgnoreCase));
         }

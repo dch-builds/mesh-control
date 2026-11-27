@@ -526,7 +526,7 @@ public partial class MainWindow
         PassBox.Clear();
         TokenBox.Clear();
         RememberCheck.IsChecked = false;
-        SubtitleText.Text = _settings.Host;
+        SetHeader(_settings.Host, null, HeaderStatus.Idle);
         UpdateTrayTooltip();
 
         ShowLogin();
@@ -636,6 +636,7 @@ public partial class MainWindow
         resources["DeviceRowPadding"] = padding;
         resources["DeviceIconSize"] = icon;
         resources["DeviceNameSize"] = nameSize;
+        ApplyColumnsPadding();
     }
 
     /// <summary>
