@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Cœur multiplateforme : protocole MeshCentral, sessions bureau / fichiers /
+       terminal, émulateur ANSI. Aucune dépendance à WPF ni à Windows.
+
+       Les sources restent à leur place dans l'application Windows, qui les
+       compile toujours directement : cette bibliothèque les référence par lien.
+       L'application macOS (MeshControl.Mac) s'appuie sur elle. Le jour où
+       l'application Windows passera elle aussi par cette bibliothèque, il
+       suffira de déplacer les fichiers ici et de remplacer les liens.
+
+       Ce qui dépend du socle graphique passe par des interfaces implémentées
+       de chaque côté : IUiDispatcher (thread de l'interface), IKvmFramebuffer
+       (décodage et surface du bureau distant), ICertificatePinStore (réglages). -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MeshControl</RootNamespace>
+    <AssemblyName>MeshControl.Core</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Core\BinaryData.cs" Link="Core\BinaryData.cs" />
+    <Compile Include="..\Core\CertificateTrust.cs" Link="Core\CertificateTrust.cs" />
+    <Compile Include="..\Core\ICertificatePinStore.cs" Link="Core\ICertificatePinStore.cs" />
+    <Compile Include="..\Core\IUiDispatcher.cs" Link="Core\IUiDispatcher.cs" />
+    <Compile Include="..\Core\Log.cs" Link="Core\Log.cs" />
+    <Compile Include="..\Core\MeshModels.cs" Link="Core\MeshModels.cs" />
+    <Compile Include="..\Core\MeshServerConnection.cs" Link="Core\MeshServerConnection.cs" />
+    <Compile Include="..\Core\MeshWebSocket.cs" Link="Core\MeshWebSocket.cs" />
+    <Compile Include="..\Core\ServerProfile.cs" Link="Core\ServerProfile.cs" />
+    <Compile Include="..\Core\TaskExtensions.cs" Link="Core\TaskExtensions.cs" />
+
+    <Compile Include="..\Desktop\DesktopSession.cs" Link="Desktop\DesktopSession.cs" />
+    <Compile Include="..\Desktop\FramebufferContract.cs" Link="Desktop\FramebufferContract.cs" />
+    <Compile Include="..\Desktop\KeyboardShortcuts.cs" Link="Desktop\KeyboardShortcuts.cs" />
+
+    <Compile Include="..\Files\FilesSession.cs" Link="Files\FilesSession.cs" />
+
+    <Compile Include="..\SSH\AgentTerminalSession.cs" Link="SSH\AgentTerminalSession.cs" />
+    <Compile Include="..\SSH\SshSession.cs" Link="SSH\SshSession.cs" />
+    <Compile Include="..\SSH\TerminalEmulator.cs" Link="SSH\TerminalEmulator.cs" />
+  </ItemGroup>
+
+  <!-- L'application macOS réutilise les codes de touches Windows (Vk), internes. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="MeshControl.Mac" />
+  </ItemGroup>
+
+</Project>

@@ -53,6 +53,11 @@
     <!-- Fichiers de langue des messages du framework : inutiles ici, ils
          représentent une part notable du volume. -->
     <SatelliteResourceLanguages>fr;en</SatelliteResourceLanguages>
+
+    <!-- Projets voisins (bibliothèque multiplateforme, version macOS) : ils
+         vivent sous ce dossier mais ne font pas partie de l'application
+         Windows, qui compile les sources partagées directement. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);MeshControl.Core\**;MeshControl.Mac\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <!-- App.xaml cesse d'être la définition d'application : c'est elle qui ferait

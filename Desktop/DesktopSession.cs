@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
-using System.Windows.Threading;
 using MeshControl.Core;
 
 namespace MeshControl.Desktop;
@@ -105,7 +104,11 @@ public sealed class DesktopSession : IDisposable
     private DateTime _windowStart = DateTime.UtcNow;
     public string? CloseReason { get; private set; }
 
-    public KVMFramebuffer Framebuffer { get; } = new();
+    /// <summary>
+    /// Surface d'affichage, fournie par l'interface (WPF ou Avalonia) : le
+    /// décodage et le dessin dépendent du socle graphique.
+    /// </summary>
+    public IKvmFramebuffer Framebuffer { get; }
 
     private DesktopQuality _quality = DesktopQuality.Balanced;
     public DesktopQuality Quality
@@ -251,7 +254,7 @@ public sealed class DesktopSession : IDisposable
 
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;
-    private readonly Dispatcher _uiDispatcher;
+    private readonly IUiDispatcher _uiDispatcher;
     private MeshWebSocket? _socket;
     private CancellationTokenSource? _cts;
     private Task? _receiveTask;
@@ -279,8 +282,10 @@ public sealed class DesktopSession : IDisposable
 
     private bool _stopped;
 
-    public DesktopSession(MeshServerConnection connection, MeshNode node, Dispatcher uiDispatcher)
+    public DesktopSession(MeshServerConnection connection, MeshNode node,
+                          IUiDispatcher uiDispatcher, IKvmFramebuffer framebuffer)
     {
+        Framebuffer = framebuffer;
         _connection = connection;
         _node = node;
         _uiDispatcher = uiDispatcher;
@@ -291,7 +296,7 @@ public sealed class DesktopSession : IDisposable
         State = s;
         // BeginInvoke : le fil de fond n'a pas besoin d'attendre que l'interface
         // ait fini de se mettre a jour.
-        _uiDispatcher.BeginInvoke(() => StateChanged?.Invoke());
+        _uiDispatcher.Post(() => StateChanged?.Invoke());
     }
 
     // MARK: - Cycle de vie
@@ -954,7 +959,7 @@ public sealed class DesktopSession : IDisposable
 
         _displayBeforeTroubleshoot = RemoteDisplay.AllDisplays;
         ApplyDisplay(real.Min());
-        _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
+        _uiDispatcher.Post(() => DisplaysChanged?.Invoke());
     }
 
     private void RestoreDisplayAfterTroubleshoot()
@@ -962,7 +967,7 @@ public sealed class DesktopSession : IDisposable
         if (_displayBeforeTroubleshoot is not { } previous) return;
         _displayBeforeTroubleshoot = null;
         ApplyDisplay(previous);
-        _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
+        _uiDispatcher.Post(() => DisplaysChanged?.Invoke());
     }
 
     // MARK: - Liaison lente
@@ -996,7 +1001,7 @@ public sealed class DesktopSession : IDisposable
         if (_slowSamples < 2) return;
 
         _slowLinkSignaled = true;
-        _uiDispatcher.BeginInvoke(() => SlowLinkDetected?.Invoke());
+        _uiDispatcher.Post(() => SlowLinkDetected?.Invoke());
     }
 
     /// <summary>
@@ -1226,8 +1231,7 @@ public sealed class DesktopSession : IDisposable
 
         // Si l'UI n'exécute jamais ce passage (arrêt du dispatcher à la
         // fermeture), les tampons loués sont rendus ici.
-        var operation = _uiDispatcher.BeginInvoke(() => FlushUpdates());
-        operation.Aborted += (_, _) => DiscardPendingUpdates();
+        _uiDispatcher.Post(FlushUpdates, onAborted: DiscardPendingUpdates);
     }
 
     private void FlushUpdates()
@@ -1342,7 +1346,7 @@ public sealed class DesktopSession : IDisposable
                 // DÉCODAGE JPEG ici, sur le thread de fond (on y est déjà) : c'est
                 // l'opération coûteuse, on la sort du thread UI. Seule la copie de
                 // pixels repart sur l'UI, où elle est rapide.
-                var decoded = KVMFramebuffer.Decode(imageData, x.Value, y.Value);
+                var decoded = Framebuffer.Decode(imageData, x.Value, y.Value);
                 if (decoded is null) break; // tuile illisible : la prochaine corrigera
 
                 PostUpdate(new PendingUpdate(decoded.Value, 0, 0));
@@ -1381,7 +1385,7 @@ public sealed class DesktopSession : IDisposable
 
                 EnsureSingleDisplay();
                 UpdateTroubleshootScale();
-                _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
+                _uiDispatcher.Post(() => DisplaysChanged?.Invoke());
                 break;
             }
             case Kvm.DisplayGeometry:
@@ -1410,7 +1414,7 @@ public sealed class DesktopSession : IDisposable
                     _displays.AddRange(geometry.Select(d => d.Id));
 
                 UpdateTroubleshootScale();
-                _uiDispatcher.BeginInvoke(() => DisplaysChanged?.Invoke());
+                _uiDispatcher.Post(() => DisplaysChanged?.Invoke());
                 break;
             }
             case Kvm.Message:

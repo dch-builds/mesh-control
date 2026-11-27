@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Mesh Control pour macOS — prototype.
+
+       Interface Avalonia au-dessus du cœur partagé (MeshControl.Core). Avalonia
+       étant multiplateforme, l'application se lance aussi sous Windows, ce qui
+       permet de la développer et de la tester sans Mac ; seuls l'empaquetage
+       (.app), la signature et le Trousseau exigent macOS. Voir README.md. -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MeshControl.Mac</RootNamespace>
+    <AssemblyName>MeshControl.Mac</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+
+    <Version>0.1.0</Version>
+    <Company>David CHIESA</Company>
+    <Product>Mesh Control</Product>
+    <Description>Contrôle à distance des postes via MeshCentral (macOS)</Description>
+    <Copyright>© David CHIESA</Copyright>
+
+    <!-- Les deux architectures Mac : Apple Silicon et Intel. -->
+    <RuntimeIdentifiers>osx-arm64;osx-x64</RuntimeIdentifiers>
+    <SatelliteResourceLanguages>fr;en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
+    <!-- DPAPI, pour conserver les secrets quand l'application tourne sous Windows. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MeshControl.Core\MeshControl.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Code d'interface portable, partagé avec la version Windows. -->
+  <ItemGroup>
+    <Compile Include="..\UI\TextMatch.cs" Link="Shared\TextMatch.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="Info.plist" />
+    <None Include="Entitlements.plist" />
+    <None Include="build-macos.sh" />
+  </ItemGroup>
+
+</Project>

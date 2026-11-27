@@ -51,7 +51,7 @@ public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.I
         _connection = connection;
         _node = node;
         _settings = settings;
-        _session = new FilesSession(connection, node, Dispatcher);
+        _session = new FilesSession(connection, node, new UI.WpfUiDispatcher(Dispatcher));
 
         InitializeComponent();
         UI.Motion.IndeterminateWhileVisible(EmptyProgress);

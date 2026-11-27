@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
-using System.Windows.Threading;
 using MeshControl.Core;
 
 namespace MeshControl.Ssh;
@@ -50,7 +49,7 @@ public sealed class AgentTerminalSession : IDisposable
     private readonly StringBuilder _pendingOutput = new();
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;
-    private readonly Dispatcher _ui;
+    private readonly IUiDispatcher _ui;
     private MeshWebSocket? _socket;
     private CancellationTokenSource? _cts;
     private bool _stopped;
@@ -81,7 +80,7 @@ public sealed class AgentTerminalSession : IDisposable
         Channel.CreateUnbounded<Outbound>(new UnboundedChannelOptions { SingleReader = true });
 
     public AgentTerminalSession(MeshServerConnection connection, MeshNode node,
-                                ShellKind shell, Dispatcher ui)
+                                ShellKind shell, IUiDispatcher ui)
     {
         _connection = connection;
         _node = node;
@@ -101,7 +100,7 @@ public sealed class AgentTerminalSession : IDisposable
     private void SetState(SshSessionState state)
     {
         State = state;
-        _ui.BeginInvoke(() => StateChanged?.Invoke());
+        _ui.Post(() => StateChanged?.Invoke());
     }
 
     // MARK: - Cycle de vie
@@ -156,7 +155,7 @@ public sealed class AgentTerminalSession : IDisposable
     /// terminal pour ne pas être confondu avec la sortie distante.
     /// </summary>
     private void EmitLocal(string message) =>
-        _ui.BeginInvoke(() =>
+        _ui.Post(() =>
         {
             var text = $"\u001B[90m» {message}\u001B[0m\r\n";
             if (Output is not null) Output.Invoke(text);
@@ -360,7 +359,7 @@ public sealed class AgentTerminalSession : IDisposable
             if (_outboxScheduled) return;
             _outboxScheduled = true;
         }
-        _ui.BeginInvoke(FlushOutput);
+        _ui.Post(FlushOutput);
     }
 
     private void FlushOutput()

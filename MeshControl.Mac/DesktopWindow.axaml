@@ -1,0 +1,206 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.DesktopWindow"
+                   Width="1280" Height="820" MinWidth="640" MinHeight="400"
+                   WindowStartupLocation="CenterScreen">
+
+  <!-- Portage de Desktop/DesktopWindow.xaml (version Windows), en fenêtre
+       autonome : la barre d'outils se loge dans la barre de titre, une seule
+       bande au lieu de deux (MergeToolbarIntoTitleBar). -->
+  <DockPanel x:Name="RootPanel">
+    <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top">
+      <local:TitleBar.Content>
+        <Grid x:Name="Toolbar" ColumnDefinitions="*,Auto">
+          <!-- Identité de la machine -->
+          <!-- Le titre absorbe la réduction de largeur (tronqué), les contrôles
+               gardent leur taille. -->
+          <DockPanel Grid.Column="0" HorizontalAlignment="Left" VerticalAlignment="Center"
+                     Margin="0,0,12,0" LastChildFill="True">
+            <Ellipse x:Name="StatusDot" DockPanel.Dock="Left" Width="9" Height="9"
+                     Fill="{DynamicResource OnlineBrush}" VerticalAlignment="Center" Margin="0,0,9,0" />
+            <TextBlock x:Name="ResolutionText" DockPanel.Dock="Right" Classes="caption"
+                       VerticalAlignment="Center" Margin="10,1,0,0" />
+            <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+          </DockPanel>
+
+          <!-- Contrôles : ils ne prennent pas le focus, le clavier reste à l'écran distant. -->
+          <StackPanel x:Name="ToolbarControls" Grid.Column="1" Orientation="Horizontal"
+                      HorizontalAlignment="Right" VerticalAlignment="Center">
+            <ComboBox x:Name="QualityCombo" Width="104" Focusable="False" ToolTip.Tip="Qualité d'image"
+                      SelectionChanged="QualityCombo_SelectionChanged">
+              <ComboBoxItem Content="Dépannage" Tag="3"
+                            ToolTip.Tip="Liaison très lente : compression maximale, image réduite, 5 img/s au plus" />
+              <ComboBoxItem Content="Basse" Tag="0" />
+              <ComboBoxItem Content="Équilibrée" Tag="1" />
+              <ComboBoxItem Content="Haute" Tag="2" />
+              <ComboBoxItem Content="Fluide" Tag="4"
+                            ToolTip.Tip="Pour suivre une vidéo : 40 img/s et bonne qualité d'image. Demande une bonne connexion" />
+            </ComboBox>
+
+            <ComboBox x:Name="FrameRateCombo" Width="104" Focusable="False" Margin="8,0,0,0"
+                      ToolTip.Tip="Fluidité : taux de rafraîchissement de l'écran distant"
+                      SelectionChanged="FrameRateCombo_SelectionChanged">
+              <ComboBoxItem Content="5 img/s" Tag="5" />
+              <ComboBoxItem Content="10 img/s" Tag="10" />
+              <ComboBoxItem Content="15 img/s" Tag="15" />
+              <ComboBoxItem Content="20 img/s" Tag="20" />
+              <ComboBoxItem Content="25 img/s" Tag="25" />
+              <ComboBoxItem Content="30 img/s" Tag="30" />
+              <ComboBoxItem Content="40 img/s" Tag="40" />
+            </ComboBox>
+
+            <!-- Sélecteur d'écran : masqué tant que la machine n'en a qu'un. -->
+            <Button x:Name="DisplayButton" Classes="tool" IsVisible="False" Focusable="False"
+                    Padding="9,5" Margin="12,0,0,0" ToolTip.Tip="Choisir l'écran affiché">
+              <local:Icon Kind="Desktop" Size="13" />
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedLeft" />
+              </Button.Flyout>
+            </Button>
+
+            <Border Width="1" Background="{DynamicResource SeparatorBrush}" Margin="14,2,14,2" />
+
+            <CheckBox x:Name="FitCheck" Content="Ajuster" Focusable="False" VerticalAlignment="Center"
+                      IsChecked="True" IsCheckedChanged="Fit_Changed" Margin="0,0,12,0"
+                      ToolTip.Tip="Ajuster l'image à la fenêtre (Ctrl+Maj+A)" />
+
+            <Button x:Name="ReconnectButton" Content="Reconnecter" Classes="tool" Focusable="False"
+                    Click="Reconnect_Click" Margin="0,0,6,0" IsVisible="False"
+                    ToolTip.Tip="Relancer la connexion à cette machine" />
+
+            <Button x:Name="RefreshButton" Content="Rafraîchir" Classes="tool" Focusable="False"
+                    Click="Refresh_Click" Margin="0,0,6,0"
+                    ToolTip.Tip="Redemander une image complète (Ctrl+Maj+R)" />
+
+            <Button x:Name="ShortcutsButton" Content="Raccourcis ▾" Classes="tool" Focusable="False"
+                    Margin="0,0,6,0"
+                    ToolTip.Tip="Combinaisons envoyées à la machine distante (Ctrl+Alt+Suppr : Ctrl+Maj+Suppr)">
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedLeft" />
+              </Button.Flyout>
+            </Button>
+
+            <!-- Les deux façons de coller, réunies en un bloc segmenté. -->
+            <Border Background="{DynamicResource ControlBrush}" CornerRadius="8" Margin="0,0,6,0">
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="PasteButton" Content="Coller" Classes="tool" Focusable="False"
+                        Background="Transparent" Click="Paste_Click"
+                        ToolTip.Tip="Coller le presse-papiers local sur la machine distante (Ctrl+Maj+V)" />
+                <Border Width="1" Margin="0,6" Background="{DynamicResource SeparatorBrush}" />
+                <Button x:Name="PasteTypingButton" Classes="tool" Focusable="False" Background="Transparent"
+                        Click="PasteAsTyping_Click"
+                        ToolTip.Tip="Coller en simulant la frappe : lent, mais fonctionne partout, même là où Ctrl+V est ignoré">
+                  <StackPanel Orientation="Horizontal">
+                    <local:Icon x:Name="PasteTypingGlyph" Kind="Keyboard" Size="12" VerticalAlignment="Center"
+                                Margin="0,1,6,0" />
+                    <TextBlock x:Name="PasteTypingLabel" Text="Taper" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+              </StackPanel>
+            </Border>
+
+            <Button x:Name="CopyFromRemoteButton" Content="Copier depuis" Classes="tool" Focusable="False"
+                    Click="CopyFromRemote_Click" Margin="0,0,6,0"
+                    ToolTip.Tip="Récupérer le presse-papiers de la machine distante (Ctrl+Maj+C)" />
+
+            <Button x:Name="ScreenshotButton" Classes="tool" Focusable="False"
+                    Click="Screenshot_Click" Padding="9,5" Margin="0,0,6,0"
+                    ToolTip.Tip="Capturer l'écran distant (Ctrl+Maj+S)">
+              <local:Icon Kind="Camera" Size="13" />
+            </Button>
+
+            <Button x:Name="ReleaseModifiersButton" Classes="tool" Focusable="False"
+                    Click="ReleaseModifiers_Click" Padding="9,5" Margin="0,0,6,0"
+                    ToolTip.Tip="Débloquer le clavier distant : relâche Ctrl, Alt, Maj, Win (Ctrl+Maj+D)">
+              <local:Icon Kind="Keyboard" Size="13" />
+            </Button>
+
+            <Button x:Name="FullscreenButton" Classes="tool" Focusable="False"
+                    Click="Fullscreen_Click" Padding="9,5" Margin="0,0,6,0"
+                    ToolTip.Tip="Plein écran (Ctrl+Maj+F)">
+              <local:Icon Kind="FullScreen" Size="13" />
+            </Button>
+
+            <Button x:Name="PowerButton" Classes="tool" Focusable="False" Padding="9,5" Margin="0,0,6,0"
+                    ToolTip.Tip="Redémarrer, mettre en veille ou éteindre la machine (redémarrage : Ctrl+Maj+B)">
+              <local:Icon Kind="Power" Size="13" />
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                  <MenuItem Header="Redémarrer…" Click="Reboot_Click" />
+                  <MenuItem Header="Mettre en veille…" Click="Sleep_Click" />
+                  <MenuItem Header="Éteindre…" Click="PowerOff_Click" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+
+            <Button x:Name="MoreButton" Content="⋯" Classes="tool" Focusable="False" Padding="9,5"
+                    ToolTip.Tip="Autres outils : page web (Ctrl+Maj+W), échelle de l'image">
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                  <!-- Boutons de la barre repliés ici quand la fenêtre est trop
+                       étroite pour les afficher (voir FitToolbar). -->
+                  <MenuItem x:Name="OverflowCopyItem" IsVisible="False" Header="Copier depuis la machine"
+                            Click="CopyFromRemote_Click" />
+                  <MenuItem x:Name="OverflowScreenshotItem" IsVisible="False" Header="Capturer l'écran"
+                            Click="Screenshot_Click" />
+                  <MenuItem x:Name="OverflowReleaseItem" IsVisible="False" Header="Débloquer le clavier distant"
+                            Click="ReleaseModifiers_Click" />
+                  <Separator x:Name="OverflowSeparator" IsVisible="False" />
+                  <MenuItem Header="Page web MeshCentral" Click="OpenWebPage_Click" />
+                  <Separator />
+                  <MenuItem x:Name="ScaleMenu" Header="Échelle de l'image">
+                    <MenuItem Header="100 % — taille réelle" Tag="100" ToggleType="CheckBox" Click="Scale_Click" />
+                    <MenuItem Header="75 %" Tag="75" ToggleType="CheckBox" Click="Scale_Click" />
+                    <MenuItem Header="50 % — deux fois moins de données" Tag="50" ToggleType="CheckBox" Click="Scale_Click" />
+                    <MenuItem Header="33 % — liaison lente" Tag="33" ToggleType="CheckBox" Click="Scale_Click" />
+                  </MenuItem>
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+
+            <TextBlock x:Name="StatsText" Classes="caption" VerticalAlignment="Center" Margin="14,0,4,0"
+                       MinWidth="70" TextAlignment="Right" />
+          </StackPanel>
+        </Grid>
+      </local:TitleBar.Content>
+    </local:TitleBar>
+
+    <!-- Barre d'état persistante : latence, débit, résolution. -->
+    <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Background="{DynamicResource SurfaceAltBrush}"
+            BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="14,5">
+      <Grid>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+          <TextBlock x:Name="StatusLatency" Classes="caption" VerticalAlignment="Center" MinWidth="86"
+                     ToolTip.Tip="Latence aller-retour avec la machine" />
+          <Border Width="1" Background="{DynamicResource SeparatorBrush}" Margin="10,1,10,1" />
+          <TextBlock x:Name="StatusThroughput" Classes="caption" VerticalAlignment="Center" MinWidth="92"
+                     ToolTip.Tip="Débit reçu du flux d'image" />
+          <Border Width="1" Background="{DynamicResource SeparatorBrush}" Margin="10,1,10,1" />
+          <TextBlock x:Name="StatusResolution" Classes="caption" VerticalAlignment="Center"
+                     ToolTip.Tip="Résolution de l'écran distant" />
+        </StackPanel>
+        <TextBlock x:Name="StatusTotal" Classes="caption" HorizontalAlignment="Right" VerticalAlignment="Center"
+                   Foreground="{DynamicResource PlaceholderBrush}" ToolTip.Tip="Volume total reçu depuis le début de la session" />
+      </Grid>
+    </Border>
+
+    <!-- Zone d'affichage : fond sombre, l'écran distant en valeur. Deux
+         conteneurs exclusifs : ajusté à la fenêtre, ou taille réelle défilante. -->
+    <Panel x:Name="ScreenHost" Background="#1B1D21" Focusable="True">
+      <Panel x:Name="FitHost" ClipToBounds="True">
+        <Image x:Name="ScreenImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+               RenderOptions.BitmapInterpolationMode="HighQuality" />
+      </Panel>
+      <ScrollViewer x:Name="Scroller" IsVisible="False" HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Auto" Focusable="False">
+        <Image x:Name="ScreenImageNative" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center" />
+      </ScrollViewer>
+      <TextBlock x:Name="OverlayText" Foreground="#C8FFFFFF" FontSize="15" HorizontalAlignment="Center"
+                 VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="24"
+                 IsHitTestVisible="False" />
+    </Panel>
+  </DockPanel>
+</local:ChromeWindow>

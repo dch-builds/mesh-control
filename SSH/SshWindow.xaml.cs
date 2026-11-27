@@ -27,7 +27,7 @@ public partial class SshWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.ISe
     public SshWindow(MeshServerConnection connection, MeshNode node)
     {
         _deviceName = node.Name;
-        _session = new SshSession(connection, node, Dispatcher);
+        _session = new SshSession(connection, node, new UI.WpfUiDispatcher(Dispatcher));
 
         InitializeComponent();
         _uiReady = true;

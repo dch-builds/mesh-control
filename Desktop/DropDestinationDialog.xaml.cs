@@ -186,7 +186,7 @@ public partial class DropDestinationDialog : UI.ChromeWindow
     private async Task<FilesSession> StartSessionAsync()
     {
         _files?.Stop();
-        var session = new FilesSession(_connection, _node, Dispatcher);
+        var session = new FilesSession(_connection, _node, new UI.WpfUiDispatcher(Dispatcher));
         _files = session;
 
         await session.StartAsync(listOnStart: false);

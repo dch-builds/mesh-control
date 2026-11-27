@@ -27,20 +27,20 @@ public static class CertificateTrust
     private static readonly ConcurrentDictionary<string, string> Pins =
         new(StringComparer.OrdinalIgnoreCase);
 
-    private static AppSettings? _settings;
+    private static ICertificatePinStore? _store;
 
     /// <summary>Un certificat a été refusé parce qu'il ne correspond plus.</summary>
     public static bool HasRejectedChange { get; private set; }
 
     /// <summary>
-    /// À appeler au démarrage, sur le thread de l'interface : les empreintes
-    /// sont relues des réglages, et y seront enregistrées.
+    /// À appeler au démarrage : les empreintes sont relues du stockage, et y
+    /// seront enregistrées.
     /// </summary>
-    public static void Initialize(AppSettings settings)
+    public static void Initialize(ICertificatePinStore store)
     {
-        _settings = settings;
+        _store = store;
         Pins.Clear();
-        foreach (var (host, fingerprint) in settings.PinnedCertificates)
+        foreach (var (host, fingerprint) in store.Load())
             Pins[host] = fingerprint;
     }
 
@@ -65,12 +65,12 @@ public static class CertificateTrust
         if (!Pins.TryRemove(key, out _)) return;
 
         Log.Info($"{key} : certificat retenu oublié.", "Sécurité");
-        Persist(settings => settings.PinnedCertificates.Remove(key));
+        _store?.Save(key, null);
     }
 
     private static bool Validate(string host, X509Certificate? certificate, SslPolicyErrors errors)
     {
-        // Certificat reconnu par Windows : rien de particulier à faire.
+        // Certificat reconnu par le système : rien de particulier à faire.
         if (errors == SslPolicyErrors.None) return true;
         if (certificate is null || errors.HasFlag(SslPolicyErrors.RemoteCertificateNotAvailable))
             return false;
@@ -94,27 +94,8 @@ public static class CertificateTrust
         if (!string.Equals(retained, fingerprint, StringComparison.OrdinalIgnoreCase)) return false;
 
         Log.Info($"{key} : certificat auto-signé retenu ({Short(fingerprint)}).", "Sécurité");
-        Persist(settings => settings.PinnedCertificates[key] = fingerprint);
+        _store?.Save(key, fingerprint);
         return true;
-    }
-
-    /// <summary>
-    /// Les réglages sont modifiés sur le thread de l'interface, qui est aussi
-    /// celui qui les sérialise : jamais depuis le thread de la connexion TLS.
-    /// </summary>
-    private static void Persist(Action<AppSettings> change)
-    {
-        if (_settings is not { } settings) return;
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-
-        void Apply()
-        {
-            change(settings);
-            settings.SaveNow();
-        }
-
-        if (dispatcher is null || dispatcher.CheckAccess()) Apply();
-        else dispatcher.BeginInvoke(Apply);
     }
 
     private static string Key(string host) => host.Trim().ToLowerInvariant();

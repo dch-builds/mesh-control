@@ -4,7 +4,6 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
-using System.Windows.Threading;
 using MeshControl.Core;
 
 namespace MeshControl.Files;
@@ -112,7 +111,7 @@ public sealed class FilesSession : IDisposable
     private readonly List<FileEntry> _entries = new();
     private readonly List<string> _pathComponents = new();
     private readonly MeshServerConnection _connection;
-    private readonly Dispatcher _ui;
+    private readonly IUiDispatcher _ui;
     private MeshWebSocket? _socket;
     private CancellationTokenSource? _cts;
     private int _requestCounter = 1;
@@ -151,7 +150,7 @@ public sealed class FilesSession : IDisposable
 
     private DateTime _lastProgressUpdate = DateTime.MinValue;
 
-    public FilesSession(MeshServerConnection connection, MeshNode node, Dispatcher ui)
+    public FilesSession(MeshServerConnection connection, MeshNode node, IUiDispatcher ui)
     {
         _connection = connection;
         Node = node;
@@ -173,7 +172,7 @@ public sealed class FilesSession : IDisposable
     private void SetState(FilesSessionState state)
     {
         State = state;
-        _ui.BeginInvoke(() => StateChanged?.Invoke());
+        _ui.Post(() => StateChanged?.Invoke());
     }
 
     // MARK: - Cycle de vie
@@ -647,7 +646,7 @@ public sealed class FilesSession : IDisposable
     private void SetTransfer(TransferProgress? progress)
     {
         Transfer = progress;
-        _ui.BeginInvoke(() => TransferChanged?.Invoke());
+        _ui.Post(() => TransferChanged?.Invoke());
     }
 
     /// <summary>
@@ -664,7 +663,7 @@ public sealed class FilesSession : IDisposable
         _lastProgressUpdate = now;
         transfer.Transferred = transferred;
         if (total > 0) transfer.Total = total;
-        _ui.BeginInvoke(() => TransferChanged?.Invoke());
+        _ui.Post(() => TransferChanged?.Invoke());
     }
 
     // MARK: - Réception
@@ -793,7 +792,7 @@ public sealed class FilesSession : IDisposable
             }
 
             IsLoading = false;
-            _ui.BeginInvoke(() => EntriesChanged?.Invoke());
+            _ui.Post(() => EntriesChanged?.Invoke());
             return;
         }
 

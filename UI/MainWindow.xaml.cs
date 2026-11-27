@@ -48,7 +48,7 @@ public partial class MainWindow : ChromeWindow
         Motion.PulseWhileVisible(SkeletonRows);
         BuildFilterChips();
         ColumnHeaderAlign.Attach(DeviceList, scrollbar => ColumnHeader.Padding = new Thickness(10, 4, 10 + scrollbar, 7));
-        CertificateTrust.Initialize(_settings);
+        CertificateTrust.Initialize(new UI.AppSettingsPinStore(_settings));
         _refreshTimer.Tick += (_, _) =>
         {
             _refreshTimer.Stop();

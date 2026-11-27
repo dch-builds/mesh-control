@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Mesh Control</string>
+  <key>CFBundleDisplayName</key>
+  <string>Mesh Control</string>
+  <!-- À remplacer par l'identifiant définitif avant signature (domaine inversé). -->
+  <key>CFBundleIdentifier</key>
+  <string>com.example.meshcontrol</string>
+  <key>CFBundleExecutable</key>
+  <string>MeshControl.Mac</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+  <key>CFBundleVersion</key>
+  <string>0.1.0</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>fr</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.utilities</string>
+  <!-- .NET 10 prend en charge macOS 14 (Sonoma) et suivants. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>© David CHIESA</string>
+</dict>
+</plist>

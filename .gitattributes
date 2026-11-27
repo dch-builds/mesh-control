@@ -25,6 +25,11 @@
 *.bat       text eol=crlf
 *.iss       text eol=crlf
 
+# Scripts Unix (version macOS) : LF obligatoire, sh refuse les CRLF.
+*.sh        text eol=lf
+*.axaml     text
+*.plist     text
+
 # ============================================================
 # Fichiers binaires
 #

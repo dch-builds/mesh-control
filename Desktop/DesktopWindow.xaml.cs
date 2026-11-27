@@ -111,6 +111,9 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     }
 
     private readonly DesktopSession _session;
+
+    /// <summary>Surface WPF de la session (WriteableBitmap), créée avec elle.</summary>
+    private readonly KVMFramebuffer _framebuffer = new();
     private readonly string _deviceName;
     private readonly MeshNode _node;
     // Le presse-papiers distant passe par le canal de contrôle du serveur, et non
@@ -132,7 +135,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         // IMPORTANT : créer _session AVANT InitializeComponent. Le chargement du
         // XAML déclenche QualityCombo_SelectionChanged (via IsSelected="True"),
         // qui accède à _session ; il doit donc déjà exister.
-        _session = new DesktopSession(connection, node, Dispatcher);
+        _session = new DesktopSession(connection, node, new UI.WpfUiDispatcher(Dispatcher), _framebuffer);
 
         InitializeComponent();
         // L'arbre visuel existe : les handlers peuvent désormais y toucher.
@@ -313,7 +316,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     {
         // Le WriteableBitmap est déjà mis à jour ; on s'assure juste que les
         // Image pointent dessus (une seule fois) et on rafraîchit les stats.
-        if (ScreenImage.Source is null && _session.Framebuffer.Bitmap is not null)
+        if (ScreenImage.Source is null && _framebuffer.Bitmap is not null)
             ApplyFitMode();
         // Les compteurs vivent désormais dans la barre d'état ; StatsText est
         // réservé aux messages ponctuels (« Copié », « Envoyé : … »).
@@ -397,7 +400,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     {
         if (!_uiReady) return;
 
-        var bmp = _session.Framebuffer.Bitmap;
+        var bmp = _framebuffer.Bitmap;
         bool fit = FitCheck.IsChecked == true;
 
         FitHost.Visibility = fit ? Visibility.Visible : Visibility.Collapsed;
@@ -1227,7 +1230,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
     /// </summary>
     private void Screenshot_Click(object sender, RoutedEventArgs e)
     {
-        var bitmap = _session.Framebuffer.Bitmap;
+        var bitmap = _framebuffer.Bitmap;
         if (bitmap is null)
         {
             StatsText.Text = "Aucune image à capturer.";
@@ -1736,7 +1739,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
 
     private void BeginZoomSelection()
     {
-        if (_session.Framebuffer.Bitmap is null)
+        if (_framebuffer.Bitmap is null)
         {
             StatsText.Text = "Aucune image à agrandir.";
             return;
@@ -2021,7 +2024,7 @@ public partial class DesktopWindow : MeshControl.UI.ChromeWindow, MeshControl.UI
         var sent = 0;
         var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var session = new Files.FilesSession(_connection, _node, Dispatcher);
+        var session = new Files.FilesSession(_connection, _node, new UI.WpfUiDispatcher(Dispatcher));
         void OnProgress() => UpdateDropStatus(session.Transfer);
         session.TransferChanged += OnProgress;
 

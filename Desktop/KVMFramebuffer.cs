@@ -8,15 +8,6 @@ using System.Windows.Media.Imaging;
 namespace MeshControl.Desktop;
 
 /// <summary>
-/// Une tuile déjà décodée en pixels BGRA, prête à être copiée (rapide).
-///
-/// <c>Pixels</c> est un tableau LOUÉ au pool partagé : il est plus grand que
-/// nécessaire et doit être rendu après usage. <see cref="KVMFramebuffer.Apply"/>
-/// s'en charge — ne pas conserver de référence au tableau au-delà de cet appel.
-/// </summary>
-public readonly record struct DecodedTile(byte[] Pixels, int Stride, int Width, int Height, int X, int Y);
-
-/// <summary>
 /// Le framebuffer du bureau distant (WriteableBitmap BGRA32).
 ///
 /// Performance : le DÉCODAGE JPEG (coûteux) se fait sur le thread de fond via
@@ -27,23 +18,16 @@ public readonly record struct DecodedTile(byte[] Pixels, int Stride, int Width, 
 /// WriteableBitmap a son origine en haut à gauche, comme les coordonnées des
 /// tuiles KVM : on dessine donc la tuile directement à (x, y), sans inversion.
 /// </summary>
-public sealed class KVMFramebuffer
+public sealed class KVMFramebuffer : IKvmFramebuffer
 {
     public WriteableBitmap? Bitmap { get; private set; }
     public int Width { get; private set; }
     public int Height { get; private set; }
 
-    /// <summary>
-    /// Plus grande dimension acceptée, pour l'écran comme pour une tuile : au-delà
-    /// de deux écrans 8K côte à côte, la valeur ne peut venir que d'un agent
-    /// défaillant ou hostile, et ferait allouer des gigaoctets.
-    /// </summary>
-    public const int MaxDimension = 16384;
-
     /// <summary>À appeler sur le thread UI (crée le WriteableBitmap).</summary>
     public void Resize(int width, int height)
     {
-        if (width <= 0 || height <= 0 || width > MaxDimension || height > MaxDimension) return;
+        if (!FramebufferLimits.IsAcceptableScreen(width, height)) return;
 
         // Le bitmap d'abord, les dimensions ensuite : si la création échoue,
         // l'ancien bitmap et ses dimensions restent cohérents. L'inverse
@@ -86,18 +70,8 @@ public sealed class KVMFramebuffer
         }
     }
 
-    /// <summary>
-    /// Décode une tuile (JPEG/PNG/WebP) en pixels BGRA. Peut s'exécuter sur
-    /// n'importe quel thread (aucun accès au WriteableBitmap ici). Renvoie null
-    /// si la tuile est illisible.
-    /// </summary>
-    /// <summary>
-    /// Taille maximale d'une tuile décodée : un écran 8K entier (130 Mo) passe,
-    /// pas davantage.
-    /// </summary>
-    private const long MaxTileBytes = 7680L * 4320 * 4;
-
-    public static DecodedTile? Decode(byte[] imageData, int x, int y)
+    /// <inheritdoc/>
+    public DecodedTile? Decode(byte[] imageData, int x, int y)
     {
         // Décodage différé (BitmapCacheOption.None) : les dimensions se lisent
         // dans l'en-tête, AVANT de décompresser. Une image de quelques octets
@@ -120,8 +94,7 @@ public sealed class KVMFramebuffer
             th = frame.PixelHeight;
         }
         catch { return null; }
-        if (tw <= 0 || th <= 0 || tw > MaxDimension || th > MaxDimension) return null;
-        if ((long)tw * th * 4 > MaxTileBytes) return null;
+        if (!FramebufferLimits.IsAcceptableTile(tw, th)) return null;
 
         int stride = tw * 4;
 

@@ -388,7 +388,7 @@ public partial class SendFilesWindow : MeshControl.UI.ChromeWindow
 
     private async Task SendWithSessionAsync(TargetDevice target, CancellationToken ct)
     {
-        var session = new FilesSession(_connection, target.Node, Dispatcher);
+        var session = new FilesSession(_connection, target.Node, new UI.WpfUiDispatcher(Dispatcher));
 
         void OnProgress()
         {

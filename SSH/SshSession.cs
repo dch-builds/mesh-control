@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
-using System.Windows.Threading;
 using MeshControl.Core;
 
 namespace MeshControl.Ssh;
@@ -40,7 +39,7 @@ public sealed class SshSession : IDisposable
     private readonly StringBuilder _pendingOutput = new();
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;
-    private readonly Dispatcher _ui;
+    private readonly IUiDispatcher _ui;
     private MeshWebSocket? _socket;
     private CancellationTokenSource? _cts;
     private bool _stopped;
@@ -48,7 +47,7 @@ public sealed class SshSession : IDisposable
     private readonly Channel<string> _sendQueue =
         Channel.CreateUnbounded<string>(new UnboundedChannelOptions { SingleReader = true });
 
-    public SshSession(MeshServerConnection connection, MeshNode node, Dispatcher ui)
+    public SshSession(MeshServerConnection connection, MeshNode node, IUiDispatcher ui)
     {
         _connection = connection;
         _node = node;
@@ -58,7 +57,7 @@ public sealed class SshSession : IDisposable
     private void SetState(SshSessionState state)
     {
         State = state;
-        _ui.BeginInvoke(() => StateChanged?.Invoke());
+        _ui.Post(() => StateChanged?.Invoke());
     }
 
     // MARK: - Cycle de vie
@@ -318,7 +317,7 @@ public sealed class SshSession : IDisposable
             if (_outboxScheduled) return;
             _outboxScheduled = true;
         }
-        _ui.BeginInvoke(FlushOutput);
+        _ui.Post(FlushOutput);
     }
 
     private void FlushOutput()

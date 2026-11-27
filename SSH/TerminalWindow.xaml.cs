@@ -173,7 +173,8 @@ public partial class TerminalWindow : MeshControl.UI.ChromeWindow, MeshControl.U
         _terminal.Write($"\u001B[90m» Connexion à {_node.Name} — {shellName}…\u001B[0m\r\n");
         SetReconnectHighlighted(false);
 
-        _session = new AgentTerminalSession(_connection, _node, SelectedShell, Dispatcher);
+        _session = new AgentTerminalSession(_connection, _node, SelectedShell,
+                                            new UI.WpfUiDispatcher(Dispatcher));
         _session.Output += OnOutput;
         _session.StateChanged += OnStateChanged;
 

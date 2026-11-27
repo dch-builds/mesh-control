@@ -1,0 +1,654 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.MainWindow"
+                   Title="Mesh Control"
+                   Width="1240" Height="820" MinWidth="740" MinHeight="440"
+                   WindowStartupLocation="CenterScreen">
+
+  <!-- Portage de UI/MainWindow.xaml (version Windows) : même agencement,
+       mêmes marges, mêmes textes. -->
+  <DockPanel>
+    <local:TitleBar DockPanel.Dock="Top" Title="Mesh Control" />
+
+    <Panel x:Name="RootGrid">
+      <Grid Margin="22,18,22,18" RowDefinitions="Auto,*">
+
+        <!-- ================= En-tête ================= -->
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+            <Ellipse x:Name="ConnectionDot" Width="8" Height="8" Margin="1,3,10,0"
+                     VerticalAlignment="Center" Fill="{DynamicResource OnlineBrush}" IsVisible="False" />
+            <TextBlock x:Name="SubtitleText" FontSize="18" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+            <StackPanel x:Name="HotkeyHintBadge" Orientation="Horizontal" VerticalAlignment="Center"
+                        Margin="18,3,0,0" IsVisible="False"
+                        ToolTip.Tip="Ouvre la recherche rapide depuis n'importe quelle application">
+              <Border Background="{DynamicResource ControlBrush}" BorderBrush="{DynamicResource SeparatorBrush}"
+                      BorderThickness="1,1,1,2" CornerRadius="5" Padding="7,1,7,2">
+                <TextBlock x:Name="HotkeyHintText" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}" />
+              </Border>
+              <TextBlock Text="recherche rapide" FontSize="11.5" Margin="7,0,0,0"
+                         Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+            </StackPanel>
+          </StackPanel>
+
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top">
+            <Button x:Name="RefreshButton" Classes="tool" Content="Rafraîchir" Click="RefreshButton_Click"
+                    IsVisible="False" Margin="0,0,8,0" />
+            <Button x:Name="SettingsButton" Classes="tool" Click="SettingsButton_Click"
+                    ToolTip.Tip="Réglages du serveur et du compte" Padding="9,6">
+              <TextBlock Text="⚙" FontSize="14" Foreground="{DynamicResource TextSecondaryBrush}" />
+            </Button>
+          </StackPanel>
+        </Grid>
+
+        <!-- ================= Corps ================= -->
+        <Panel Grid.Row="1">
+
+          <!-- Vue 0 : choix du serveur -->
+          <Border x:Name="ServerPanel" Classes="card" IsVisible="False" Width="380"
+                  VerticalAlignment="Center" HorizontalAlignment="Center" Padding="26,24">
+            <StackPanel>
+              <TextBlock x:Name="ServerTitle" Text="Bienvenue" FontSize="17" FontWeight="Bold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,3" />
+              <TextBlock Classes="caption" TextWrapping="Wrap" Margin="0,0,0,18"
+                         Text="Indiquez l'adresse de votre serveur MeshCentral pour commencer." />
+              <TextBlock Text="Adresse du serveur" Classes="caption" Margin="0,0,0,5" />
+              <TextBox x:Name="ServerHostBox" Margin="0,0,0,5" KeyDown="ServerHostBox_KeyDown" />
+              <TextBlock Classes="fieldHint" TextWrapping="Wrap" Margin="0,0,0,12"
+                         Text="Par exemple meshcentral.mondomaine.fr, ou 192.168.1.10:4430 si le serveur écoute sur un autre port." />
+              <CheckBox x:Name="ServerSelfSignedCheck" Content="Le serveur utilise un certificat auto-signé"
+                        Margin="0,0,0,18" />
+              <Button x:Name="ServerContinueButton" Classes="primary" Content="Continuer"
+                      Click="ServerContinue_Click" />
+              <TextBlock x:Name="ServerStatusText" Classes="caption" Margin="0,14,0,0"
+                         TextWrapping="Wrap" TextAlignment="Center" />
+            </StackPanel>
+          </Border>
+
+          <!-- Vue 1 : connexion -->
+          <Border x:Name="LoginPanel" Classes="card" IsVisible="False" Width="380"
+                  VerticalAlignment="Center" HorizontalAlignment="Center" Padding="26,24">
+            <StackPanel>
+              <TextBlock Text="Connexion" FontSize="17" FontWeight="Bold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,3" />
+              <DockPanel Margin="0,0,0,18">
+                <Button x:Name="ChangeServerButton" DockPanel.Dock="Right" Classes="subtle" Padding="6,0"
+                        Content="Changer" VerticalAlignment="Center" Click="ChangeServer_Click" />
+                <TextBlock x:Name="LoginServerLabel" Classes="caption" TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+              </DockPanel>
+
+              <TextBlock Text="Utilisateur" Classes="caption" Margin="0,0,0,5" />
+              <TextBox x:Name="UserBox" Margin="0,0,0,12" />
+
+              <TextBlock Text="Mot de passe" Classes="caption" Margin="0,0,0,5" />
+              <TextBox x:Name="PassBox" PasswordChar="●" Margin="0,0,0,12" KeyDown="PassBox_KeyDown" />
+
+              <StackPanel x:Name="TwoFactorPanel" IsVisible="False" Margin="0,0,0,14">
+                <TextBlock Text="Code à deux facteurs" Classes="caption" Margin="0,0,0,5" />
+                <TextBox x:Name="TokenBox" Margin="0,0,0,10" KeyDown="PassBox_KeyDown" />
+                <CheckBox x:Name="TrustDeviceCheck" Content="Ne plus demander de code sur ce poste"
+                          IsChecked="True" IsEnabled="{Binding #RememberCheck.IsChecked}" />
+                <TextBlock x:Name="TrustDeviceHint" Classes="fieldHint" Margin="24,4,0,0" TextWrapping="Wrap" />
+                <Button x:Name="SendCodeButton" Classes="subtle" Content="Recevoir un code par courriel"
+                        Margin="0,10,0,0" Padding="12,6" HorizontalAlignment="Left" IsVisible="False"
+                        Click="SendCode_Click" />
+              </StackPanel>
+
+              <CheckBox x:Name="RememberCheck" Content="Rester connecté sur ce poste" IsChecked="True"
+                        Margin="0,0,0,18" />
+
+              <Button x:Name="ConnectButton" Classes="primary" Content="Se connecter" Click="ConnectButton_Click" />
+
+              <TextBlock x:Name="StatusText" Classes="caption" Margin="0,14,0,0" TextWrapping="Wrap"
+                         TextAlignment="Center" />
+            </StackPanel>
+          </Border>
+
+          <!-- Vue 2 : liste des appareils -->
+          <Grid x:Name="DevicesPanel" IsVisible="False" ColumnDefinitions="Auto,*">
+
+            <!-- Volet des dossiers -->
+            <Border x:Name="FolderPane" Grid.Column="0" Classes="card" Padding="6" Width="238"
+                    Margin="0,0,14,0" IsVisible="False">
+              <DockPanel>
+                <Border DockPanel.Dock="Top" Classes="folderFilter" Height="32" CornerRadius="8"
+                        Margin="2,2,2,6" Background="{DynamicResource SubtleFillBrush}" BorderThickness="1">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <local:Icon Kind="Filter" Size="11" Foreground="{DynamicResource PlaceholderBrush}"
+                                VerticalAlignment="Center" Margin="10,0,0,0" IsHitTestVisible="False" />
+                    <Panel Grid.Column="1" Margin="8,0,0,0">
+                      <TextBox x:Name="FolderFilterBox" Classes="bare" FontSize="12"
+                               TextChanged="FolderFilterBox_TextChanged" KeyDown="FolderFilterBox_KeyDown" />
+                      <TextBlock x:Name="FolderFilterPlaceholder" Text="Filtrer les dossiers" FontSize="12"
+                                 Foreground="{DynamicResource PlaceholderBrush}" VerticalAlignment="Center"
+                                 IsHitTestVisible="False" />
+                    </Panel>
+                    <Button x:Name="ClearFolderFilterButton" Grid.Column="2" Classes="bare" Width="20" Height="20"
+                            Margin="0,0,6,0" IsVisible="False" Click="ClearFolderFilter_Click"
+                            ToolTip.Tip="Effacer" Foreground="{DynamicResource TextSecondaryBrush}">
+                      <local:Icon Kind="Close" Size="9" />
+                    </Button>
+                  </Grid>
+                </Border>
+
+                <ListBox x:Name="FolderList" Classes="folders" SelectionChanged="FolderList_SelectionChanged">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate DataType="local:FolderRow">
+                      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,0,4,0" ToolTip.Tip="{Binding Tooltip}"
+                            Background="Transparent">
+                        <local:Icon Kind="{Binding Glyph}" Size="13" Foreground="{Binding GlyphBrush}"
+                                    IsVisible="{Binding IsEntry}" VerticalAlignment="Center" Margin="1,0,10,0" />
+                        <TextBlock Grid.Column="1" Text="{Binding Name}" Classes="folderName"
+                                   Classes.sectionTitle="{Binding IsSection}" Foreground="{Binding NameBrush}"
+                                   TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <Border Grid.Column="2" CornerRadius="9" Padding="7,1,7,2" Margin="8,0,0,0"
+                                VerticalAlignment="Center" Background="{Binding PillBrush}"
+                                IsVisible="{Binding IsEntry}">
+                          <TextBlock FontSize="10.5">
+                            <Run Text="{Binding Matching}" FontWeight="Bold" Foreground="{Binding CountColor}" />
+                            <Run Text="{Binding TotalLabel}" Foreground="{Binding TotalBrush}" />
+                          </TextBlock>
+                        </Border>
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </DockPanel>
+            </Border>
+
+            <!-- Poignée de redimensionnement du volet -->
+            <Thumb x:Name="FolderPaneResizer" Grid.Column="0" Width="10" HorizontalAlignment="Right"
+                   Margin="0,0,2,0" Cursor="SizeWestEast" IsVisible="{Binding #FolderPane.IsVisible}"
+                   DragDelta="FolderPaneResizer_DragDelta" DragCompleted="FolderPaneResizer_DragCompleted"
+                   ToolTip.Tip="Tirer pour élargir le volet">
+              <Thumb.Template>
+                <ControlTemplate>
+                  <Border Background="Transparent" />
+                </ControlTemplate>
+              </Thumb.Template>
+            </Thumb>
+
+            <DockPanel Grid.Column="1">
+              <!-- Titre de la vue, avec le compteur -->
+              <StackPanel x:Name="SidebarTitleRow" DockPanel.Dock="Top" Orientation="Horizontal"
+                          Margin="2,0,0,12" IsVisible="False">
+                <TextBlock x:Name="ViewTitleText" FontSize="18" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Bottom"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel x:Name="TitleCountHost" Orientation="Horizontal" VerticalAlignment="Bottom"
+                            Margin="12,0,0,3" />
+              </StackPanel>
+
+              <!-- Barre de recherche + outils -->
+              <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="6*" MaxWidth="576" />
+                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Border x:Name="SearchFrame" Grid.Column="0" Classes="searchFrame" Height="38" CornerRadius="10"
+                        Margin="0,0,16,0" Background="{DynamicResource ControlBrush}" BorderThickness="1"
+                        Cursor="Ibeam" PointerPressed="SearchFrame_PointerPressed">
+                  <Grid ColumnDefinitions="Auto,*,Auto">
+                    <local:Icon Classes="searchGlyph" Kind="Search" Size="13" Margin="13,0,0,0"
+                                VerticalAlignment="Center" IsHitTestVisible="False" />
+                    <Panel Grid.Column="1" Margin="10,0,0,0">
+                      <TextBox x:Name="SearchBox" Classes="bare" FontSize="13.5"
+                               TextChanged="SearchBox_TextChanged" KeyDown="SearchBox_KeyDown" />
+                      <TextBlock x:Name="SearchPlaceholder" Text="Rechercher par nom, adresse IP, système ou utilisateur"
+                                 FontSize="13.5" TextTrimming="CharacterEllipsis"
+                                 Foreground="{DynamicResource PlaceholderBrush}" VerticalAlignment="Center"
+                                 IsHitTestVisible="False" />
+                    </Panel>
+                    <Border x:Name="SearchShortcutHint" Grid.Column="2" Classes="keycap" Margin="0,0,9,0"
+                            VerticalAlignment="Center" IsHitTestVisible="False">
+                      <TextBlock x:Name="SearchShortcutText" Text="Ctrl F" FontSize="10.5" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextSecondaryBrush}" />
+                    </Border>
+                    <Button x:Name="ClearSearchButton" Grid.Column="2" Classes="icon" Margin="0,0,6,0"
+                            IsVisible="False" Click="ClearSearch_Click" ToolTip.Tip="Effacer (Échap)">
+                      <local:Icon Kind="Close" Size="10" />
+                    </Button>
+                  </Grid>
+                </Border>
+
+                <StackPanel x:Name="ToolbarRight" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                  <TextBlock x:Name="CountText" Classes="caption" VerticalAlignment="Center" />
+                  <Button x:Name="SortButton" Classes="tool" Margin="12,0,0,0" Padding="9,5"
+                          ToolTip.Tip="Trier les machines">
+                    <StackPanel Orientation="Horizontal">
+                      <local:Icon Kind="Sort" Size="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                                  VerticalAlignment="Center" Margin="0,0,6,0" />
+                      <TextBlock x:Name="SortLabel" Text="Nom" FontSize="11.5"
+                                 Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Button.Flyout>
+                      <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                        <MenuItem Header="Nom" Tag="0" ToggleType="CheckBox" Click="SortChoice_Click" />
+                        <MenuItem Header="En ligne d'abord" Tag="1" ToggleType="CheckBox" Click="SortChoice_Click" />
+                        <MenuItem Header="Dernière présence" Tag="2" ToggleType="CheckBox" Click="SortChoice_Click" />
+                        <MenuItem Header="Système" Tag="3" ToggleType="CheckBox" Click="SortChoice_Click" />
+                      </MenuFlyout>
+                    </Button.Flyout>
+                  </Button>
+                  <Button x:Name="ToggleViewButton" Classes="tool" Click="ToggleView_Click" Margin="12,0,0,0"
+                          Padding="8,5" ToolTip.Tip="Afficher les dossiers à gauche">
+                    <local:Icon x:Name="ToggleViewGlyph" Kind="Sidebar" Size="12"
+                                Foreground="{DynamicResource TextSecondaryBrush}" />
+                  </Button>
+                  <Button x:Name="ToggleGroupsButton" Classes="tool" Click="ToggleGroups_Click" Margin="12,0,0,0"
+                          Padding="8,5" ToolTip.Tip="Replier tous les dossiers">
+                    <local:Icon x:Name="ToggleGroupsGlyph" Kind="ChevronUp" Size="9"
+                                Foreground="{DynamicResource TextSecondaryBrush}" />
+                  </Button>
+                </StackPanel>
+              </Grid>
+
+              <!-- Filtres rapides -->
+              <WrapPanel x:Name="FilterChipsPanel" DockPanel.Dock="Top" Margin="0,-2,0,12" />
+
+              <!-- Carte contenant la liste -->
+              <Border Classes="card" Padding="6">
+                <DockPanel>
+                  <!-- Sélection multiple : actions groupées -->
+                  <Border x:Name="SelectionBar" DockPanel.Dock="Bottom" IsVisible="False"
+                          Background="{DynamicResource AccentSoftBrush}" CornerRadius="8"
+                          Padding="12,6,6,6" Margin="0,6,0,0">
+                    <DockPanel>
+                      <Button DockPanel.Dock="Right" Classes="icon" Margin="4,0,0,0" Click="ClearSelection_Click"
+                              ToolTip.Tip="Désélectionner (Échap)">
+                        <local:Icon Kind="Close" Size="10" />
+                      </Button>
+                      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                        <Button x:Name="BulkWakeButton" Classes="tool" Padding="10,5" Margin="0,0,6,0"
+                                Content="Réveiller" Click="BulkWake_Click"
+                                ToolTip.Tip="Envoyer un signal Wake-on-LAN aux machines hors ligne" />
+                        <Button x:Name="BulkRebootButton" Classes="tool" Padding="10,5" Margin="0,0,6,0"
+                                Content="Redémarrer…" Click="BulkReboot_Click" />
+                        <Button x:Name="BulkPowerOffButton" Classes="tool" Padding="10,5" Margin="0,0,6,0"
+                                Content="Éteindre…" Click="BulkPowerOff_Click" />
+                        <Button x:Name="BulkFavoriteButton" Classes="tool" Padding="10,5"
+                                Content="Ajouter aux favoris" Click="BulkFavorite_Click" />
+                      </StackPanel>
+                      <TextBlock x:Name="SelectionText" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource InfoTextBrush}" TextTrimming="CharacterEllipsis"
+                                 Margin="0,0,12,0" />
+                    </DockPanel>
+                  </Border>
+
+                  <!-- En-têtes de la liste en colonnes (barre latérale masquée) -->
+                  <Border x:Name="ColumnHeader" DockPanel.Dock="Top" IsVisible="False"
+                          BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,0,1"
+                          Margin="0,2,0,4" Padding="10,4,10,7">
+                    <Grid ColumnDefinitions="22,2.4*,1.3*,*,*,72,150"
+                          TextElement.FontSize="11.5" TextElement.Foreground="{DynamicResource TextSecondaryBrush}">
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Tag="0" Background="Transparent"
+                                  Cursor="Hand" PointerReleased="ColumnHeader_Click" ToolTip.Tip="Trier par nom">
+                        <TextBlock Text="Nom" />
+                        <local:Icon x:Name="SortArrowName" Kind="ChevronDown" Size="8" Margin="6,1,0,0"
+                                    VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" IsVisible="False" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="2" Orientation="Horizontal" Tag="3" Background="Transparent"
+                                  Cursor="Hand" PointerReleased="ColumnHeader_Click" ToolTip.Tip="Trier par système">
+                        <TextBlock Text="Système" />
+                        <local:Icon x:Name="SortArrowSystem" Kind="ChevronDown" Size="8" Margin="6,1,0,0"
+                                    VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" IsVisible="False" />
+                      </StackPanel>
+                      <TextBlock Grid.Column="3" Text="Adresse IP" />
+                      <TextBlock Grid.Column="4" Text="Utilisateur" />
+                      <StackPanel Grid.Column="5" Orientation="Horizontal" Tag="2" Background="Transparent"
+                                  Cursor="Hand" PointerReleased="ColumnHeader_Click"
+                                  ToolTip.Tip="Trier par dernière présence (en ligne d'abord)">
+                        <TextBlock Text="Vu" />
+                        <local:Icon x:Name="SortArrowSeen" Kind="ChevronDown" Size="8" Margin="6,1,0,0"
+                                    VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" IsVisible="False" />
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+
+                  <Panel>
+                    <ListBox x:Name="DeviceList" Classes="devices" SelectionMode="Multiple"
+                             SelectionChanged="DeviceList_SelectionChanged"
+                             DoubleTapped="DeviceList_DoubleTapped" KeyDown="DeviceList_KeyDown"
+                             ContainerPrepared="DeviceList_ContainerPrepared">
+                      <ListBox.ContextMenu>
+                        <ContextMenu x:Name="DeviceMenu" Opening="DeviceMenu_Opening">
+                          <MenuItem x:Name="MenuDesktop" Header="Bureau à distance" InputGesture="Enter"
+                                    FontWeight="SemiBold" Click="MenuDesktop_Click" />
+                          <Separator />
+                          <MenuItem x:Name="MenuWake" Header="Réveiller (Wake-on-LAN)" Click="MenuWake_Click" />
+                          <MenuItem x:Name="MenuReboot" Header="Redémarrer…" Click="MenuReboot_Click" />
+                          <MenuItem x:Name="MenuSleep" Header="Mettre en veille…" Click="MenuSleep_Click" />
+                          <MenuItem x:Name="MenuPowerOff" Header="Éteindre…" Click="MenuPowerOff_Click" />
+                          <Separator />
+                          <MenuItem x:Name="MenuFavorite" Header="Ajouter aux favoris" Click="MenuFavorite_Click" />
+                          <MenuItem x:Name="MenuRename" Header="Renommer…" InputGesture="F2"
+                                    Click="MenuRename_Click" ToolTip.Tip="Changer le nom affiché dans MeshCentral" />
+                          <MenuItem x:Name="MenuCopyName" Header="Copier le nom" Click="MenuCopyName_Click" />
+                          <MenuItem x:Name="MenuWebPage" Header="Ouvrir la page web…" Click="MenuWebPage_Click"
+                                    ToolTip.Tip="Voir cette machine dans MeshCentral" />
+                        </ContextMenu>
+                      </ListBox.ContextMenu>
+
+                      <ListBox.Resources>
+                        <!-- En-tête de dossier : clic = replier / déplier -->
+                        <DataTemplate x:Key="GroupHeaderTemplate" DataType="local:GroupHeaderRow">
+                          <Border Classes="groupHeader" HorizontalAlignment="Left" CornerRadius="6" Padding="7,4"
+                                  Cursor="Hand" ToolTip.Tip="Replier ou déplier ce dossier"
+                                  Tapped="GroupHeader_Tapped">
+                            <StackPanel Orientation="Horizontal">
+                              <local:Icon Kind="{Binding Chevron}" Size="8"
+                                          Foreground="{DynamicResource TextSecondaryBrush}"
+                                          VerticalAlignment="Center" Margin="0,1,8,0" />
+                              <TextBlock Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                                         Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding CountLabel}" FontSize="11"
+                                         Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+
+                        <!-- Ligne en carte (barre latérale affichée) -->
+                        <DataTemplate x:Key="DeviceCardTemplate" DataType="local:DeviceRow">
+                          <Grid ColumnDefinitions="Auto,*,Auto" Background="Transparent">
+                            <Panel Width="{DynamicResource DeviceIconSize}" Height="{DynamicResource DeviceIconSize}"
+                                   Margin="0,0,12,0">
+                              <Border Background="{Binding OsGlyphBackground}" CornerRadius="10" />
+                              <TextBlock Text="{Binding OsGlyph}" FontSize="17" Foreground="{Binding OsGlyphColor}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Panel>
+
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                              <TextBlock local:Highlight.Text="{Binding Name}" FontSize="{DynamicResource DeviceNameSize}"
+                                         FontWeight="SemiBold" Foreground="{Binding NameBrush}"
+                                         TextTrimming="CharacterEllipsis" />
+                              <TextBlock local:Highlight.Text="{Binding Subtitle}" Classes="caption"
+                                         TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                              <StackPanel Classes="hoverActions" Orientation="Horizontal" Margin="0,0,6,0">
+                                <Button Classes="rowAction" Tag="Desktop" Click="RowAction_Click"
+                                        IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Bureau à distance">
+                                  <local:Icon Kind="Desktop" Size="12" />
+                                </Button>
+                                <Button Classes="rowAction" Tag="Wake" Click="RowAction_Click"
+                                        IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="Réveiller (Wake-on-LAN)">
+                                  <local:Icon Kind="Power" Size="12" />
+                                </Button>
+                              </StackPanel>
+
+                              <Border Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"
+                                      Margin="0,0,10,0" Background="{Binding SessionAvatarBackground}"
+                                      IsVisible="{Binding SessionVisible}" ToolTip.Tip="{Binding SessionTooltip}">
+                                <TextBlock Text="{Binding SessionInitials}" FontSize="9.5" FontWeight="SemiBold"
+                                           Foreground="{Binding SessionAvatarForeground}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              </Border>
+
+                              <TextBlock Text="{Binding PresenceText}" Foreground="{Binding PresenceColor}" FontSize="11"
+                                         VerticalAlignment="Center" Margin="0,0,10,0" IsVisible="{Binding IsOffline}"
+                                         ToolTip.Tip="Dernière connexion au serveur" />
+
+                              <Panel Width="14" VerticalAlignment="Center">
+                                <Ellipse Classes="status" Classes.online="{Binding IsStatusOnline}"
+                                         Classes.session="{Binding IsStatusSession}"
+                                         Classes.inactive="{Binding IsStatusInactive}"
+                                         ToolTip.Tip="{Binding StatusTooltip}" />
+                              </Panel>
+
+                              <Button Classes="bare" Content="{Binding FavoriteGlyph}" Foreground="{Binding FavoriteColor}"
+                                      FontSize="15" Width="26" Height="26" Margin="6,0,2,0"
+                                      Click="Favorite_Click" ToolTip.Tip="Épingler / retirer des favoris" />
+                            </StackPanel>
+                          </Grid>
+                        </DataTemplate>
+
+                        <!-- Ligne en colonnes (barre latérale masquée) -->
+                        <DataTemplate x:Key="DeviceColumnsTemplate" DataType="local:DeviceRow">
+                          <Grid MinHeight="30" ColumnDefinitions="22,2.4*,1.3*,*,*,72,150" Background="Transparent">
+                            <Panel Grid.Column="0" Width="12" HorizontalAlignment="Left" VerticalAlignment="Center">
+                              <Ellipse Classes="status" Classes.online="{Binding IsStatusOnline}"
+                                       Classes.session="{Binding IsStatusSession}"
+                                       Classes.inactive="{Binding IsStatusInactive}"
+                                       ToolTip.Tip="{Binding StatusTooltip}" />
+                            </Panel>
+                            <TextBlock Grid.Column="1" local:Highlight.Text="{Binding Name}" FontSize="12.5"
+                                       FontWeight="SemiBold" Foreground="{Binding NameBrush}"
+                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0" />
+                            <TextBlock Grid.Column="2" local:Highlight.Text="{Binding OsDisplay}" FontSize="12"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" Margin="0,0,12,0" />
+                            <TextBlock Grid.Column="3" local:Highlight.Text="{Binding IpText}"
+                                       FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="11.5"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center" Margin="0,0,12,0" />
+                            <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                              <Border Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"
+                                      Margin="0,0,7,0" Background="{Binding SessionAvatarBackground}"
+                                      IsVisible="{Binding SessionVisible}" ToolTip.Tip="{Binding SessionTooltip}">
+                                <TextBlock Text="{Binding SessionInitials}" FontSize="9.5" FontWeight="SemiBold"
+                                           Foreground="{Binding SessionAvatarForeground}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                              </Border>
+                              <TextBlock Text="{Binding SessionLabel}" FontSize="12"
+                                         Foreground="{DynamicResource TextPrimaryBrush}"
+                                         TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="5" Text="{Binding PresenceShort}" Foreground="{Binding PresenceColor}"
+                                       FontSize="11.5" VerticalAlignment="Center" ToolTip.Tip="{Binding PresenceText}" />
+                            <StackPanel Grid.Column="6" Orientation="Horizontal" HorizontalAlignment="Right"
+                                        VerticalAlignment="Center">
+                              <StackPanel Classes="hoverActions" Orientation="Horizontal">
+                                <Button Classes="rowAction" Tag="Desktop" Click="RowAction_Click" Width="28" Height="26"
+                                        IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Bureau à distance">
+                                  <local:Icon Kind="Desktop" Size="12" />
+                                </Button>
+                                <Button Classes="rowAction" Tag="Wake" Click="RowAction_Click" Width="28" Height="26"
+                                        IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="Réveiller (Wake-on-LAN)">
+                                  <local:Icon Kind="Power" Size="12" />
+                                </Button>
+                              </StackPanel>
+                              <Button Classes="bare" Content="{Binding FavoriteGlyph}" Foreground="{Binding FavoriteColor}"
+                                      FontSize="14" Width="24" Height="24" Margin="2,0,0,0"
+                                      Click="Favorite_Click" ToolTip.Tip="Épingler / retirer des favoris" />
+                            </StackPanel>
+                          </Grid>
+                        </DataTemplate>
+                      </ListBox.Resources>
+                    </ListBox>
+
+                    <!-- Liste vide : dire pourquoi, et offrir la sortie -->
+                    <StackPanel x:Name="EmptyState" IsVisible="False" HorizontalAlignment="Center"
+                                VerticalAlignment="Center" Margin="24">
+                      <local:Icon Kind="Search" Size="28" Foreground="{DynamicResource PlaceholderBrush}"
+                                  HorizontalAlignment="Center" Margin="0,0,0,12" />
+                      <TextBlock x:Name="EmptyStateTitle" Text="Aucune machine ne correspond" FontSize="14"
+                                 FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"
+                                 HorizontalAlignment="Center" TextAlignment="Center" />
+                      <TextBlock x:Name="EmptyStateDetail" Classes="caption" HorizontalAlignment="Center"
+                                 TextAlignment="Center" TextWrapping="Wrap" MaxWidth="340" Margin="0,4,0,0" />
+                      <Button x:Name="EmptyStateClearButton" Classes="accentTool"
+                              Content="Effacer la recherche et les filtres" HorizontalAlignment="Center"
+                              Padding="12,6" Margin="0,14,0,0" Click="ClearFilters_Click" />
+                    </StackPanel>
+                  </Panel>
+                </DockPanel>
+              </Border>
+            </DockPanel>
+          </Grid>
+
+          <!-- Vue 3 : chargement, lignes en squelette qui pulsent -->
+          <Border x:Name="LoadingPanel" Classes="card" IsVisible="False" Padding="22,20">
+            <StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+                <TextBlock Text="Connexion au serveur…" FontSize="13" FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                <TextBlock x:Name="LoadingDetail" Classes="caption" VerticalAlignment="Center" Margin="10,0,0,0" />
+              </StackPanel>
+              <StackPanel x:Name="SkeletonRows" Classes="skeleton" />
+            </StackPanel>
+          </Border>
+        </Panel>
+      </Grid>
+
+      <!-- ================= Bandeau de confirmation ================= -->
+      <Border x:Name="ToastBanner" IsVisible="False" IsHitTestVisible="False" VerticalAlignment="Bottom"
+              HorizontalAlignment="Center" Margin="0,0,0,28" CornerRadius="9" Padding="16,11"
+              Background="#F21C1C1E" BoxShadow="0 2 18 0 #44000000" Opacity="0">
+        <Border.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+          </Transitions>
+        </Border.Transitions>
+        <StackPanel Orientation="Horizontal">
+          <TextBlock Text="✓" FontSize="13" FontWeight="SemiBold" Foreground="#34C759"
+                     VerticalAlignment="Center" Margin="0,0,9,0" />
+          <TextBlock x:Name="ToastText" FontSize="12.5" Foreground="White" VerticalAlignment="Center"
+                     TextWrapping="Wrap" MaxWidth="480" />
+        </StackPanel>
+      </Border>
+
+      <!-- ================= Voile ================= -->
+      <Border x:Name="SettingsScrim" Background="#40000000" IsVisible="False" Opacity="0"
+              PointerPressed="SettingsScrim_PointerPressed">
+        <Border.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Opacity" Duration="0:0:0.2" />
+          </Transitions>
+        </Border.Transitions>
+      </Border>
+
+      <!-- ================= Volet des réglages ================= -->
+      <Border x:Name="SettingsPanel" Width="420" HorizontalAlignment="Right" RenderTransform="translateX(420px)"
+              Background="{DynamicResource WindowBackgroundBrush}" IsVisible="False"
+              BoxShadow="0 0 24 0 #33000000">
+        <Border.Transitions>
+          <Transitions>
+            <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.22" />
+          </Transitions>
+        </Border.Transitions>
+
+        <DockPanel>
+          <Border DockPanel.Dock="Top" Background="{DynamicResource CardBrush}"
+                  BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,0,1" Padding="20,16">
+            <Grid>
+              <StackPanel>
+                <TextBlock Text="Réglages" FontSize="17" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                <TextBlock x:Name="SettingsSubtitle" Classes="caption" Margin="0,2,0,0" />
+              </StackPanel>
+              <Button Classes="tool" Content="✕" HorizontalAlignment="Right" VerticalAlignment="Top"
+                      Padding="8,4" FontSize="12" Click="CloseSettings_Click" ToolTip.Tip="Fermer (Échap)" />
+            </Grid>
+          </Border>
+
+          <Border DockPanel.Dock="Bottom" Background="{DynamicResource CardBrush}"
+                  BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="20,12">
+            <Grid>
+              <TextBlock x:Name="SettingsFeedback" Classes="caption" VerticalAlignment="Center"
+                         TextWrapping="Wrap" MaxWidth="200" HorizontalAlignment="Left" />
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Annuler" Classes="tool" Padding="16,8" Margin="0,0,8,0" Click="CloseSettings_Click" />
+                <Button Content="Enregistrer" Classes="primary" HorizontalAlignment="Right" Padding="18,8"
+                        Click="SaveSettings_Click" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="18,18,18,20">
+              <TextBlock Text="Bureau à distance" Classes="panelSectionTitle" />
+              <TextBlock Text="Valeurs appliquées à chaque nouvelle session." Classes="caption" Margin="0,0,0,8" />
+              <Border Classes="panelSection">
+                <StackPanel>
+                  <TextBlock Text="Qualité d'image" Classes="fieldLabel" />
+                  <ComboBox x:Name="DefaultQualityCombo" HorizontalAlignment="Stretch" Margin="0,0,0,14">
+                    <ComboBoxItem Content="Dépannage — liaison très lente" Tag="3" />
+                    <ComboBoxItem Content="Basse — réseau lent" Tag="0" />
+                    <ComboBoxItem Content="Équilibrée" Tag="1" />
+                    <ComboBoxItem Content="Haute — image nette" Tag="2" />
+                    <ComboBoxItem Content="Fluide — vidéo" Tag="4" />
+                  </ComboBox>
+                  <TextBlock Classes="fieldHint" Margin="0,-10,0,14"
+                             Text="Dépannage : compression maximale, image réduite et 5 img/s au plus, pour garder la main sur une connexion faible. Fluide : 40 img/s en bonne qualité, pour suivre une vidéo." />
+
+                  <TextBlock Text="Fluidité" Classes="fieldLabel" />
+                  <ComboBox x:Name="DefaultFrameRateCombo" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="5 images/s" Tag="5" />
+                    <ComboBoxItem Content="10 images/s" Tag="10" />
+                    <ComboBoxItem Content="15 images/s" Tag="15" />
+                    <ComboBoxItem Content="20 images/s" Tag="20" />
+                    <ComboBoxItem Content="25 images/s" Tag="25" />
+                    <ComboBoxItem Content="30 images/s" Tag="30" />
+                    <ComboBoxItem Content="40 images/s" Tag="40" />
+                  </ComboBox>
+                  <TextBlock Classes="fieldHint"
+                             Text="Au-delà de 30 img/s, l'agent et le réseau deviennent souvent le facteur limitant." />
+
+                  <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
+
+                  <TextBlock Text="Densité de la liste" Classes="caption" Margin="0,0,0,5" />
+                  <ComboBox x:Name="DensityCombo" HorizontalAlignment="Stretch"
+                            SelectionChanged="DensityCombo_SelectionChanged">
+                    <ComboBoxItem Content="Compact" />
+                    <ComboBoxItem Content="Normal" />
+                    <ComboBoxItem Content="Confortable" />
+                  </ComboBox>
+                  <TextBlock Classes="fieldHint" Text="Le mode compact affiche davantage de machines à l'écran." />
+
+                  <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
+
+                  <CheckBox x:Name="DarkModeCheck" Content="Thème sombre" IsCheckedChanged="DarkMode_Changed" />
+                  <TextBlock x:Name="DarkModeHint" Classes="fieldHint" Margin="24,4,0,0"
+                             Text="Pour toutes les fenêtres de l'application. S'applique au prochain démarrage." />
+                </StackPanel>
+              </Border>
+
+              <TextBlock Text="Serveur" Classes="panelSectionTitle" />
+              <Border Classes="panelSection" Margin="0,8,0,14">
+                <StackPanel>
+                  <TextBlock Text="Adresse" Classes="fieldLabel" />
+                  <TextBox x:Name="HostBox" Margin="0,0,0,14" />
+                  <CheckBox x:Name="SelfSignedCheck" Content="Autoriser un certificat auto-signé" />
+                  <TextBlock Classes="fieldHint" Margin="24,4,0,0"
+                             Text="Le certificat présenté à la première connexion est retenu ; un certificat différent sera ensuite refusé." />
+                  <TextBlock Classes="fieldHint" Margin="24,4,0,0" Text="Modifier l'adresse impose de se reconnecter." />
+                </StackPanel>
+              </Border>
+
+              <TextBlock Text="Compte" Classes="panelSectionTitle" />
+              <Border Classes="panelSection" Margin="0,8,0,14">
+                <StackPanel>
+                  <TextBlock x:Name="AccountText" Classes="caption" TextWrapping="Wrap" Margin="0,0,0,14" />
+                  <CheckBox x:Name="RememberSettingCheck" Content="Mémoriser les identifiants" />
+                  <TextBlock x:Name="RememberSettingHint" Classes="fieldHint" Margin="24,4,0,0"
+                             Text="Le mot de passe est conservé dans le Trousseau de votre session." />
+                  <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
+                  <Button x:Name="LogoutButton" Content="Se déconnecter" Classes="tool" Click="Logout_Click"
+                          Padding="14,7" HorizontalAlignment="Left" Foreground="{DynamicResource DangerBrush}" />
+                  <TextBlock Classes="fieldHint" Text="Ferme la session et efface le mot de passe mémorisé." />
+                </StackPanel>
+              </Border>
+
+              <TextBlock Text="Diagnostic" Classes="panelSectionTitle" />
+              <Border Classes="panelSection" Margin="0,8,0,14">
+                <StackPanel>
+                  <Button Content="Ouvrir le dossier des journaux" Classes="tool" Click="OpenLogs_Click"
+                          Padding="12,7" HorizontalAlignment="Left" />
+                </StackPanel>
+              </Border>
+
+              <TextBlock x:Name="VersionText" Classes="caption" HorizontalAlignment="Center" Margin="0,2,0,0"
+                         Foreground="{DynamicResource PlaceholderBrush}" />
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Panel>
+  </DockPanel>
+</local:ChromeWindow>
