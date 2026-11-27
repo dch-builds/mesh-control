@@ -27,8 +27,8 @@ Written in C# / WPF on .NET 10. Its only external dependency is
   clicking a column header
 - One status dot everywhere: green online, blue when a MeshCentral user is
   connected, hollow offline, dotted when inactive for more than 30 days; the
-  last seen time turns orange after 30 days. Names read as code then label,
-  the connected user shows as initials (orange for a colleague)
+  last seen time turns orange after 30 days. The connected user shows as
+  initials (orange for a colleague)
 - Folders in the sidebar: online / total counter per folder
   (matching / total while chips are active), a filter field, adjustable
   width, folders pinned at the top or

@@ -661,8 +661,7 @@
                             </DataTemplate>
 
                             <!-- Ligne en carte (barre latérale affichée). L'état tient en
-                                 un point à droite (StatusDot) ; le nom s'affiche en deux
-                                 temps, code puis libellé (Highlight.SplitLabel). -->
+                                 un point à droite (StatusDot) ; le nom entier est en gras. -->
                             <DataTemplate x:Key="DeviceCardTemplate">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -688,7 +687,6 @@
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                         <TextBlock x:Name="NameText"
                                                    ui:Highlight.Text="{Binding Name}"
-                                                   ui:Highlight.SplitLabel="True"
                                                    FontSize="{DynamicResource DeviceNameSize}"
                                                    FontWeight="SemiBold"
                                                    Foreground="{StaticResource TextPrimaryBrush}"
@@ -821,7 +819,6 @@
 
                                     <TextBlock x:Name="NameText" Grid.Column="1"
                                                ui:Highlight.Text="{Binding Name}"
-                                               ui:Highlight.SplitLabel="True"
                                                FontSize="12.5" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimaryBrush}"
                                                TextTrimming="CharacterEllipsis"

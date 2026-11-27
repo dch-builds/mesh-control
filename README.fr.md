@@ -30,8 +30,8 @@ mises à jour.
 - Un seul point d'état partout : vert en ligne, bleu quand un utilisateur
   MeshCentral est connecté, vide hors ligne, pointillé quand la machine est
   inactive depuis plus de 30 jours ; la dernière présence passe à l'orange
-  au-delà de 30 jours. Les noms se lisent code puis libellé, l'utilisateur
-  connecté apparaît en initiales (orange pour un collègue)
+  au-delà de 30 jours. L'utilisateur connecté apparaît en initiales (orange
+  pour un collègue)
 - Dossiers de la barre latérale : compteur en ligne / total par
   dossier (répondant aux filtres / total quand des pastilles sont actives),
   champ de filtre, largeur réglable, dossiers épinglés en tête ou
