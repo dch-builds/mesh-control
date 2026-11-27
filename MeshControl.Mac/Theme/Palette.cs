@@ -83,7 +83,7 @@ public static class Palette
         // Équivalent du DropShadowEffect de WPF (flou 10, décalage 1, opacité
         // 0,5) : le flou d'Avalonia est plus étalé à valeur égale, d'où un
         // rayon plus court et une teinte un peu plus soutenue.
-        resources["CardShadow"] = BoxShadows.Parse(dark ? "0 1 6 0 #59000000" : "0 1 6 0 #1E000000");
+        resources["CardShadow"] = BoxShadows.Parse(dark ? "0 1 6 0 #66000000" : "0 1 6 0 #2C000000");
         ApplyDensity(app, 1);
     }
 

@@ -58,6 +58,9 @@ public sealed class MacSettings : ICertificatePinStore
     /// <summary>Qualité d'image par défaut du bureau à distance (voir DesktopQuality).</summary>
     public int DesktopQuality { get; set; } = 1;
 
+    /// <summary>Taille de police du terminal, retenue au zoom.</summary>
+    public int TerminalFontSize { get; set; } = 13;
+
     /// <summary>Images par seconde par défaut du bureau à distance.</summary>
     public int DesktopFrameRate { get; set; } = 10;
 

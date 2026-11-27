@@ -36,9 +36,13 @@ public sealed class Highlight : AvaloniaObject
         var query = GetQuery(block);
         var inlines = new InlineCollection();
 
+        // Les fragments reprennent explicitement la graisse du texte : sans
+        // cela, le nom des machines (semi-gras) s'affichait en graisse normale.
+        Run Make(string part) => new(part) { FontWeight = block.FontWeight };
+
         if (string.IsNullOrEmpty(query))
         {
-            inlines.Add(new Run(text));
+            inlines.Add(Make(text));
         }
         else
         {
@@ -49,11 +53,13 @@ public sealed class Highlight : AvaloniaObject
                 var index = TextMatch.IndexOf(text, query, start, out var length);
                 if (index < 0 || length == 0)
                 {
-                    inlines.Add(new Run(text[start..]));
+                    inlines.Add(Make(text[start..]));
                     break;
                 }
-                if (index > start) inlines.Add(new Run(text[start..index]));
-                inlines.Add(new Run(text.Substring(index, length)) { Background = brush });
+                if (index > start) inlines.Add(Make(text[start..index]));
+                var match = Make(text.Substring(index, length));
+                match.Background = brush;
+                inlines.Add(match);
                 start = index + length;
             }
         }

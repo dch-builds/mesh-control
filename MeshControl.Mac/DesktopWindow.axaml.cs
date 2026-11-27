@@ -38,6 +38,11 @@ public partial class DesktopWindow : ChromeWindow
 
     public string NodeId { get; }
 
+    /// <summary>Ouvre le terminal de la machine (fourni par la fenêtre principale).</summary>
+    public Action? OpenTerminal { get; init; }
+
+    private void OpenTerminal_Click(object? sender, RoutedEventArgs e) => OpenTerminal?.Invoke();
+
     public DesktopWindow(MeshServerConnection connection, MeshNode node)
     {
         _connection = connection;
@@ -49,7 +54,7 @@ public partial class DesktopWindow : ChromeWindow
         Title = $"{node.Name} — Mesh Control";
         TitleText.Text = node.Name;
         ToolTip.SetTip(TitleText, node.Name);
-        WindowDecorationProperties.SetElementRole(ToolbarControls, Avalonia.Input.WindowDecorationsElementRole.User);
+        TitleBar.MarkInteractive(ToolbarControls);
 
         // Réglages par défaut (volet des réglages de la fenêtre principale).
         var quality = App.Settings.DesktopQuality;
@@ -81,6 +86,7 @@ public partial class DesktopWindow : ChromeWindow
         Deactivated += (_, _) => ReleaseAllKeys();
 
         BuildShortcutsMenu();
+        InitializeFullscreenBar();
         UpdateScaleMenu();
         InitializeToolbarLayout();
 
@@ -205,6 +211,12 @@ public partial class DesktopWindow : ChromeWindow
         ScreenHost.Focus();
     }
 
+    private void CtrlAltDel_Click(object? sender, RoutedEventArgs e)
+    {
+        _session.SendCtrlAltDel();
+        ScreenHost.Focus();
+    }
+
     private void Reconnect_Click(object? sender, RoutedEventArgs e)
     {
         _session.RetryNow();
@@ -226,11 +238,15 @@ public partial class DesktopWindow : ChromeWindow
 
     private void BuildShortcutsMenu()
     {
-        var menu = (MenuFlyout)ShortcutsButton.Flyout!;
-        var system = _node.OsFamily == OSFamily.Linux ? KeyboardShortcuts.Linux : KeyboardShortcuts.Windows;
-        foreach (var shortcut in system) menu.Items.Add(ShortcutItem(shortcut));
-        menu.Items.Add(new Separator());
-        foreach (var shortcut in KeyboardShortcuts.Editing) menu.Items.Add(ShortcutItem(shortcut));
+        // Même menu dans la barre d'outils et dans la barre flottante du plein écran.
+        foreach (var button in new[] { ShortcutsButton, BarShortcutsButton })
+        {
+            var menu = (MenuFlyout)button.Flyout!;
+            var system = _node.OsFamily == OSFamily.Linux ? KeyboardShortcuts.Linux : KeyboardShortcuts.Windows;
+            foreach (var shortcut in system) menu.Items.Add(ShortcutItem(shortcut));
+            menu.Items.Add(new Separator());
+            foreach (var shortcut in KeyboardShortcuts.Editing) menu.Items.Add(ShortcutItem(shortcut));
+        }
     }
 
     private MenuItem ShortcutItem(RemoteShortcut shortcut)
@@ -432,13 +448,13 @@ public partial class DesktopWindow : ChromeWindow
     private async Task TypeAsync(string text)
     {
         _typingCts = new CancellationTokenSource();
-        PasteTypingLabel.Text = "Arrêter";
+        PasteTypingLabel.Text = BarTypingLabel.Text = "Arrêter";
         try { await _session.SendTextAsync(text, _typingCts.Token); }
         catch (OperationCanceledException) { }
         finally
         {
             _typingCts = null;
-            PasteTypingLabel.Text = "Taper";
+            PasteTypingLabel.Text = BarTypingLabel.Text = "Taper";
         }
     }
 
@@ -487,17 +503,124 @@ public partial class DesktopWindow : ChromeWindow
 
     private void ToggleFullscreen()
     {
-        bool full = WindowState != WindowState.FullScreen;
-        WindowState = full ? WindowState.FullScreen : WindowState.Normal;
+        WindowState = WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
+        ScreenHost.Focus();
+    }
+
+    /// <summary>
+    /// Barres masquées en plein écran, rétablies à la sortie. Réglé sur l'état
+    /// réel de la fenêtre, et non sur la bascule : on sort aussi du plein écran
+    /// autrement (bouton vert sous macOS, raccourci du système), et les barres
+    /// restaient alors masquées.
+    /// </summary>
+    protected override void OnPropertyChanged(Avalonia.AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property != WindowStateProperty || WindowTitleBar is null) return;
+
+        bool full = WindowState == WindowState.FullScreen;
         WindowTitleBar.IsVisible = !full;
         StatusBar.IsVisible = !full;
-        if (full)
+        ToolTip.SetTip(FullscreenButton, full ? "Quitter le plein écran (Ctrl+Maj+F)" : "Plein écran (Ctrl+Maj+F)");
+        if (full) ShowFullscreenHint();
+        else
         {
-            OverlayText.Text = "Plein écran — Ctrl+Maj+F pour revenir";
-            OverlayText.IsVisible = true;
-            DispatcherTimer.RunOnce(UpdateState, TimeSpan.FromSeconds(2.5));
+            HideFullscreenHint();
+            HideFullscreenBar();
         }
-        ScreenHost.Focus();
+    }
+
+    // MARK: - Barre flottante du plein écran
+
+    /// <summary>Masque la barre quand la souris l'a quittée depuis ce délai.</summary>
+    private readonly DispatcherTimer _fullscreenBarHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
+
+    /// <summary>Durée du rappel affiché à l'entrée en plein écran.</summary>
+    private readonly DispatcherTimer _fullscreenHintTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+
+    /// <summary>Hauteur, en pixels depuis le haut, de la bande qui fait apparaître la barre.</summary>
+    private const double FullscreenBarTriggerHeight = 3;
+
+    private void InitializeFullscreenBar()
+    {
+        _fullscreenBarHideTimer.Tick += (_, _) =>
+        {
+            _fullscreenBarHideTimer.Stop();
+            TryHideFullscreenBar();
+        };
+        _fullscreenHintTimer.Tick += (_, _) => HideFullscreenHint();
+
+        // Suivi de la souris sur toute la zone d'affichage, y compris quand
+        // l'image distante a déjà traité l'événement.
+        ScreenHost.AddHandler(PointerMovedEvent, ScreenHost_PointerMoved,
+                              RoutingStrategies.Tunnel | RoutingStrategies.Bubble, handledEventsToo: true);
+        FullscreenBar.PointerEntered += (_, _) => _fullscreenBarHideTimer.Stop();
+        FullscreenBar.PointerExited += (_, _) => RestartFullscreenBarHideTimer();
+
+        // Le menu des raccourcis s'ouvre hors de la barre : la souris la quitte
+        // pour l'atteindre. La barre reste affichée tant qu'il est ouvert.
+        ((MenuFlyout)BarShortcutsButton.Flyout!).Closed += (_, _) =>
+        {
+            if (FullscreenBar.IsVisible) RestartFullscreenBarHideTimer();
+        };
+        Closed += (_, _) =>
+        {
+            _fullscreenBarHideTimer.Stop();
+            _fullscreenHintTimer.Stop();
+        };
+    }
+
+    private void ScreenHost_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (WindowState != WindowState.FullScreen || FullscreenBar.IsVisible) return;
+        // Pas pendant un glisser : la barre s'ouvrirait sous une sélection qui remonte.
+        if (_buttonsDown.Count > 0) return;
+        if (e.GetPosition(ScreenHost).Y <= FullscreenBarTriggerHeight) ShowFullscreenBar();
+    }
+
+    private void ShowFullscreenBar()
+    {
+        FullscreenBarTitle.Text = _node.Name;
+        FullscreenBarDot.Fill = StatusDot.Fill;
+        // Le rappel d'entrée en plein écran occupe la même place.
+        HideFullscreenHint();
+        FullscreenBar.IsVisible = true;
+        Dispatcher.UIThread.Post(() => FullscreenBar.Opacity = 1, DispatcherPriority.Render);
+        // Si la souris n'y entre pas (bord touché dans un coin), elle repart.
+        RestartFullscreenBarHideTimer();
+    }
+
+    private void TryHideFullscreenBar()
+    {
+        var shortcutsOpen = ((MenuFlyout)BarShortcutsButton.Flyout!).IsOpen;
+        if (FullscreenBar.IsPointerOver || shortcutsOpen) return;
+        HideFullscreenBar();
+    }
+
+    private void HideFullscreenBar()
+    {
+        _fullscreenBarHideTimer.Stop();
+        FullscreenBar.Opacity = 0;
+        FullscreenBar.IsVisible = false;
+    }
+
+    private void RestartFullscreenBarHideTimer()
+    {
+        _fullscreenBarHideTimer.Stop();
+        _fullscreenBarHideTimer.Start();
+    }
+
+    private void ShowFullscreenHint()
+    {
+        FullscreenHint.IsVisible = true;
+        _fullscreenHintTimer.Stop();
+        _fullscreenHintTimer.Start();
+    }
+
+    private void HideFullscreenHint()
+    {
+        _fullscreenHintTimer.Stop();
+        FullscreenHint.IsVisible = false;
     }
 
     private async void Reboot_Click(object? sender, RoutedEventArgs e) => await PowerAsync(PowerActionType.Reboot);
@@ -575,6 +698,7 @@ public partial class DesktopWindow : ChromeWindow
         if (button is null || !TryMapToRemote(e, out int x, out int y)) return;
 
         e.Pointer.Capture(ActiveImage);
+        _buttonsDown.Add(button.Value);
         _session.SendMouseButton(button.Value, down: true, x, y);
         e.Handled = true;
     }
@@ -588,7 +712,7 @@ public partial class DesktopWindow : ChromeWindow
             Avalonia.Input.MouseButton.Middle => RemoteButton.Middle,
             _ => null,
         };
-        if (button is not null && TryMapToRemote(e, out int x, out int y))
+        if (button is not null && _buttonsDown.Remove(button.Value) && TryMapToRemote(e, out int x, out int y))
             _session.SendMouseButton(button.Value, down: false, x, y);
 
         var props = e.GetCurrentPoint(ActiveImage).Properties;
@@ -597,8 +721,20 @@ public partial class DesktopWindow : ChromeWindow
         e.Handled = true;
     }
 
-    private void Screen_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) =>
+    /// <summary>Boutons transmis « enfoncés » à la machine, pas encore relâchés.</summary>
+    private readonly HashSet<RemoteButton> _buttonsDown = new();
+
+    /// <summary>
+    /// Capture perdue sans relâchement (boîte de dialogue, changement
+    /// d'application) : on relâche les boutons restés enfoncés côté distant —
+    /// ceux-là seulement, comme la version Windows.
+    /// </summary>
+    private void Screen_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (_buttonsDown.Count == 0) return;
+        _buttonsDown.Clear();
         _session.ReleaseMouseButtons();
+    }
 
     /// <summary>
     /// Molette : le protocole attend des crans de 120. Le trackpad d'un Mac
@@ -645,6 +781,7 @@ public partial class DesktopWindow : ChromeWindow
             case Key.A: FitCheck.IsChecked = FitCheck.IsChecked != true; break;
             case Key.B: Reboot_Click(this, e); break;
             case Key.W: OpenWebPage_Click(this, e); break;
+            case Key.T: OpenTerminal?.Invoke(); break;
             case Key.Delete: _session.SendCtrlAltDel(); break;
             default: return false;
         }

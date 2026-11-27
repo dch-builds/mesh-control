@@ -196,9 +196,28 @@ public sealed class TitleBar : Border
     {
         for (var element = source as StyledElement; element is not null && element != this; element = element.Parent)
         {
-            if (element is Button or TabItem or TextBox) return true;
+            if (element is Button or TabItem or TextBox or ComboBox or MenuItem) return true;
+            if (element is Visual visual
+                && WindowDecorationProperties.GetElementRole(visual) == WindowDecorationsElementRole.User)
+                return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Donne le rôle « interactif » à chaque contrôle d'un panneau logé dans
+    /// la barre : le système les laisse recevoir leurs clics au lieu de les
+    /// traiter comme un glisser de fenêtre ou un double-clic d'agrandissement.
+    /// </summary>
+    public static void MarkInteractive(Panel panel)
+    {
+        WindowDecorationProperties.SetElementRole(panel, WindowDecorationsElementRole.User);
+        foreach (var child in panel.Children)
+        {
+            if (child is Panel inner) MarkInteractive(inner);
+            else if (child is Border { Child: Panel nested }) MarkInteractive(nested);
+            else WindowDecorationProperties.SetElementRole(child, WindowDecorationsElementRole.User);
+        }
     }
 
     private static Button WindowButton(Control content, string tip)

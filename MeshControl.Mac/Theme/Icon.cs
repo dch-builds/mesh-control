@@ -36,6 +36,7 @@ public enum IconKind
     Camera,          // 📷
     Keyboard,        // E765 / ⌨
     FullScreen,      // ⛶
+    BackToWindow,    // E73F
 }
 
 /// <summary>
@@ -112,7 +113,7 @@ public sealed class Icon : Control
     /// <summary>Tracés dans un carré de 16 × 16 ; « filled » pour les formes pleines.</summary>
     private static readonly Dictionary<IconKind, (string Data, bool Filled)> Shapes = new()
     {
-        [IconKind.Search] = ("M 11.5,6.5 A 5,5 0 1 1 1.5,6.5 A 5,5 0 1 1 11.5,6.5 Z M 10.1,10.1 L 14.5,14.5", false),
+        [IconKind.Search] = ("M 14.5,6.5 A 5,5 0 1 1 4.5,6.5 A 5,5 0 1 1 14.5,6.5 Z M 5.9,10.1 L 1.5,14.5", false),
         [IconKind.Close] = ("M 3.5,3.5 L 12.5,12.5 M 12.5,3.5 L 3.5,12.5", false),
         [IconKind.ChevronDown] = ("M 2.5,5.5 L 8,11 L 13.5,5.5", false),
         [IconKind.ChevronUp] = ("M 2.5,10.5 L 8,5 L 13.5,10.5", false),
@@ -139,6 +140,7 @@ public sealed class Icon : Control
         [IconKind.Copy] = ("M 5.5,5.5 L 14.5,5.5 L 14.5,14.5 L 5.5,14.5 Z M 3.5,10.5 L 1.5,10.5 L 1.5,1.5 L 10.5,1.5 L 10.5,3.5", false),
         [IconKind.Camera] = ("M 1.5,5 L 4.5,5 L 6,3 L 10,3 L 11.5,5 L 14.5,5 L 14.5,13.5 L 1.5,13.5 Z M 10.6,9 A 2.6,2.6 0 1 1 5.4,9 A 2.6,2.6 0 1 1 10.6,9 Z", false),
         [IconKind.Keyboard] = ("M 1,3.5 L 15,3.5 L 15,12.5 L 1,12.5 Z M 3.5,6.3 L 4,6.3 M 6,6.3 L 6.5,6.3 M 8.5,6.3 L 9,6.3 M 11,6.3 L 11.5,6.3 M 4.5,9.6 L 11.5,9.6", false),
+        [IconKind.BackToWindow] = ("M 5.5,1.5 L 5.5,5.5 L 1.5,5.5 M 10.5,1.5 L 10.5,5.5 L 14.5,5.5 M 14.5,10.5 L 10.5,10.5 L 10.5,14.5 M 5.5,14.5 L 5.5,10.5 L 1.5,10.5", false),
         [IconKind.FullScreen] = ("M 1.5,5.5 L 1.5,1.5 L 5.5,1.5 M 10.5,1.5 L 14.5,1.5 L 14.5,5.5 M 14.5,10.5 L 14.5,14.5 L 10.5,14.5 M 5.5,14.5 L 1.5,14.5 L 1.5,10.5", false),
     };
 }

@@ -381,6 +381,33 @@
     <Setter Property="Foreground" Value="{DynamicResource PlaceholderBrush}" />
   </Style>
 
+  <!-- Bouton de la barre flottante du plein écran, sur fond sombre.
+       Non focalisable : le clavier reste à la machine distante. -->
+  <Style Selector="Button.overlay">
+    <Setter Property="Foreground" Value="#E4E6EA" />
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Padding" Value="10,6" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6"
+                Padding="{TemplateBinding Padding}">
+          <ContentPresenter Name="Presenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="Button.overlay:pointerover /template/ Border#Bd">
+    <Setter Property="Background" Value="#26FFFFFF" />
+  </Style>
+  <Style Selector="Button.overlay:disabled /template/ Border#Bd">
+    <Setter Property="Opacity" Value="0.4" />
+  </Style>
+
   <!-- Boutons de la barre de titre (Windows). -->
   <Style Selector="Button.window">
     <Setter Property="Width" Value="46" />
@@ -457,40 +484,79 @@
     <Setter Property="FontSize" Value="12" />
   </Style>
 
+  <!-- Liste déroulante, gabarit de la version Windows : un cadre arrondi qui
+       montre le choix courant, un petit chevron à droite, une liste
+       surgissante arrondie. -->
   <Style Selector="ComboBox">
     <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     <Setter Property="Background" Value="{DynamicResource ControlBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource SeparatorBrush}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="CornerRadius" Value="8" />
     <Setter Property="MinHeight" Value="30" />
     <Setter Property="FontSize" Value="12" />
-    <Setter Property="Padding" Value="10,0,8,0" />
     <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="MaxDropDownHeight" Value="420" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Panel>
+          <Border Name="Frame" Background="{TemplateBinding Background}"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8"
+                  MinHeight="{TemplateBinding MinHeight}">
+            <Grid ColumnDefinitions="*,Auto">
+              <ContentControl Margin="10,0,6,0" VerticalAlignment="Center" HorizontalAlignment="Left"
+                              IsHitTestVisible="False"
+                              Content="{TemplateBinding SelectionBoxItem}"
+                              ContentTemplate="{TemplateBinding ItemTemplate}" />
+              <local:Icon Grid.Column="1" Kind="ChevronDown" Size="9" Margin="0,0,10,0"
+                          VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}"
+                          IsHitTestVisible="False" />
+            </Grid>
+          </Border>
+          <Popup Name="PART_Popup" IsLightDismissEnabled="True" PlacementTarget="Frame"
+                 Placement="BottomEdgeAlignedLeft" VerticalOffset="4"
+                 IsOpen="{TemplateBinding IsDropDownOpen, Mode=TwoWay}"
+                 MinWidth="{Binding Bounds.Width, RelativeSource={RelativeSource TemplatedParent}}"
+                 MaxHeight="{TemplateBinding MaxDropDownHeight}" InheritsTransform="True">
+            <Border Background="{DynamicResource CardBrush}" BorderBrush="{DynamicResource SeparatorBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="4">
+              <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}" />
+              </ScrollViewer>
+            </Border>
+          </Popup>
+        </Panel>
+      </ControlTemplate>
+    </Setter>
   </Style>
-  <Style Selector="ComboBox:pointerover /template/ Border#Background">
-    <Setter Property="Background" Value="{DynamicResource ControlBrush}" />
+  <Style Selector="ComboBox:pointerover /template/ Border#Frame">
     <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
   </Style>
-  <Style Selector="ComboBox /template/ Border#PopupBorder">
-    <Setter Property="Background" Value="{DynamicResource CardBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource SeparatorBrush}" />
-    <Setter Property="CornerRadius" Value="8" />
-    <Setter Property="Padding" Value="4" />
+  <Style Selector="ComboBox:disabled">
+    <Setter Property="Opacity" Value="0.45" />
   </Style>
+
   <Style Selector="ComboBoxItem">
     <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-    <Setter Property="CornerRadius" Value="5" />
-    <Setter Property="Padding" Value="8,6" />
     <Setter Property="FontSize" Value="12" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <!-- ContentControl et non ContentPresenter : le thème Fluent colore
+             tout ContentPresenter du gabarit d'un ComboBoxItem survolé ou
+             sélectionné (rectangle bleu soutenu dans la marge de l'élément). -->
+        <Border Name="Bd" Background="Transparent" CornerRadius="5" Padding="8,6">
+          <ContentControl Content="{TemplateBinding Content}"
+                          ContentTemplate="{TemplateBinding ContentTemplate}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
   </Style>
-  <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="ComboBoxItem:pointerover /template/ Border#Bd">
     <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
-    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
   </Style>
-  <Style Selector="ComboBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+  <Style Selector="ComboBoxItem:selected /template/ Border#Bd">
     <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
-    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
   </Style>
 
   <!-- ============================================================
@@ -582,7 +648,10 @@
     <Setter Property="Template">
       <ControlTemplate>
         <Panel>
-          <!-- Survol en fondu : une couche dédiée, sous celle de la sélection. -->
+          <!-- Survol en fondu : une couche dédiée, sous celle de la sélection.
+               Présentateur nommé « Presenter » et non PART_ContentPresenter :
+               le thème Fluent colorerait ce dernier au survol et à la
+               sélection, par-dessus nos propres calques. -->
           <Border Name="HoverLayer" Background="{DynamicResource RowHoverBrush}"
                   CornerRadius="8" Opacity="0">
             <Border.Transitions>
@@ -593,7 +662,7 @@
           </Border>
           <Border Name="Bd" Background="Transparent" CornerRadius="8"
                   Padding="{DynamicResource DeviceRowPadding}">
-            <ContentPresenter Name="PART_ContentPresenter"
+            <ContentPresenter Name="Presenter"
                               Content="{TemplateBinding Content}"
                               ContentTemplate="{TemplateBinding ContentTemplate}"
                               HorizontalContentAlignment="Stretch" />
@@ -629,28 +698,6 @@
     <Setter Property="IsVisible" Value="False" />
   </Style>
 
-  <!-- Le thème Fluent colore lui-même la ligne survolée ou sélectionnée (fond
-       bleu-gris soutenu) : neutralisé, nos calques HoverLayer et Bd s'en
-       chargent, comme dans la version Windows. -->
-  <Style Selector="ListBox.devices > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.devices > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.devices > ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.devices > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.devices > ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.devices > ListBoxItem:selected:pressed /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.devices > ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.devices > ListBoxItem:focus /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.folders > ListBoxItem /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.folders > ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.folders > ListBoxItem:pressed /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.folders > ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.folders > ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.folders > ListBoxItem:selected:pressed /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.folders > ListBoxItem:selected:focus /template/ ContentPresenter#PART_ContentPresenter,
-                   ListBox.folders > ListBoxItem:focus /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="Transparent" />
-    <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-  </Style>
 
   <!-- Actions rapides : montrées au survol de la ligne. -->
   <Style Selector="ListBox.devices > ListBoxItem StackPanel.hoverActions">
@@ -700,7 +747,7 @@
             </Border.Transitions>
           </Border>
           <Border Name="Bd" Background="Transparent" CornerRadius="7" Padding="9,7">
-            <ContentPresenter Name="PART_ContentPresenter"
+            <ContentPresenter Name="Presenter"
                               Content="{TemplateBinding Content}"
                               ContentTemplate="{TemplateBinding ContentTemplate}"
                               HorizontalContentAlignment="Stretch" />
@@ -765,6 +812,49 @@
   </Style>
   <Style Selector="Border.folderFilter:focus-within">
     <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+  </Style>
+
+  <!-- ============================================================
+       Terminal : barre de recherche sombre (TerminalSearchBar)
+       ============================================================ -->
+  <Style Selector="TextBox.terminalSearch:pointerover /template/ Border#PART_BorderElement,
+                   TextBox.terminalSearch:focus /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="#1B1B1F" />
+    <Setter Property="BorderBrush" Value="#3C3C44" />
+  </Style>
+  <Style Selector="TextBox.terminalSearch:pointerover, TextBox.terminalSearch:focus">
+    <Setter Property="Foreground" Value="#E4E6EA" />
+  </Style>
+  <Style Selector="Button.terminalSearch">
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Foreground" Value="#D4D4D4" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Width" Value="26" />
+    <Setter Property="Height" Value="24" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Cursor" Value="Hand" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="Shape" Background="{TemplateBinding Background}" CornerRadius="5">
+          <ContentPresenter Name="Presenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Content="{TemplateBinding Content}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="Button.terminalSearch:pointerover /template/ Border#Shape">
+    <Setter Property="Background" Value="#3C3C44" />
+  </Style>
+  <Style Selector="Button.terminalSearch:disabled">
+    <Setter Property="Opacity" Value="0.35" />
+  </Style>
+
+  <!-- Pastille d'état d'une session (Connecté, Session fermée…). -->
+  <Style Selector="Border.statusBadge">
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="Padding" Value="8,2" />
+    <Setter Property="VerticalAlignment" Value="Center" />
   </Style>
 
   <!-- Squelette du chargement : pulsation douce. -->

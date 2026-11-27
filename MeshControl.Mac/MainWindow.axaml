@@ -148,10 +148,8 @@
                         <Border Grid.Column="2" CornerRadius="9" Padding="7,1,7,2" Margin="8,0,0,0"
                                 VerticalAlignment="Center" Background="{Binding PillBrush}"
                                 IsVisible="{Binding IsEntry}">
-                          <TextBlock FontSize="10.5">
-                            <Run Text="{Binding Matching}" FontWeight="Bold" Foreground="{Binding CountColor}" />
-                            <Run Text="{Binding TotalLabel}" Foreground="{Binding TotalBrush}" />
-                          </TextBlock>
+                          <!-- Fragments accolés : un saut de ligne entre eux ajouterait une espace. -->
+                          <TextBlock FontSize="10.5"><Run Text="{Binding Matching}" FontWeight="Bold" Foreground="{Binding CountColor}" /><Run Text="{Binding TotalLabel}" Foreground="{Binding TotalBrush}" /></TextBlock>
                         </Border>
                       </Grid>
                     </DataTemplate>
@@ -320,6 +318,11 @@
                         <ContextMenu x:Name="DeviceMenu" Opening="DeviceMenu_Opening">
                           <MenuItem x:Name="MenuDesktop" Header="Bureau à distance" InputGesture="Enter"
                                     FontWeight="SemiBold" Click="MenuDesktop_Click" />
+                          <MenuItem x:Name="MenuTerminal" Header="Terminal" InputGesture="Ctrl+T"
+                                    Click="MenuTerminal_Click"
+                                    ToolTip.Tip="Invite de commandes / PowerShell via l'agent" />
+                          <MenuItem x:Name="MenuSsh" Header="Terminal SSH" Click="MenuSsh_Click"
+                                    ToolTip.Tip="Nécessite SSH activé sur le serveur MeshCentral" />
                           <Separator />
                           <MenuItem x:Name="MenuWake" Header="Réveiller (Wake-on-LAN)" Click="MenuWake_Click" />
                           <MenuItem x:Name="MenuReboot" Header="Redémarrer…" Click="MenuReboot_Click" />
@@ -376,6 +379,10 @@
                                 <Button Classes="rowAction" Tag="Desktop" Click="RowAction_Click"
                                         IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Bureau à distance">
                                   <local:Icon Kind="Desktop" Size="12" />
+                                </Button>
+                                <Button Classes="rowAction" Tag="Terminal" Click="RowAction_Click"
+                                        IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Terminal">
+                                  <local:Icon Kind="Terminal" Size="12" />
                                 </Button>
                                 <Button Classes="rowAction" Tag="Wake" Click="RowAction_Click"
                                         IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="Réveiller (Wake-on-LAN)">
@@ -448,6 +455,10 @@
                                 <Button Classes="rowAction" Tag="Desktop" Click="RowAction_Click" Width="28" Height="26"
                                         IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Bureau à distance">
                                   <local:Icon Kind="Desktop" Size="12" />
+                                </Button>
+                                <Button Classes="rowAction" Tag="Terminal" Click="RowAction_Click" Width="28" Height="26"
+                                        IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Terminal">
+                                  <local:Icon Kind="Terminal" Size="12" />
                                 </Button>
                                 <Button Classes="rowAction" Tag="Wake" Click="RowAction_Click" Width="28" Height="26"
                                         IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="Réveiller (Wake-on-LAN)">

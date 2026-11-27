@@ -137,7 +137,7 @@
             </Button>
 
             <Button x:Name="MoreButton" Content="⋯" Classes="tool" Focusable="False" Padding="9,5"
-                    ToolTip.Tip="Autres outils : page web (Ctrl+Maj+W), échelle de l'image">
+                    ToolTip.Tip="Autres outils : terminal (Ctrl+Maj+T), page web (Ctrl+Maj+W), échelle de l'image">
               <Button.Flyout>
                 <MenuFlyout Placement="BottomEdgeAlignedRight">
                   <!-- Boutons de la barre repliés ici quand la fenêtre est trop
@@ -149,6 +149,8 @@
                   <MenuItem x:Name="OverflowReleaseItem" IsVisible="False" Header="Débloquer le clavier distant"
                             Click="ReleaseModifiers_Click" />
                   <Separator x:Name="OverflowSeparator" IsVisible="False" />
+                  <MenuItem Header="Terminal" Click="OpenTerminal_Click" />
+                  <Separator />
                   <MenuItem Header="Page web MeshCentral" Click="OpenWebPage_Click" />
                   <Separator />
                   <MenuItem x:Name="ScaleMenu" Header="Échelle de l'image">
@@ -198,6 +200,75 @@
                     VerticalScrollBarVisibility="Auto" Focusable="False">
         <Image x:Name="ScreenImageNative" Stretch="None" HorizontalAlignment="Center" VerticalAlignment="Center" />
       </ScrollViewer>
+      <!-- Rappel à l'entrée en plein écran : sans lui, le moyen d'en sortir
+           serait invisible. Échap reste à la machine distante. -->
+      <Border x:Name="FullscreenHint" IsVisible="False" IsHitTestVisible="False" Background="#D9000000"
+              CornerRadius="8" Padding="14,8" VerticalAlignment="Top" HorizontalAlignment="Center"
+              Margin="0,18,0,0">
+        <TextBlock Text="Plein écran — souris en haut de l'écran pour la barre d'outils, Ctrl+Maj+F pour revenir"
+                   Foreground="#E4E6EA" FontSize="12" />
+      </Border>
+
+      <!-- Barre flottante du plein écran : apparaît quand la souris touche le
+           bord haut de l'écran, disparaît quand elle s'en éloigne. -->
+      <Border x:Name="FullscreenBar" IsVisible="False" Opacity="0" VerticalAlignment="Top"
+              HorizontalAlignment="Center" Background="#EB1B1D21" BorderBrush="#33FFFFFF"
+              BorderThickness="1,0,1,1" CornerRadius="0,0,10,10" Padding="8,5"
+              BoxShadow="0 2 16 0 #80000000">
+        <Border.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Opacity" Duration="0:0:0.14" />
+          </Transitions>
+        </Border.Transitions>
+        <StackPanel Orientation="Horizontal">
+          <Ellipse x:Name="FullscreenBarDot" Width="8" Height="8" Fill="{DynamicResource OnlineBrush}"
+                   VerticalAlignment="Center" Margin="6,0,8,0" />
+          <TextBlock x:Name="FullscreenBarTitle" Foreground="#E4E6EA" FontSize="12" FontWeight="SemiBold"
+                     VerticalAlignment="Center" MaxWidth="220" TextTrimming="CharacterEllipsis"
+                     Margin="0,0,10,0" />
+          <Border Width="1" Background="#33FFFFFF" Margin="2,5" />
+
+          <Button Classes="overlay" Click="Paste_Click" Margin="4,0,0,0"
+                  ToolTip.Tip="Coller le presse-papiers local (Ctrl+Maj+V)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Paste" Size="13" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Coller" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="overlay" Click="PasteAsTyping_Click"
+                  ToolTip.Tip="Coller en simulant la frappe">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Keyboard" Size="13" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock x:Name="BarTypingLabel" Text="Taper" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+
+          <Border Width="1" Background="#33FFFFFF" Margin="4,5" />
+
+          <Button x:Name="BarShortcutsButton" Classes="overlay" Content="Raccourcis ▾"
+                  ToolTip.Tip="Combinaisons envoyées à la machine distante">
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedLeft" />
+            </Button.Flyout>
+          </Button>
+          <Button Classes="overlay" Content="Ctrl+Alt+Suppr" Click="CtrlAltDel_Click"
+                  ToolTip.Tip="Envoyer Ctrl+Alt+Suppr (Ctrl+Maj+Suppr)" />
+          <Button Classes="overlay" Click="Screenshot_Click" Padding="9,6"
+                  ToolTip.Tip="Capturer l'écran distant (Ctrl+Maj+S)">
+            <local:Icon Kind="Camera" Size="13" />
+          </Button>
+
+          <Border Width="1" Background="#33FFFFFF" Margin="4,5" />
+
+          <Button Classes="overlay" Click="Fullscreen_Click" ToolTip.Tip="Quitter le plein écran (Ctrl+Maj+F)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="BackToWindow" Size="13" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Quitter" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Border>
+
       <TextBlock x:Name="OverlayText" Foreground="#C8FFFFFF" FontSize="15" HorizontalAlignment="Center"
                  VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="24"
                  IsHitTestVisible="False" />

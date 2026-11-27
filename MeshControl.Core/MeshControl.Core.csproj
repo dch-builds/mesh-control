@@ -41,6 +41,7 @@
     <Compile Include="..\Files\FilesSession.cs" Link="Files\FilesSession.cs" />
 
     <Compile Include="..\SSH\AgentTerminalSession.cs" Link="SSH\AgentTerminalSession.cs" />
+    <Compile Include="..\SSH\QuickCommands.cs" Link="SSH\QuickCommands.cs" />
     <Compile Include="..\SSH\SshSession.cs" Link="SSH\SshSession.cs" />
     <Compile Include="..\SSH\TerminalEmulator.cs" Link="SSH\TerminalEmulator.cs" />
   </ItemGroup>

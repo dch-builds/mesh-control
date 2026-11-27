@@ -1,0 +1,134 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.TerminalWindow"
+                   Width="920" Height="620" MinWidth="520" MinHeight="300"
+                   WindowStartupLocation="CenterScreen" Background="#1B1B1F">
+
+  <!-- Portage de SSH/TerminalWindow.xaml et SSH/SshWindow.xaml (version
+       Windows), réunis : même barre d'outils, le choix du shell pour le
+       terminal par l'agent, le bandeau d'identifiants pour SSH. -->
+  <DockPanel x:Name="RootPanel">
+    <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top" />
+
+    <!-- Barre d'outils -->
+    <Border x:Name="Toolbar" DockPanel.Dock="Top" Background="{DynamicResource CardBrush}"
+            BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,0,1" Padding="12,7">
+      <Grid ColumnDefinitions="*,Auto">
+        <DockPanel Grid.Column="0" Margin="0,0,12,0" HorizontalAlignment="Left" LastChildFill="True">
+          <Border x:Name="IdentityBadge" DockPanel.Dock="Right" Background="{DynamicResource SubtleFillBrush}"
+                  CornerRadius="6" Padding="7,3" VerticalAlignment="Center" Margin="10,0,0,0" IsVisible="False">
+            <TextBlock x:Name="IdentityText" FontSize="10" Foreground="{DynamicResource TextSecondaryBrush}" />
+          </Border>
+          <ComboBox x:Name="ShellCombo" DockPanel.Dock="Right" Width="180" Focusable="False"
+                    SelectionChanged="ShellCombo_SelectionChanged" />
+          <TextBlock x:Name="ShellLabel" DockPanel.Dock="Right" Text="Shell" Classes="caption"
+                     VerticalAlignment="Center" Margin="0,0,7,0" />
+          <Border x:Name="StatusBadge" DockPanel.Dock="Right" Classes="statusBadge" Margin="0,0,14,0">
+            <TextBlock x:Name="StatusLabel" FontSize="10" FontWeight="SemiBold" />
+          </Border>
+          <TextBlock x:Name="TitleText" FontSize="13" FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"
+                     Margin="0,0,10,0" TextTrimming="CharacterEllipsis" />
+        </DockPanel>
+
+        <!-- Les boutons ne prennent pas le focus : la frappe suivante reste au shell. -->
+        <StackPanel x:Name="ToolbarControls" Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right"
+                    VerticalAlignment="Center">
+          <Button x:Name="DesktopButton" Classes="tool" Focusable="False" Margin="0,0,6,0" Click="Desktop_Click"
+                  ToolTip.Tip="Ouvrir le bureau à distance de cette machine (Ctrl+Maj+D)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Desktop" Size="12" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Bureau" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="CommandsButton" Classes="tool" Focusable="False" Margin="0,0,6,0" Click="Commands_Click"
+                  ToolTip.Tip="Commandes courantes : dossiers, informations, réseau, maintenance (Ctrl+Maj+K)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Terminal" Size="12" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Commandes ▾" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Focusable="False" Margin="0,0,6,0" Click="Paste_Click"
+                  ToolTip.Tip="Coller le presse-papiers (Ctrl+Maj+V, ou clic du milieu)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Paste" Size="12" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Coller" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Focusable="False" Margin="0,0,6,0" Click="CopyAll_Click"
+                  ToolTip.Tip="Copier la sélection, ou tout le terminal à défaut (Ctrl+Maj+C)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Copy" Size="12" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Copier" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Focusable="False" Margin="0,0,6,0" Click="Search_Click"
+                  ToolTip.Tip="Rechercher dans l'historique (Ctrl+Maj+R)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Search" Size="12" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Rechercher" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="ClearButton" Classes="tool" Focusable="False" Margin="0,0,6,0" Click="Clear_Click"
+                  IsVisible="False" ToolTip.Tip="Effacer l'écran et l'historique">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Close" Size="11" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Effacer" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="ReconnectButton" Classes="tool" Focusable="False" Margin="0,0,6,0" Click="Reconnect_Click"
+                  ToolTip.Tip="Rouvrir la session (Entrée, une fois la session fermée)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Refresh" Size="12" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Reconnecter" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="FullscreenButton" Classes="tool" Focusable="False" Padding="9,5" Click="Fullscreen_Click"
+                  ToolTip.Tip="Plein écran (Ctrl+Maj+F)">
+            <local:Icon Kind="FullScreen" Size="13" />
+          </Button>
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Identifiants SSH, demandés par le serveur. -->
+    <Border x:Name="AuthPanel" DockPanel.Dock="Top" Background="{DynamicResource CardBrush}"
+            BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,0,1" Padding="16,14"
+            IsVisible="False">
+      <StackPanel>
+        <TextBlock x:Name="AuthTitle" Text="Identifiants SSH" FontSize="13" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,0,0,10" />
+        <StackPanel Orientation="Horizontal">
+          <StackPanel x:Name="UsernameGroup" Margin="0,0,12,0">
+            <TextBlock Text="Utilisateur" Classes="caption" Margin="0,0,0,4" />
+            <TextBox x:Name="SshUserBox" Width="180" KeyDown="AuthField_KeyDown" />
+          </StackPanel>
+          <StackPanel Margin="0,0,12,0">
+            <TextBlock x:Name="PasswordLabel" Text="Mot de passe" Classes="caption" Margin="0,0,0,4" />
+            <TextBox x:Name="SshPassBox" Width="200" PasswordChar="●" KeyDown="AuthField_KeyDown" />
+          </StackPanel>
+          <StackPanel VerticalAlignment="Bottom" Margin="0,0,12,0">
+            <CheckBox x:Name="SshRememberCheck" Content="Mémoriser sur le serveur" Margin="0,0,0,7"
+                      ToolTip.Tip="Enregistre les identifiants côté MeshCentral pour les prochaines sessions" />
+          </StackPanel>
+          <Button Content="Se connecter" Classes="primary" HorizontalAlignment="Left" Click="Authenticate_Click"
+                  VerticalAlignment="Bottom" Padding="16,7" Margin="0,0,0,1" />
+        </StackPanel>
+        <TextBlock x:Name="AuthError" Classes="caption" Foreground="{DynamicResource DangerBrush}"
+                   TextWrapping="Wrap" Margin="0,8,0,0" IsVisible="False" />
+      </StackPanel>
+    </Border>
+
+    <Panel>
+      <!-- Marge : le texte ne colle pas aux bords ; pas à droite, où se tient la glissière. -->
+      <Border x:Name="TerminalHost" Background="#1B1B1F" Padding="10,8,0,0" />
+      <local:TerminalSearchBar x:Name="SearchBar" />
+      <Border x:Name="FullscreenHint" IsVisible="False" IsHitTestVisible="False" Background="#D9000000"
+              CornerRadius="8" Padding="14,8" VerticalAlignment="Top" HorizontalAlignment="Center"
+              Margin="0,18,0,0">
+        <TextBlock Text="Plein écran — Ctrl+Maj+F pour revenir" Foreground="#E4E6EA" FontSize="12" />
+      </Border>
+    </Panel>
+  </DockPanel>
+</local:ChromeWindow>

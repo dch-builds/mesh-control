@@ -32,6 +32,14 @@ public partial class MainWindow : ChromeWindow
     private string? _password;
 
     private readonly List<DesktopWindow> _desktops = new();
+    private readonly List<TerminalWindow> _terminals = new();
+
+    /// <summary>Ferme toutes les sessions ouvertes (bureau, terminal) : elles reposent sur la liaison.</summary>
+    private void CloseSessions()
+    {
+        foreach (var window in _desktops.ToList()) window.Close();
+        foreach (var window in _terminals.ToList()) window.Close();
+    }
 
     /// <summary>Touche de commande : Cmd sur Mac, Ctrl ailleurs.</summary>
     private static readonly KeyModifiers CommandKey =
@@ -421,7 +429,7 @@ public partial class MainWindow : ChromeWindow
             if (_connection != lost) { connection.Dispose(); return; }
 
             // Les sessions ouvertes reposaient sur l'ancienne liaison.
-            foreach (var window in _desktops.ToList()) window.Close();
+            CloseSessions();
             lost.DevicesChanged -= ScheduleListRefresh;
             lost.Dispose();
             connection.StateChanged += () => Dispatcher.UIThread.Post(() => OnConnectionStateChanged(connection));
@@ -439,7 +447,7 @@ public partial class MainWindow : ChromeWindow
         var connection = _connection;
         _connection = null;
         if (connection is null) return;
-        foreach (var window in _desktops.ToList()) window.Close();
+        CloseSessions();
         connection.DevicesChanged -= ScheduleListRefresh;
         try { connection.Disconnect(); } catch { }
         connection.Dispose();
@@ -1317,6 +1325,11 @@ public partial class MainWindow : ChromeWindow
             e.Handled = true;
             OpenDesktop(row);
         }
+        else if (e.Key == Key.T && e.KeyModifiers == CommandKey && row is not null)
+        {
+            e.Handled = true;
+            OpenTerminal(row.Node, TerminalWindow.Mode.Agent);
+        }
         else if (e.Key == Key.F2 && row is not null)
         {
             e.Handled = true;
@@ -1336,6 +1349,7 @@ public partial class MainWindow : ChromeWindow
         switch (action)
         {
             case "Desktop": OpenDesktop(row); break;
+            case "Terminal": OpenTerminal(row.Node, TerminalWindow.Mode.Agent); break;
             case "Wake": _ = RunPowerAsync(() => _connection!.WakeAsync(row.Node.Id),
                                            $"Signal de réveil envoyé à « {row.Name} »."); break;
         }
@@ -1382,12 +1396,47 @@ public partial class MainWindow : ChromeWindow
             existing.Activate();
             return;
         }
-        var window = new DesktopWindow(_connection, node);
+        var window = new DesktopWindow(_connection, node)
+        {
+            OpenTerminal = () => OpenTerminal(node, TerminalWindow.Mode.Agent),
+        };
         window.Closed += (_, _) => _desktops.Remove(window);
         _desktops.Add(window);
         window.Show();
 
         if (Settings.FolderView) RebuildFolderPanel();
+    }
+
+    /// <summary>
+    /// Terminal de la machine, par l'agent ou par SSH. Une fenêtre déjà
+    /// ouverte pour la même machine et le même mode est ramenée au premier plan.
+    /// </summary>
+    private void OpenTerminal(MeshNode node, TerminalWindow.Mode mode)
+    {
+        if (_connection is null) return;
+        if (!node.IsOnline || (mode == TerminalWindow.Mode.Agent && !node.HasAgent))
+        {
+            ShowToast($"« {node.Name} » est hors ligne : terminal indisponible.");
+            return;
+        }
+
+        Settings.RememberRecent(node.Id);
+        Settings.Save();
+
+        var existing = _terminals.FirstOrDefault(w => w.NodeId == node.Id && w.SessionMode == mode);
+        if (existing is not null)
+        {
+            existing.Activate();
+            return;
+        }
+        var row = _rowsById.GetValueOrDefault(node.Id);
+        var window = new TerminalWindow(_connection, node, mode)
+        {
+            OpenDesktop = () => { if (row is not null) OpenDesktop(row); },
+        };
+        window.Closed += (_, _) => _terminals.Remove(window);
+        _terminals.Add(window);
+        window.Show();
     }
 
     // MARK: - Menu contextuel
@@ -1400,6 +1449,8 @@ public partial class MainWindow : ChromeWindow
         var first = rows.FirstOrDefault();
 
         MenuDesktop.IsEnabled = single && first!.RemoteActionsVisible;
+        MenuTerminal.IsEnabled = single && first!.RemoteActionsVisible;
+        MenuSsh.IsEnabled = single && first!.IsOnline;
         MenuWake.IsEnabled = any && rows.Any(r => !r.IsOnline);
         MenuReboot.IsEnabled = MenuSleep.IsEnabled = MenuPowerOff.IsEnabled = any && rows.Any(r => r.IsOnline);
         MenuRename.IsEnabled = single;
@@ -1412,6 +1463,16 @@ public partial class MainWindow : ChromeWindow
     private void MenuDesktop_Click(object? sender, RoutedEventArgs e)
     {
         if (SelectedRows.FirstOrDefault() is { } row) OpenDesktop(row);
+    }
+
+    private void MenuTerminal_Click(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedRows.FirstOrDefault() is { } row) OpenTerminal(row.Node, TerminalWindow.Mode.Agent);
+    }
+
+    private void MenuSsh_Click(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedRows.FirstOrDefault() is { } row) OpenTerminal(row.Node, TerminalWindow.Mode.Ssh);
     }
 
     private void MenuWake_Click(object? sender, RoutedEventArgs e) => BulkWake_Click(sender, e);
