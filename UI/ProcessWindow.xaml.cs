@@ -89,6 +89,7 @@ public partial class ProcessWindow : ChromeWindow
         TitleText.Text = $"Processus de {node.Name}";
         NodeDot.Visibility = node.IsOnline ? Visibility.Visible : Visibility.Collapsed;
         UpdateSortArrows();
+        Motion.IndeterminateWhileVisible(LoadingBar);
         ColumnHeaderAlign.Attach(ProcessList, scrollbar => ColumnHeader.Padding = new Thickness(10, 4, 10 + scrollbar, 7));
 
         _autoRefresh.Tick += async (_, _) => await LoadAsync(quiet: true);

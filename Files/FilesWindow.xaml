@@ -623,7 +623,7 @@
                                            TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320"
                                            Margin="0,5,0,0"/>
                                 <ProgressBar x:Name="EmptyProgress" Style="{StaticResource SlimProgressBar}"
-                                             Width="140" Margin="0,14,0,0" IsIndeterminate="True"
+                                             Width="140" Margin="0,14,0,0"
                                              Visibility="Collapsed"/>
                             </StackPanel>
                         </Grid>

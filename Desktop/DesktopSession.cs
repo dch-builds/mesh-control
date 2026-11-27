@@ -395,6 +395,16 @@ public sealed class DesktopSession : IDisposable
 
                     if (_stopped) { socket.Close(); socket.Dispose(); return; }
 
+                    // Les boucles du tunnel précédent (envoi, mesure du délai)
+                    // sont arrêtées et leurs ressources libérées : sans cela,
+                    // la boucle de mesure tournait indéfiniment, même après la
+                    // fermeture, et retenait la session et son image en mémoire.
+                    var previousCts = _cts;
+                    var previousSocket = _socket;
+                    try { previousCts?.Cancel(); } catch { }
+                    previousCts?.Dispose();
+                    try { previousSocket?.Dispose(); } catch { }
+
                     // Nouvelle file : celle de la session précédente a été
                     // complétée, elle rejetterait toute écriture.
                     _sendQueue = NewSendQueue();

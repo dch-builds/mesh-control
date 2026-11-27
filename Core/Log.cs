@@ -37,6 +37,9 @@ public static class Log
     /// <summary>Niveau minimal enregistré. Debug est bruyant : réservé au diagnostic.</summary>
     public static LogLevel MinimumLevel { get; set; } = LogLevel.Info;
 
+    /// <summary>Le niveau Debug est-il enregistré ? Permet d'éviter de construire un message qui serait jeté.</summary>
+    public static bool IsDebugEnabled => MinimumLevel <= LogLevel.Debug;
+
     static Log()
     {
         // Un seul thread écrit : pas de contention sur le fichier, et l'appelant

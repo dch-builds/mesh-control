@@ -88,6 +88,42 @@ public static class Motion
             new DoubleAnimation(from < to ? 0 : 1, from < to ? 1 : 0, Ms(ms)) { FillBehavior = FillBehavior.HoldEnd });
     }
 
+    /// <summary>
+    /// Pulsation lente (squelette de chargement) qui ne tourne que tant que
+    /// l'élément est visible. Une animation « pour toujours » continue sinon de
+    /// battre une fois l'élément masqué, et oblige WPF à redessiner la fenêtre
+    /// à chaque image : mesuré, 9 % d'un cœur de processeur au repos.
+    /// </summary>
+    public static void PulseWhileVisible(UIElement element)
+    {
+        void Update()
+        {
+            if (element.IsVisible && Enabled)
+                element.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, 0.45, Ms(800))
+                {
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever,
+                });
+            else
+                element.BeginAnimation(UIElement.OpacityProperty, null);
+        }
+
+        element.IsVisibleChanged += (_, _) => Update();
+        Update();
+    }
+
+    /// <summary>
+    /// Barre de progression indéterminée animée seulement quand elle est
+    /// visible : même piège que la pulsation, son reflet tournait en continu
+    /// derrière un panneau masqué.
+    /// </summary>
+    public static void IndeterminateWhileVisible(System.Windows.Controls.ProgressBar bar)
+    {
+        void Update() => bar.IsIndeterminate = bar.IsVisible;
+        bar.IsVisibleChanged += (_, _) => Update();
+        Update();
+    }
+
     /// <summary>TranslateTransform de l'élément, créée au besoin sans écraser une transformation existante.</summary>
     private static TranslateTransform TranslateOf(UIElement element)
     {

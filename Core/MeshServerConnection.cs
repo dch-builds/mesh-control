@@ -102,7 +102,7 @@ public sealed class MeshServerConnection : IDisposable
     /// </summary>
     public bool CanCreateLoginToken
         => !UsedLoginToken && ((ServerInfo?.Features2 ?? 0) & 0x00000100) == 0;
-    public IReadOnlyList<Mesh> Meshes => _meshes;
+    public IReadOnlyList<Mesh> Meshes => Volatile.Read(ref _meshes);
     public IReadOnlyDictionary<string, MeshNode> Nodes => _nodes;
     public string? LastError { get; private set; }
 
@@ -110,7 +110,13 @@ public sealed class MeshServerConnection : IDisposable
     public event Action? StateChanged;
     public event Action? DevicesChanged;
 
-    private readonly List<Mesh> _meshes = new();
+    /// <summary>
+    /// Groupes d'appareils. Remplacés d'un bloc par le fil de réception, jamais
+    /// modifiés en place : l'interface les parcourt pendant ce temps, et un
+    /// Clear/Add/Sort concurrent levait « Collection was modified » (ou faisait
+    /// passer toutes les machines « Sans dossier » le temps du remplissage).
+    /// </summary>
+    private List<Mesh> _meshes = new();
     private readonly ConcurrentDictionary<string, MeshNode> _nodes = new();
 
     private MeshWebSocket? _socket;
@@ -409,6 +415,9 @@ public sealed class MeshServerConnection : IDisposable
                 }
                 catch
                 {
+                    // Fermeture demandée (Disconnect) : ce n'est pas une perte de
+                    // connexion, et la reconnexion automatique ne doit pas partir.
+                    if (ct.IsCancellationRequested) return;
                     MarkConnectionLost();
                     return;
                 }
@@ -417,7 +426,19 @@ public sealed class MeshServerConnection : IDisposable
                 _lastFrameAt = DateTime.UtcNow;
 
                 if (message is WsMessage.Text(var text) && TryParse(text, out var json))
-                    Handle(json);
+                {
+                    // Un message mal formé (nombre inattendu, champ manquant) ne
+                    // doit pas tuer la boucle : la liste se figeait sans bruit
+                    // jusqu'à ce que le contrôle de silence force une reconnexion.
+                    try
+                    {
+                        Handle(json);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error("Message du serveur ignoré (traitement en échec)", ex, "Serveur");
+                    }
+                }
             }
         }, ct);
     }
@@ -451,10 +472,11 @@ public sealed class MeshServerConnection : IDisposable
             case "meshes":
                 if (json.TryGetProperty("meshes", out var meshesEl) && meshesEl.ValueKind == JsonValueKind.Array)
                 {
-                    _meshes.Clear();
+                    var meshes = new List<Mesh>();
                     foreach (var m in meshesEl.EnumerateArray())
-                        if (Mesh.From(m) is { } mesh) _meshes.Add(mesh);
-                    _meshes.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                        if (Mesh.From(m) is { } mesh) meshes.Add(mesh);
+                    meshes.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                    Volatile.Write(ref _meshes, meshes);
                     // Un groupe supprimé emporte ses machines, même si le
                     // serveur n'a pas envoyé d'événement pour chacune.
                     PruneOrphanNodes();
@@ -505,7 +527,7 @@ public sealed class MeshServerConnection : IDisposable
                 // Journalisé au niveau Debug, mais sans son contenu : un message
                 // d'agent peut porter le presse-papiers distant (souvent un mot
                 // de passe), une liste de processus ou une sortie de console.
-                Log.Debug($"Message d'agent reçu : {DescribeAgentMessage(json)}", "Serveur");
+                if (Log.IsDebugEnabled) Log.Debug($"Message d'agent reçu : {DescribeAgentMessage(json)}", "Serveur");
                 HandleDeviceMessage(json);
                 break;
             case "close":
@@ -517,7 +539,7 @@ public sealed class MeshServerConnection : IDisposable
                 // une réponse d'agent au format inattendu.
                 if (_consoleWaiter is not null || _processListWaiter is not null)
                 {
-                    Log.Debug($"Action non gérée « {action} » (attente en cours) : "
+                    if (Log.IsDebugEnabled) Log.Debug($"Action non gérée « {action} » (attente en cours) : "
                             + DescribeAgentMessage(json), "Serveur");
                 }
                 break;
@@ -578,7 +600,8 @@ public sealed class MeshServerConnection : IDisposable
     /// </summary>
     private bool IsKnownMesh(string meshId)
     {
-        return _meshes.Count == 0 || _meshes.Any(m => m.Id == meshId);
+        var meshes = Meshes;
+        return meshes.Count == 0 || meshes.Any(m => m.Id == meshId);
     }
 
     /// <summary>Retire les machines dont le groupe a disparu de la liste.</summary>
@@ -611,6 +634,9 @@ public sealed class MeshServerConnection : IDisposable
             {
                 var waiter = _processListWaiter;
                 if (waiter is null) return;
+                // Réponse d'une autre machine que celle interrogée : ignorée.
+                if (GetString(json, "nodeid") is { } psNode && _processListNodeId is { } expectedPs
+                    && psNode != expectedPs) return;
                 _processListWaiter = null;
                 // « value » contient du JSON sérialisé sous forme de chaîne.
                 waiter.TrySetResult(GetString(json, "value") ?? "");
@@ -624,6 +650,8 @@ public sealed class MeshServerConnection : IDisposable
                 // demande est en cours.
                 var waiter = _consoleWaiter;
                 if (waiter is null) return;
+                if (GetString(json, "nodeid") is { } consoleNode && _consoleNodeId is { } expectedConsole
+                    && consoleNode != expectedConsole) return;
                 _consoleWaiter = null;
                 waiter.TrySetResult(GetString(json, "value")
                                     ?? GetString(json, "msg") ?? "");
@@ -658,7 +686,7 @@ public sealed class MeshServerConnection : IDisposable
                     // démarrage jusqu'au prochain « lastconnects ».
                     if (node.IsOnline) node.LastConnect = DateTime.Now;
 
-                    Log.Debug($"{node.Name} : conn={node.Conn} "
+                    if (Log.IsDebugEnabled) Log.Debug($"{node.Name} : conn={node.Conn} "
                             + (node.IsOnline ? "(en ligne)" : "(hors ligne)"), "Serveur");
                     DevicesChanged?.Invoke();
                 }
@@ -701,9 +729,32 @@ public sealed class MeshServerConnection : IDisposable
             case "meshchange":
             case "createmesh":
             case "deletemesh":
-                RefreshDeviceListAsync().Forget();
+                ScheduleInventoryRefresh();
                 break;
         }
+    }
+
+    /// <summary>Un inventaire complet est déjà programmé.</summary>
+    private int _inventoryRefreshScheduled;
+
+    /// <summary>
+    /// Relit l'inventaire une seconde après un changement de groupe, une seule
+    /// fois pour toute la rafale : déplacer cent machines d'un groupe à l'autre
+    /// déclenchait cent relectures complètes (plusieurs Mo de JSON chacune).
+    /// </summary>
+    private void ScheduleInventoryRefresh()
+    {
+        if (Interlocked.Exchange(ref _inventoryRefreshScheduled, 1) == 1) return;
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(1000).ConfigureAwait(false);
+            Interlocked.Exchange(ref _inventoryRefreshScheduled, 0);
+            if (State == ConnectionState.Connected)
+            {
+                try { await RefreshDeviceListAsync().ConfigureAwait(false); }
+                catch (Exception ex) { Log.Warning($"Relecture de l'inventaire impossible : {ex.Message}", "Serveur"); }
+            }
+        });
     }
 
     // MARK: - Requêtes
@@ -842,7 +893,7 @@ public sealed class MeshServerConnection : IDisposable
 
     /// <summary>Appareil sans agent dans un groupe local/relais (mesh mtype 3).</summary>
     public bool IsLocalDevice(MeshNode node) =>
-        _meshes.FirstOrDefault(m => m.Id == node.MeshId)?.MType == 3;
+        Meshes.FirstOrDefault(m => m.Id == node.MeshId)?.MType == 3;
 
     public Task WakeAsync(string nodeId) => WakeAsync([nodeId]);
 
@@ -1182,6 +1233,19 @@ public sealed class MeshServerConnection : IDisposable
 
     /// <summary>Réponse en attente à une demande de liste de processus.</summary>
     private TaskCompletionSource<string>? _processListWaiter;
+    private string? _processListNodeId;
+
+    /// <summary>
+    /// Une seule demande « ps » à la fois : la réponse de l'agent ne dit pas
+    /// toujours à quelle demande elle répond. Deux fenêtres de processus en
+    /// actualisation automatique s'échangeaient sinon leurs listes, et un
+    /// « Arrêter » pouvait viser un PID d'une autre machine.
+    /// </summary>
+    private readonly SemaphoreSlim _processListGate = new(1, 1);
+
+    /// <summary>Même règle pour les commandes console à réponse (sysinfo…).</summary>
+    private readonly SemaphoreSlim _consoleGate = new(1, 1);
+    private string? _consoleNodeId;
 
     /// <summary>
     /// Envoie une commande console à l'agent (openurl, kill, lock, toast…).
@@ -1221,7 +1285,9 @@ public sealed class MeshServerConnection : IDisposable
     {
         if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
 
+        await _processListGate.WaitAsync(ct).ConfigureAwait(false);
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _processListNodeId = nodeId;
         _processListWaiter = tcs;
 
         try
@@ -1246,6 +1312,7 @@ public sealed class MeshServerConnection : IDisposable
         finally
         {
             if (ReferenceEquals(_processListWaiter, tcs)) _processListWaiter = null;
+            _processListGate.Release();
         }
     }
 
@@ -1299,7 +1366,9 @@ public sealed class MeshServerConnection : IDisposable
     {
         if (State != ConnectionState.Connected) throw new MeshException("Non connecté au serveur.");
 
+        await _consoleGate.WaitAsync(ct).ConfigureAwait(false);
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _consoleNodeId = nodeId;
         _consoleWaiter = tcs;
 
         try
@@ -1319,6 +1388,7 @@ public sealed class MeshServerConnection : IDisposable
         finally
         {
             if (ReferenceEquals(_consoleWaiter, tcs)) _consoleWaiter = null;
+            _consoleGate.Release();
         }
     }
 

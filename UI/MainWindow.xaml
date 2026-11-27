@@ -953,17 +953,9 @@
                         <TextBlock x:Name="LoadingDetail" Style="{StaticResource CaptionText}"
                                    VerticalAlignment="Center" Margin="10,0,0,0"/>
                     </StackPanel>
-                    <StackPanel>
-                        <StackPanel.Triggers>
-                            <EventTrigger RoutedEvent="FrameworkElement.Loaded">
-                                <BeginStoryboard>
-                                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
-                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                         From="1" To="0.45" Duration="0:0:0.8"/>
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </EventTrigger>
-                        </StackPanel.Triggers>
+                    <!-- Pulsation posée par code (Motion.PulseWhileVisible) : elle
+                         s'arrête dès que le chargement est terminé. -->
+                    <StackPanel x:Name="SkeletonRows">
                         <Grid Margin="0,0,0,16">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>

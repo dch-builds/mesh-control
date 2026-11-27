@@ -54,6 +54,7 @@ public partial class FilesWindow : MeshControl.UI.ChromeWindow, MeshControl.UI.I
         _session = new FilesSession(connection, node, Dispatcher);
 
         InitializeComponent();
+        UI.Motion.IndeterminateWhileVisible(EmptyProgress);
 
         TitleText.Text = node.Name;
         RemotePaneTitleText.Text = node.Name;

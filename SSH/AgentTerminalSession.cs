@@ -309,11 +309,7 @@ public sealed class AgentTerminalSession : IDisposable
         }
 
         _receivedOutput = true;
-        _ui.BeginInvoke(() =>
-        {
-            if (Output is not null) Output.Invoke(text);
-            else _pendingOutput.Append(text);
-        });
+        QueueOutput(text);
     }
 
     private string DecodeUtf8(byte[] bytes)
@@ -342,4 +338,42 @@ public sealed class AgentTerminalSession : IDisposable
 
 
     public void Dispose() => Stop();
+
+    // MARK: - Remontée de la sortie vers l'interface
+
+    /// <summary>Sortie reçue en attente d'affichage, et verrou qui la protège.</summary>
+    private readonly System.Text.StringBuilder _outbox = new();
+    private bool _outboxScheduled;
+
+    /// <summary>
+    /// Ajoute de la sortie à afficher. Une seule mise à jour de l'interface est
+    /// en file à la fois : les trames qui arrivent entre-temps la rejoignent.
+    /// Une tâche par trame remplissait la file du thread d'interface pendant un
+    /// gros affichage (cat, find /) : le terminal paraissait figé et Ctrl+C
+    /// n'était traité qu'une fois la file vidée.
+    /// </summary>
+    private void QueueOutput(string text)
+    {
+        lock (_outbox)
+        {
+            _outbox.Append(text);
+            if (_outboxScheduled) return;
+            _outboxScheduled = true;
+        }
+        _ui.BeginInvoke(FlushOutput);
+    }
+
+    private void FlushOutput()
+    {
+        string text;
+        lock (_outbox)
+        {
+            text = _outbox.ToString();
+            _outbox.Clear();
+            _outboxScheduled = false;
+        }
+        if (text.Length == 0) return;
+        if (Output is not null) Output.Invoke(text);
+        else _pendingOutput.Append(text);
+    }
 }

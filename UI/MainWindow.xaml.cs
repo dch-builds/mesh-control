@@ -45,6 +45,7 @@ public partial class MainWindow : ChromeWindow
     {
         InitializeComponent();
         FitStartupSize();
+        Motion.PulseWhileVisible(SkeletonRows);
         BuildFilterChips();
         ColumnHeaderAlign.Attach(DeviceList, scrollbar => ColumnHeader.Padding = new Thickness(10, 4, 10 + scrollbar, 7));
         CertificateTrust.Initialize(_settings);
@@ -1291,6 +1292,10 @@ public partial class MainWindow : ChromeWindow
     {
         if (_connection is null) return;
         if (_connection.State != ConnectionState.Failed) return;
+        // Un essai raté pendant la reconnexion automatique : c'est la boucle de
+        // reconnexion qui décide de la suite, pas ce gestionnaire, qui renvoyait
+        // sinon à l'écran de connexion au premier essai infructueux.
+        if (_reconnecting) return;
 
         // Coupure réseau alors qu'on était connecté : tenter de se rétablir seul
         // plutôt que de renvoyer l'utilisateur à l'écran de connexion. Un refus
@@ -1361,30 +1366,45 @@ public partial class MainWindow : ChromeWindow
 
                 try
                 {
-                    var profile = new ServerProfile
+                    // On reprend la MÊME connexion quand elle vise toujours ce
+                    // serveur et ce compte. Les sessions ouvertes (bureau à
+                    // distance, fichiers, processus…) en gardent la référence :
+                    // la remplacer les laissait liées à une connexion morte, et
+                    // leur propre reconnexion échouait indéfiniment. Les fiches
+                    // des machines sont conservées (MergeNodeInventory).
+                    var connection = _connection;
+                    if (connection is null
+                        || !string.Equals(connection.Profile.Host, _settings.Host, StringComparison.OrdinalIgnoreCase)
+                        || !string.Equals(connection.Profile.Username, _sessionUser, StringComparison.OrdinalIgnoreCase))
                     {
-                        Host = _settings.Host,
-                        Username = _sessionUser!,
-                        AllowSelfSigned = _settings.AllowSelfSigned,
-                    };
-
-                    var connection = new MeshServerConnection(profile);
-                    connection.StateChanged += OnStateChanged;
-                    connection.DevicesChanged += OnDevicesChanged;
+                        var profile = new ServerProfile
+                        {
+                            Host = _settings.Host,
+                            Username = _sessionUser!,
+                            AllowSelfSigned = _settings.AllowSelfSigned,
+                        };
+                        connection = new MeshServerConnection(profile);
+                        connection.StateChanged += OnStateChanged;
+                        connection.DevicesChanged += OnDevicesChanged;
+                    }
 
                     // Le second facteur mémorisé est représenté comme à la
                     // connexion initiale : sans lui, une 2FA obligatoire
                     // rendrait toute reconnexion automatique impossible.
                     await connection.ConnectAsync(BuildLogin(_sessionPassword ?? "", null));
 
-                    // Remplacer l'ancienne connexion une fois la nouvelle établie.
-                    if (_connection is not null)
+                    // Nouvelle instance (serveur ou compte changés) : elle
+                    // remplace l'ancienne une fois établie.
+                    if (!ReferenceEquals(_connection, connection))
                     {
-                        _connection.StateChanged -= OnStateChanged;
-                        _connection.DevicesChanged -= OnDevicesChanged;
-                        _connection.Dispose();
+                        if (_connection is not null)
+                        {
+                            _connection.StateChanged -= OnStateChanged;
+                            _connection.DevicesChanged -= OnDevicesChanged;
+                            _connection.Dispose();
+                        }
+                        _connection = connection;
                     }
-                    _connection = connection;
                     _reconnectAttempt = 0;
 
                     Log.Info("Reconnexion réussie", "Serveur");
@@ -1491,10 +1511,15 @@ public partial class MainWindow : ChromeWindow
     /// que (re)démarrer le timer : BeginInvoke est non bloquant, contrairement à
     /// Invoke qui figeait l'UI sous une rafale d'événements.
     /// </summary>
+    /// <summary>
+    /// Programme une mise à jour de la liste au plus tard 800 ms après le premier
+    /// événement d'une rafale. Relancer le délai à chaque événement (Stop puis
+    /// Start) la repoussait indéfiniment sous un flux continu — l'allumage du
+    /// parc le matin — et la liste ne bougeait plus du tout.
+    /// </summary>
     private void OnDevicesChanged() => Dispatcher.BeginInvoke(() =>
     {
-        _refreshTimer.Stop();
-        _refreshTimer.Start();
+        if (!_refreshTimer.IsEnabled) _refreshTimer.Start();
     });
 
     /// <summary>
@@ -2219,10 +2244,16 @@ public partial class MainWindow : ChromeWindow
 
             // « Tout replier » actif : un dossier apparu depuis (nouvelle
             // machine, section Favoris qui vient de se créer) doit l'être aussi,
-            // sinon il s'ouvrirait seul au milieu d'une liste repliée.
+            // sinon il s'ouvrirait seul au milieu d'une liste repliée. Seuls les
+            // dossiers NOUVEAUX sont concernés : replier aussi ceux déjà affichés
+            // annulait aussitôt le dépli d'un dossier, qui restait alors replié
+            // pour de bon (cas d'un dossier seul à l'écran, ou du dernier
+            // dossier déplié qu'on replie).
             if (_allGroupsCollapsed)
             {
-                foreach (var name in groupCounts.Keys) _collapsedGroups.Add(name);
+                var alreadyShown = new HashSet<string>(_shownGroupNames, StringComparer.OrdinalIgnoreCase);
+                foreach (var name in groupCounts.Keys.Where(n => !alreadyShown.Contains(n)))
+                    _collapsedGroups.Add(name);
             }
 
             string? current = null;
