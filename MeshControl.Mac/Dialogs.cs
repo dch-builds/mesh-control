@@ -28,8 +28,28 @@ public static class Dialogs
         return dialog.ShowDialog<bool>(owner);
     }
 
+    /// <summary>Simple information, un seul bouton.</summary>
+    public static Task InformAsync(Window owner, string message)
+    {
+        var dialog = Create("Mesh Control", out var body, out var buttons);
+        body.Children.Add(new TextBlock
+        {
+            Text = message,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12.5,
+            Foreground = Palette.Resource("TextSecondaryBrush"),
+        });
+        var ok = new Button { Content = "OK", Padding = new Thickness(18, 8) };
+        ok.Classes.Add("primary");
+        ok.Click += (_, _) => dialog.Close();
+        buttons.Children.Add(ok);
+        dialog.Opened += (_, _) => ok.Focus();
+        return dialog.ShowDialog(owner);
+    }
+
     /// <summary>Demande un texte ; null si l'utilisateur annule.</summary>
-    public static Task<string?> PromptAsync(Window owner, string title, string label, string initial)
+    public static Task<string?> PromptAsync(Window owner, string title, string label, string initial,
+                                            string accept = "Renommer", bool selectAll = true)
     {
         var dialog = Create(title, out var body, out var buttons);
         body.Children.Add(new TextBlock { Text = label, Classes = { "caption" }, Margin = new Thickness(0, 0, 0, 5) });
@@ -37,8 +57,13 @@ public static class Dialogs
         body.Children.Add(box);
         void Accept() => dialog.Close((box.Text ?? "").Trim());
         box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; Accept(); } };
-        AddButtons(dialog, buttons, "Renommer", danger: false, Accept);
-        dialog.Opened += (_, _) => { box.Focus(); box.SelectAll(); };
+        AddButtons(dialog, buttons, accept, danger: false, Accept);
+        dialog.Opened += (_, _) =>
+        {
+            box.Focus();
+            if (selectAll) box.SelectAll();
+            else box.CaretIndex = box.Text?.Length ?? 0;
+        };
         return dialog.ShowDialog<string?>(owner);
     }
 

@@ -1,0 +1,404 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.SendFilesWindow"
+                   Width="1000" Height="720" MinWidth="780" MinHeight="560"
+                   WindowStartupLocation="CenterScreen">
+
+  <!-- Portage de Files/SendFilesWindow.xaml (version Windows). -->
+  <local:ChromeWindow.Styles>
+    <!-- Pastille numérotée des trois étapes : fichiers, appareils, destination -->
+    <Style Selector="Border.stepBadge">
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="CornerRadius" Value="11" />
+      <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="0,0,10,0" />
+    </Style>
+    <Style Selector="TextBlock.stepNumber">
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- Lignes : survol seulement, pas de sélection. La ligne d'appareil porte
+         elle-même sa teinte de sélection (TargetDevice.PickerBackground). -->
+    <Style Selector="ListBox.plain">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0,0,11,0" />
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    </Style>
+    <Style Selector="ListBox.plain > ListBoxItem">
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="Bd" Background="Transparent" CornerRadius="8" Margin="6,1">
+            <ContentPresenter Name="Presenter" Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                              HorizontalContentAlignment="Stretch" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="ListBox.plain > ListBoxItem:pointerover /template/ Border#Bd">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
+    </Style>
+  </local:ChromeWindow.Styles>
+
+  <DockPanel>
+    <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top" Title="Envoyer des fichiers — Mesh Control" />
+
+    <Panel x:Name="RootGrid" Background="Transparent" DragDrop.AllowDrop="True">
+      <DockPanel Margin="20,16,20,18">
+
+        <!-- En-tête -->
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="0,0,0,16">
+          <Border Width="42" Height="42" CornerRadius="12" Background="{DynamicResource AccentBrush}">
+            <local:Icon Kind="Upload" Size="18" Foreground="White"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <StackPanel Grid.Column="1" Margin="13,0,0,0" VerticalAlignment="Center">
+            <TextBlock Text="Envoyer des fichiers" FontSize="18" FontWeight="Bold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" />
+            <TextBlock Classes="caption" FontSize="12" Margin="0,2,0,0"
+                       Text="Vers une ou plusieurs machines : les envois partent en parallèle." />
+          </StackPanel>
+        </Grid>
+
+        <!-- Pied, composition : la destination et le bouton d'envoi -->
+        <Border x:Name="ComposeFooter" DockPanel.Dock="Bottom" Classes="card" Padding="16,14" Margin="0,16,0,0">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Border Classes="stepBadge" VerticalAlignment="Top" Margin="0,1,10,0">
+              <TextBlock Text="3" Classes="stepNumber" />
+            </Border>
+
+            <StackPanel Grid.Column="1" Margin="0,0,18,0">
+              <TextBlock Text="Destination" FontSize="13" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" Margin="0,2,0,10" />
+
+              <Grid x:Name="WindowsDestinationRow" ColumnDefinitions="120,*" Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <TextBlock Text="▤" Foreground="#0A84FF" FontSize="13" VerticalAlignment="Center" Margin="0,0,7,0" />
+                  <TextBlock Text="Windows" Classes="fieldLabel" Margin="0" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBox x:Name="WindowsPathBox" Grid.Column="1" FontSize="12.5"
+                         FontFamily="Cascadia Mono, Consolas, Menlo, monospace"
+                         TextChanged="Destination_TextChanged" />
+              </Grid>
+
+              <Grid x:Name="UnixDestinationRow" ColumnDefinitions="120,*" Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <TextBlock Text="◈" Foreground="#F0883E" FontSize="13" VerticalAlignment="Center" Margin="0,0,7,0" />
+                  <TextBlock Text="Linux / macOS" Classes="fieldLabel" Margin="0" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBox x:Name="UnixPathBox" Grid.Column="1" FontSize="12.5"
+                         FontFamily="Cascadia Mono, Consolas, Menlo, monospace"
+                         TextChanged="Destination_TextChanged" />
+              </Grid>
+
+              <StackPanel Orientation="Horizontal" Margin="120,2,0,0">
+                <CheckBox x:Name="CreateFolderCheck" IsChecked="True" Content="Créer le dossier s'il n'existe pas" />
+                <TextBlock Classes="caption" VerticalAlignment="Center" Margin="14,0,0,0"
+                           Text="Un fichier du même nom déjà présent est remplacé." />
+              </StackPanel>
+            </StackPanel>
+
+            <Button x:Name="SendButton" Grid.Column="2" Classes="primary" Padding="22,12"
+                    VerticalAlignment="Bottom" HorizontalAlignment="Right" Click="Send_Click" IsEnabled="False">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="Send" Size="13" Foreground="White" VerticalAlignment="Center" Margin="0,0,9,0" />
+                <TextBlock x:Name="SendButtonText" Text="Envoyer" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </Grid>
+        </Border>
+
+        <!-- Pied, suivi : relancer, annuler, fermer -->
+        <Grid x:Name="ProgressFooter" DockPanel.Dock="Bottom" Margin="0,14,0,0" IsVisible="False">
+          <Button x:Name="NewBatchButton" Classes="tool" HorizontalAlignment="Left" Padding="12,8"
+                  Click="NewBatch_Click">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="ArrowLeft" Size="11" VerticalAlignment="Center" Margin="0,0,8,0" />
+              <TextBlock Text="Modifier et renvoyer" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="RetryAllButton" Classes="tool" Padding="12,8" Margin="0,0,8,0" Click="RetryAll_Click">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="Refresh" Size="11" VerticalAlignment="Center" Margin="0,0,8,0" />
+                <TextBlock Text="Réessayer les échecs" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="CancelAllButton" Classes="tool" Padding="12,8" Margin="0,0,8,0" Content="Tout annuler"
+                    Foreground="{DynamicResource DangerBrush}" Click="CancelAll_Click" />
+            <Button x:Name="CloseButton" Classes="primary" Padding="22,8" Content="Fermer" Click="Close_Click" />
+          </StackPanel>
+        </Grid>
+
+        <Panel>
+          <!-- Vue 1 : composition de l'envoi -->
+          <Grid x:Name="ComposePanel" ColumnDefinitions="*,16,*">
+
+            <!-- Étape 1 : les fichiers -->
+            <Border Classes="card">
+              <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="16,14,14,10">
+                  <StackPanel Orientation="Horizontal">
+                    <Border Classes="stepBadge">
+                      <TextBlock Text="1" Classes="stepNumber" />
+                    </Border>
+                    <TextBlock Text="Fichiers" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock x:Name="FilesSummary" Classes="caption" HorizontalAlignment="Right"
+                             VerticalAlignment="Center" />
+                </Grid>
+
+                <Border DockPanel.Dock="Bottom" BorderBrush="{DynamicResource SeparatorBrush}"
+                        BorderThickness="0,1,0,0" Padding="8,7">
+                  <Grid>
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="subtle" Padding="8,4" Click="AddFiles_Click">
+                        <StackPanel Orientation="Horizontal">
+                          <local:Icon Kind="Add" Size="10" VerticalAlignment="Center" Margin="0,0,6,0" />
+                          <TextBlock Text="Ajouter des fichiers…" />
+                        </StackPanel>
+                      </Button>
+                      <Button Classes="subtle" Padding="8,4" Click="AddFolder_Click">
+                        <StackPanel Orientation="Horizontal">
+                          <local:Icon Kind="NewFolder" Size="11" VerticalAlignment="Center" Margin="0,0,6,0" />
+                          <TextBlock Text="Ajouter un dossier…" />
+                        </StackPanel>
+                      </Button>
+                    </StackPanel>
+                    <Button x:Name="ClearFilesButton" Classes="subtle" Padding="8,4" HorizontalAlignment="Right"
+                            Foreground="{DynamicResource TextSecondaryBrush}" Content="Tout retirer"
+                            Click="ClearFiles_Click" />
+                  </Grid>
+                </Border>
+
+                <Panel>
+                  <!-- Zone de dépôt, tant que rien n'est choisi -->
+                  <Panel x:Name="FilesDropZone" Margin="14,0,14,14">
+                    <Rectangle RadiusX="12" RadiusY="12" Fill="{DynamicResource DropZoneSubtleBrush}"
+                               Stroke="{DynamicResource DropZoneStrokeBrush}" StrokeThickness="1.5"
+                               StrokeDashArray="5,3" />
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Margin="20">
+                      <Border Width="54" Height="54" CornerRadius="16" Background="{DynamicResource AccentSoftBrush}"
+                              HorizontalAlignment="Center">
+                        <local:Icon Kind="Upload" Size="22" Foreground="{DynamicResource AccentBrush}"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+                      </Border>
+                      <TextBlock Text="Glissez vos fichiers ou dossiers ici" FontSize="13.5" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center"
+                                 Margin="0,14,0,0" />
+                      <TextBlock Classes="caption" FontSize="12" HorizontalAlignment="Center" TextAlignment="Center"
+                                 TextWrapping="Wrap" Margin="0,5,0,0" MaxWidth="280"
+                                 Text="Les dossiers sont envoyés avec toute leur arborescence." />
+                    </StackPanel>
+                  </Panel>
+
+                  <ListBox x:Name="FileListBox" Classes="plain" Margin="0,0,0,6">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate DataType="local:OutgoingEntry">
+                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="10,6" ToolTip.Tip="{Binding Path}">
+                          <Border Width="32" Height="32" CornerRadius="8" Background="{Binding GlyphBackground}">
+                            <local:Icon Kind="{Binding Glyph}" Size="14" Foreground="{Binding GlyphColor}"
+                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+                          </Border>
+                          <StackPanel Grid.Column="1" Margin="11,0,8,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" FontSize="12.5"
+                                       Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Detail}" FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,1,0,0" />
+                          </StackPanel>
+                          <Button Grid.Column="2" Classes="icon" ToolTip.Tip="Retirer" Click="RemoveEntry_Click"
+                                  VerticalAlignment="Center">
+                            <local:Icon Kind="Close" Size="10" />
+                          </Button>
+                        </Grid>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+                </Panel>
+              </DockPanel>
+            </Border>
+
+            <!-- Étape 2 : les appareils -->
+            <Border Grid.Column="2" Classes="card">
+              <DockPanel>
+                <Grid DockPanel.Dock="Top" Margin="16,14,14,10">
+                  <StackPanel Orientation="Horizontal">
+                    <Border Classes="stepBadge">
+                      <TextBlock Text="2" Classes="stepNumber" />
+                    </Border>
+                    <TextBlock Text="Appareils" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <TextBlock x:Name="DevicesSummary" Classes="caption" HorizontalAlignment="Right"
+                             VerticalAlignment="Center" />
+                </Grid>
+
+                <!-- Recherche -->
+                <Border DockPanel.Dock="Top" Classes="searchFrame" Height="34" CornerRadius="8"
+                        Background="{DynamicResource ControlBrush}" BorderThickness="1" Margin="14,0,14,8">
+                  <Grid ColumnDefinitions="Auto,*">
+                    <local:Icon Classes="searchGlyph" Kind="Search" Size="12" Margin="12,0,0,0"
+                                VerticalAlignment="Center" IsHitTestVisible="False" />
+                    <Panel Grid.Column="1" Margin="8,0,8,0">
+                      <TextBox x:Name="DeviceSearchBox" Classes="bare" FontSize="13"
+                               TextChanged="DeviceSearch_TextChanged" />
+                      <TextBlock x:Name="DeviceSearchPlaceholder" Text="Rechercher un appareil ou un dossier…"
+                                 FontSize="13" Foreground="{DynamicResource PlaceholderBrush}"
+                                 VerticalAlignment="Center" IsHitTestVisible="False" />
+                    </Panel>
+                  </Grid>
+                </Border>
+
+                <Grid DockPanel.Dock="Top" Margin="14,0,14,4">
+                  <StackPanel Orientation="Horizontal">
+                    <Button Classes="subtle" Padding="2,3" Content="Tout sélectionner" Click="SelectAll_Click" />
+                    <TextBlock Text="·" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"
+                               Margin="6,0" />
+                    <Button Classes="subtle" Padding="2,3" Content="Aucun" Click="SelectNone_Click" />
+                  </StackPanel>
+                  <TextBlock x:Name="OfflineHint" Classes="caption" HorizontalAlignment="Right"
+                             VerticalAlignment="Center" />
+                </Grid>
+
+                <Panel>
+                  <ListBox x:Name="DeviceListBox" Classes="plain" Margin="0,0,0,6">
+                    <ListBox.ItemTemplate>
+                      <DataTemplate DataType="local:TargetDevice">
+                        <!-- Toute la ligne bascule la case ; une machine retenue se teinte de bleu. -->
+                        <Border Background="{Binding PickerBackground}" CornerRadius="8" Padding="10,7" Cursor="Hand"
+                                Tapped="Device_Tapped">
+                          <Grid ColumnDefinitions="Auto,Auto,*">
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}" IsHitTestVisible="False"
+                                      Focusable="False" VerticalAlignment="Center" />
+                            <Border Grid.Column="1" Width="32" Height="32" CornerRadius="8" Margin="8,0,11,0"
+                                    Background="{Binding Row.OsGlyphBackground}">
+                              <TextBlock Text="{Binding Row.OsGlyph}" FontSize="15" Foreground="{Binding Row.OsGlyphColor}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                              <TextBlock Text="{Binding Name}" FontSize="12.5" FontWeight="SemiBold"
+                                         Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                              <TextBlock Text="{Binding Subtitle}" FontSize="11"
+                                         Foreground="{DynamicResource TextSecondaryBrush}"
+                                         TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                            </StackPanel>
+                          </Grid>
+                        </Border>
+                      </DataTemplate>
+                    </ListBox.ItemTemplate>
+                  </ListBox>
+
+                  <TextBlock x:Name="NoDeviceText" Classes="caption" FontSize="12" HorizontalAlignment="Center"
+                             VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="24"
+                             IsVisible="False" />
+                </Panel>
+              </DockPanel>
+            </Border>
+          </Grid>
+
+          <!-- Vue 2 : suivi de l'envoi, machine par machine -->
+          <DockPanel x:Name="ProgressPanel" IsVisible="False">
+            <Border DockPanel.Dock="Top" Classes="card" Padding="18,16" Margin="0,0,0,14">
+              <StackPanel>
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                  <Border x:Name="OverallBadge" Width="40" Height="40" CornerRadius="11"
+                          Background="{DynamicResource AccentSoftBrush}">
+                    <local:Icon x:Name="OverallGlyph" Kind="Upload" Size="16" Foreground="{DynamicResource AccentBrush}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <StackPanel Grid.Column="1" Margin="13,0,12,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="OverallTitle" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <TextBlock x:Name="OverallSubtitle" Classes="caption" FontSize="12" Margin="0,3,0,0"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <TextBlock x:Name="OverallPercent" Grid.Column="2" FontSize="24" FontWeight="Bold"
+                             VerticalAlignment="Center" Foreground="{DynamicResource AccentBrush}" />
+                </Grid>
+                <ProgressBar x:Name="OverallBar" Classes="slim" Height="6" Margin="0,14,0,0" />
+              </StackPanel>
+            </Border>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+              <ItemsControl x:Name="DeviceCards">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="local:TargetDevice">
+                    <Border Background="{DynamicResource CardBrush}" CornerRadius="10"
+                            BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="1"
+                            Padding="14,12" Margin="0,0,0,8" ToolTip.Tip="{Binding Destination}">
+                      <Grid ColumnDefinitions="Auto,*,Auto">
+                        <Border Width="36" Height="36" CornerRadius="9" Background="{Binding Row.OsGlyphBackground}"
+                                VerticalAlignment="Center">
+                          <TextBlock Text="{Binding Row.OsGlyph}" FontSize="16" Foreground="{Binding Row.OsGlyphColor}"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+
+                        <StackPanel Grid.Column="1" Margin="13,0,14,0" VerticalAlignment="Center">
+                          <Grid>
+                            <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                       TextTrimming="CharacterEllipsis" Margin="0,0,120,0" />
+                            <TextBlock Text="{Binding DetailText}" FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right" />
+                          </Grid>
+                          <Panel Margin="0,7,0,6">
+                            <ProgressBar Classes="slim" Value="{Binding Fraction, Mode=OneWay}"
+                                         Foreground="{Binding BarColor}" IsVisible="{Binding IsDeterminate}" />
+                            <ProgressBar IsIndeterminate="True" Height="4" MinHeight="4"
+                                         Foreground="{Binding BarColor}" IsVisible="{Binding IsIndeterminate}" />
+                          </Panel>
+                          <TextBlock Text="{Binding StatusText}" FontSize="11.5" Foreground="{Binding StatusColor}"
+                                     TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+
+                        <local:Icon Grid.Column="2" Kind="{Binding StateGlyph}" Size="16"
+                                    Foreground="{Binding StatusColor}" IsVisible="{Binding StateGlyphVisible}"
+                                    VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <Button Grid.Column="2" Classes="tool" Background="{DynamicResource SubtleFillBrush}"
+                                Padding="10,6" IsVisible="{Binding RetryVisible}" Click="RetryDevice_Click"
+                                VerticalAlignment="Center">
+                          <StackPanel Orientation="Horizontal">
+                            <local:Icon Kind="Refresh" Size="10" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <TextBlock Text="Réessayer" FontSize="11.5" />
+                          </StackPanel>
+                        </Button>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Panel>
+      </DockPanel>
+
+      <!-- Voile de dépôt -->
+      <Panel x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False" Margin="10">
+        <Rectangle RadiusX="14" RadiusY="14" Fill="{DynamicResource DropZoneBrush}"
+                   Stroke="{DynamicResource AccentBrush}" StrokeThickness="2" StrokeDashArray="5,3" />
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+          <Border Width="60" Height="60" CornerRadius="30" Background="{DynamicResource AccentBrush}"
+                  HorizontalAlignment="Center">
+            <local:Icon Kind="Add" Size="22" Foreground="White"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <TextBlock Text="Déposer pour ajouter à l'envoi" FontSize="16" FontWeight="SemiBold"
+                     Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center"
+                     Margin="0,14,0,0" />
+        </StackPanel>
+      </Panel>
+    </Panel>
+  </DockPanel>
+</local:ChromeWindow>

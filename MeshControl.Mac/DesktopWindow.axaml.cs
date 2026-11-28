@@ -43,6 +43,21 @@ public partial class DesktopWindow : ChromeWindow
 
     private void OpenTerminal_Click(object? sender, RoutedEventArgs e) => OpenTerminal?.Invoke();
 
+    /// <summary>Ouvre les fichiers de la machine (fourni par la fenêtre principale).</summary>
+    public Action? OpenFiles { get; init; }
+
+    private void OpenFiles_Click(object? sender, RoutedEventArgs e) => OpenFiles?.Invoke();
+
+    /// <summary>Ouvre les processus de la machine (fourni par la fenêtre principale).</summary>
+    public Action? OpenProcesses { get; init; }
+
+    private void OpenProcesses_Click(object? sender, RoutedEventArgs e) => OpenProcesses?.Invoke();
+
+    /// <summary>Ouvre la fiche d'informations système (fourni par la fenêtre principale).</summary>
+    public Action? OpenSystemInfo { get; init; }
+
+    private void OpenSystemInfo_Click(object? sender, RoutedEventArgs e) => OpenSystemInfo?.Invoke();
+
     public DesktopWindow(MeshServerConnection connection, MeshNode node)
     {
         _connection = connection;
@@ -782,6 +797,8 @@ public partial class DesktopWindow : ChromeWindow
             case Key.B: Reboot_Click(this, e); break;
             case Key.W: OpenWebPage_Click(this, e); break;
             case Key.T: OpenTerminal?.Invoke(); break;
+            case Key.E: OpenFiles?.Invoke(); break;
+            case Key.P: OpenProcesses?.Invoke(); break;
             case Key.Delete: _session.SendCtrlAltDel(); break;
             default: return false;
         }

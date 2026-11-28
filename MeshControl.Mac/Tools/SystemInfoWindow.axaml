@@ -1,0 +1,45 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.SystemInfoWindow"
+                   Width="560" Height="640" MinWidth="420" MinHeight="360"
+                   WindowStartupLocation="CenterScreen">
+
+  <!-- Portage de UI/SystemInfoWindow.xaml (version Windows). -->
+  <DockPanel>
+    <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top" />
+
+    <!-- En-tête -->
+    <Border DockPanel.Dock="Top" Background="{DynamicResource CardBrush}"
+            BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,0,1" Padding="20,16">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel>
+          <TextBlock x:Name="TitleText" FontSize="16" FontWeight="Bold"
+                     Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+          <TextBlock x:Name="SubtitleText" Classes="caption" Margin="0,3,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+        <Button x:Name="RefreshButton" Grid.Column="1" Classes="tool" Content="Actualiser" Click="Refresh_Click"
+                VerticalAlignment="Top" Padding="12,6" Margin="12,0,0,0" />
+      </Grid>
+    </Border>
+
+    <!-- Pied -->
+    <Border DockPanel.Dock="Bottom" Background="{DynamicResource CardBrush}"
+            BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="20,12">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock x:Name="StatusText" Classes="caption" VerticalAlignment="Center" TextWrapping="Wrap"
+                   MaxWidth="300" HorizontalAlignment="Left" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <Button Classes="tool" Content="Copier" Click="Copy_Click" Padding="16,8" Margin="0,0,8,0"
+                  ToolTip.Tip="Copier toutes les informations" />
+          <Button Classes="tool" Content="Fermer" Click="Close_Click" Padding="16,8" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <!-- Contenu -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="18">
+      <StackPanel x:Name="SectionsPanel" />
+    </ScrollViewer>
+  </DockPanel>
+</local:ChromeWindow>

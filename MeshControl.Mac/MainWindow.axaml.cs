@@ -1,6 +1,7 @@
 using System.Collections;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
@@ -33,12 +34,14 @@ public partial class MainWindow : ChromeWindow
 
     private readonly List<DesktopWindow> _desktops = new();
     private readonly List<TerminalWindow> _terminals = new();
+    private readonly List<FilesWindow> _filesWindows = new();
 
-    /// <summary>Ferme toutes les sessions ouvertes (bureau, terminal) : elles reposent sur la liaison.</summary>
+    /// <summary>Ferme toutes les sessions ouvertes (bureau, terminal, fichiers) : elles reposent sur la liaison.</summary>
     private void CloseSessions()
     {
         foreach (var window in _desktops.ToList()) window.Close();
         foreach (var window in _terminals.ToList()) window.Close();
+        foreach (var window in _filesWindows.ToList()) window.Close();
     }
 
     /// <summary>Touche de commande : Cmd sur Mac, Ctrl ailleurs.</summary>
@@ -1297,6 +1300,7 @@ public partial class MainWindow : ChromeWindow
         if (count < 2) return;
         var online = SelectedRows.Count(r => r.IsOnline);
         SelectionText.Text = $"{count} machines sélectionnées · {online} en ligne";
+        BulkSendFilesButton.IsEnabled = SelectedRows.Any(r => r.RemoteActionsVisible);
     }
 
     private void ClearSelection_Click(object? sender, RoutedEventArgs e) => DeviceList.SelectedItems?.Clear();
@@ -1330,6 +1334,11 @@ public partial class MainWindow : ChromeWindow
             e.Handled = true;
             OpenTerminal(row.Node, TerminalWindow.Mode.Agent);
         }
+        else if (e.Key == Key.E && e.KeyModifiers == CommandKey && row is not null)
+        {
+            e.Handled = true;
+            OpenFiles(row.Node);
+        }
         else if (e.Key == Key.F2 && row is not null)
         {
             e.Handled = true;
@@ -1350,6 +1359,7 @@ public partial class MainWindow : ChromeWindow
         {
             case "Desktop": OpenDesktop(row); break;
             case "Terminal": OpenTerminal(row.Node, TerminalWindow.Mode.Agent); break;
+            case "Files": OpenFiles(row.Node); break;
             case "Wake": _ = RunPowerAsync(() => _connection!.WakeAsync(row.Node.Id),
                                            $"Signal de réveil envoyé à « {row.Name} »."); break;
         }
@@ -1399,6 +1409,9 @@ public partial class MainWindow : ChromeWindow
         var window = new DesktopWindow(_connection, node)
         {
             OpenTerminal = () => OpenTerminal(node, TerminalWindow.Mode.Agent),
+            OpenFiles = () => OpenFiles(node),
+            OpenProcesses = () => OpenProcesses(node),
+            OpenSystemInfo = () => OpenSystemInfo(node),
         };
         window.Closed += (_, _) => _desktops.Remove(window);
         _desktops.Add(window);
@@ -1439,6 +1452,31 @@ public partial class MainWindow : ChromeWindow
         window.Show();
     }
 
+    /// <summary>Fichiers de la machine : une seule fenêtre par machine.</summary>
+    private void OpenFiles(MeshNode node)
+    {
+        if (_connection is null) return;
+        if (!node.IsOnline || !node.HasAgent)
+        {
+            ShowToast($"« {node.Name} » est hors ligne : fichiers indisponibles.");
+            return;
+        }
+
+        Settings.RememberRecent(node.Id);
+        Settings.Save();
+
+        var existing = _filesWindows.FirstOrDefault(w => w.NodeId == node.Id);
+        if (existing is not null)
+        {
+            existing.Activate();
+            return;
+        }
+        var window = new FilesWindow(_connection, node);
+        window.Closed += (_, _) => _filesWindows.Remove(window);
+        _filesWindows.Add(window);
+        window.Show();
+    }
+
     // MARK: - Menu contextuel
 
     private void DeviceMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -1450,6 +1488,14 @@ public partial class MainWindow : ChromeWindow
 
         MenuDesktop.IsEnabled = single && first!.RemoteActionsVisible;
         MenuTerminal.IsEnabled = single && first!.RemoteActionsVisible;
+        MenuFiles.IsEnabled = single && first!.RemoteActionsVisible;
+        MenuSendFiles.IsEnabled = any && rows.Any(r => r.RemoteActionsVisible);
+        // Le partage se crée côté serveur : la machine n'a pas besoin d'être en ligne.
+        MenuShare.IsEnabled = single;
+        // Processus et ouverture d'URL passent par l'agent : machine joignable requise.
+        MenuProcesses.IsEnabled = single && first!.RemoteActionsVisible;
+        MenuOpenUrl.IsEnabled = single && first!.RemoteActionsVisible;
+        MenuInfo.IsEnabled = single;
         MenuSsh.IsEnabled = single && first!.IsOnline;
         MenuWake.IsEnabled = any && rows.Any(r => !r.IsOnline);
         MenuReboot.IsEnabled = MenuSleep.IsEnabled = MenuPowerOff.IsEnabled = any && rows.Any(r => r.IsOnline);
@@ -1468,6 +1514,11 @@ public partial class MainWindow : ChromeWindow
     private void MenuTerminal_Click(object? sender, RoutedEventArgs e)
     {
         if (SelectedRows.FirstOrDefault() is { } row) OpenTerminal(row.Node, TerminalWindow.Mode.Agent);
+    }
+
+    private void MenuFiles_Click(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedRows.FirstOrDefault() is { } row) OpenFiles(row.Node);
     }
 
     private void MenuSsh_Click(object? sender, RoutedEventArgs e)
@@ -1511,6 +1562,83 @@ public partial class MainWindow : ChromeWindow
             return;
         }
         await Launcher.LaunchUriAsync(new Uri(url));
+    }
+
+    private void MenuSendFiles_Click(object? sender, RoutedEventArgs e) => BulkSendFiles_Click(sender, e);
+
+    private void BulkSendFiles_Click(object? sender, RoutedEventArgs e)
+        => OpenSendFiles(SelectedRows.Where(r => r.RemoteActionsVisible).Select(r => r.Node).ToList());
+
+    /// <summary>
+    /// Ouvre la fenêtre d'envoi, ces machines déjà cochées et, le cas échéant,
+    /// ces fichiers déjà choisis.
+    /// </summary>
+    private void OpenSendFiles(IReadOnlyList<MeshNode> nodes, IEnumerable<string>? files = null)
+    {
+        if (_connection is null) return;
+        new SendFilesWindow(_connection, rememberDestinations: true, preselected: nodes, files: files).Show();
+    }
+
+    private async void MenuShare_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_connection is null || SelectedRows.FirstOrDefault() is not { } row) return;
+        await new ShareWindow(_connection, row.Node).ShowDialog(this);
+    }
+
+    private void MenuProcesses_Click(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedRows.FirstOrDefault() is { } row) OpenProcesses(row.Node);
+    }
+
+    private void MenuInfo_Click(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedRows.FirstOrDefault() is { } row) OpenSystemInfo(row.Node);
+    }
+
+    private async void MenuOpenUrl_Click(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedRows.FirstOrDefault() is { } row) await OpenRemoteUrlAsync(row.Node);
+    }
+
+    /// <summary>Processus de la machine : une seule fenêtre par machine.</summary>
+    private void OpenProcesses(MeshNode node)
+    {
+        if (_connection is null) return;
+        if (OwnedOrOpen<ProcessWindow>(w => w.NodeId == node.Id)) return;
+        new ProcessWindow(_connection, node).Show();
+    }
+
+    /// <summary>Informations système : une seule fiche par machine.</summary>
+    private void OpenSystemInfo(MeshNode node)
+    {
+        if (_connection is null) return;
+        if (OwnedOrOpen<SystemInfoWindow>(w => w.NodeId == node.Id)) return;
+        new SystemInfoWindow(_connection, node).Show();
+    }
+
+    /// <summary>Ramène au premier plan une fenêtre déjà ouverte qui répond au critère.</summary>
+    private static bool OwnedOrOpen<T>(Func<T, bool> match) where T : Window
+    {
+        if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime life) return false;
+        if (life.Windows.OfType<T>().FirstOrDefault(match) is not { } existing) return false;
+        existing.Activate();
+        return true;
+    }
+
+    /// <summary>Ouvre une adresse dans le navigateur de la machine distante.</summary>
+    private async Task OpenRemoteUrlAsync(MeshNode node)
+    {
+        if (_connection is null) return;
+        var url = await Dialogs.PromptAsync(this, "Ouvrir une URL",
+            $"Adresse à ouvrir dans le navigateur de « {node.Name} » :", "https://", "Ouvrir", selectAll: false);
+        if (string.IsNullOrWhiteSpace(url) || url == "https://") return;
+        try
+        {
+            await _connection.OpenUrlAsync(node.Id, url);
+            Log.Info($"URL ouverte sur {node.Name} : {url}", "Appareil");
+            ShowToast($"Adresse envoyée à « {node.Name} ».");
+        }
+        catch (Exception ex) { await Dialogs.InformAsync(this, ex.Message); }
     }
 
     private async Task RenameAsync(MeshNode node)

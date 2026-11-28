@@ -61,6 +61,16 @@ public sealed class MacSettings : ICertificatePinStore
     /// <summary>Taille de police du terminal, retenue au zoom.</summary>
     public int TerminalFontSize { get; set; } = 13;
 
+    /// <summary>Fenêtre Fichiers : volet de ce poste affiché à côté de la machine.</summary>
+    public bool FilesDualPane { get; set; }
+
+    /// <summary>Dernier dossier ouvert dans le volet local de la fenêtre Fichiers.</summary>
+    public string? FilesLocalFolder { get; set; }
+
+    /// <summary>Envoi vers plusieurs machines : dernières destinations, par famille de système.</summary>
+    public string? TransferWindowsFolder { get; set; }
+    public string? TransferUnixFolder { get; set; }
+
     /// <summary>Images par seconde par défaut du bureau à distance.</summary>
     public int DesktopFrameRate { get; set; } = 10;
 

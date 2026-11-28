@@ -137,7 +137,7 @@
             </Button>
 
             <Button x:Name="MoreButton" Content="⋯" Classes="tool" Focusable="False" Padding="9,5"
-                    ToolTip.Tip="Autres outils : terminal (Ctrl+Maj+T), page web (Ctrl+Maj+W), échelle de l'image">
+                    ToolTip.Tip="Autres outils : terminal (Ctrl+Maj+T), fichiers (Ctrl+Maj+E), processus (Ctrl+Maj+P), page web (Ctrl+Maj+W), échelle de l'image">
               <Button.Flyout>
                 <MenuFlyout Placement="BottomEdgeAlignedRight">
                   <!-- Boutons de la barre repliés ici quand la fenêtre est trop
@@ -150,8 +150,11 @@
                             Click="ReleaseModifiers_Click" />
                   <Separator x:Name="OverflowSeparator" IsVisible="False" />
                   <MenuItem Header="Terminal" Click="OpenTerminal_Click" />
+                  <MenuItem Header="Fichiers" Click="OpenFiles_Click" />
+                  <MenuItem Header="Processus…" Click="OpenProcesses_Click" />
                   <Separator />
                   <MenuItem Header="Page web MeshCentral" Click="OpenWebPage_Click" />
+                  <MenuItem Header="Informations système…" Click="OpenSystemInfo_Click" />
                   <Separator />
                   <MenuItem x:Name="ScaleMenu" Header="Échelle de l'image">
                     <MenuItem Header="100 % — taille réelle" Tag="100" ToggleType="CheckBox" Click="Scale_Click" />

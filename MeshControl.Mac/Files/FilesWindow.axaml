@@ -1,0 +1,393 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.FilesWindow"
+                   Width="960" Height="680" MinWidth="640" MinHeight="420"
+                   WindowStartupLocation="CenterScreen">
+
+  <!-- Portage de Files/FilesWindow.xaml (version Windows) : en-tête de la
+       machine, volet distant (et volet de ce poste en double volet), file de
+       transferts en bas. -->
+  <local:ChromeWindow.Resources>
+    <!-- Cellules d'une ligne : nom (pastille + texte), taille, date, type.
+         Deux jeux de largeurs : vue simple, et double volet (resserrée). -->
+    <DataTemplate x:Key="FileRowWide" DataType="local:FileRow">
+      <Grid ColumnDefinitions="*,110,150,150" Background="Transparent">
+        <StackPanel Orientation="Horizontal">
+          <Border Width="28" Height="28" CornerRadius="7" Background="{Binding GlyphBackground}" Margin="4,0,0,0">
+            <local:Icon Kind="{Binding Glyph}" Size="13" Foreground="{Binding GlyphColor}"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <TextBlock Text="{Binding Name}" Margin="11,0,0,0" FontSize="12.5"
+                     Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" Text="{Binding SizeText}" FontSize="12" Margin="10,0,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="2" Text="{Binding ModifiedText}" FontSize="12" Margin="10,0,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="3" Text="{Binding KindText}" FontSize="12" Margin="10,0,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+      </Grid>
+    </DataTemplate>
+    <DataTemplate x:Key="FileRowNarrow" DataType="local:FileRow">
+      <Grid ColumnDefinitions="*,80,125,110" Background="Transparent">
+        <StackPanel Orientation="Horizontal">
+          <Border Width="28" Height="28" CornerRadius="7" Background="{Binding GlyphBackground}" Margin="4,0,0,0">
+            <local:Icon Kind="{Binding Glyph}" Size="13" Foreground="{Binding GlyphColor}"
+                        HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+          <TextBlock Text="{Binding Name}" Margin="11,0,0,0" FontSize="12.5"
+                     Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" Text="{Binding SizeText}" FontSize="12" Margin="10,0,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="2" Text="{Binding ModifiedText}" FontSize="12" Margin="10,0,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="3" Text="{Binding KindText}" FontSize="12" Margin="10,0,0,0"
+                   Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" />
+      </Grid>
+    </DataTemplate>
+  </local:ChromeWindow.Resources>
+
+  <DockPanel>
+    <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top" />
+
+    <DockPanel x:Name="RootPanel" Background="Transparent" DragDrop.AllowDrop="True">
+
+      <!-- En-tête : la machine, son état, les actions -->
+      <Border DockPanel.Dock="Top" Background="{DynamicResource CardBrush}"
+              BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,0,1" Padding="16,12,16,12">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Orientation="Horizontal">
+            <Border Width="36" Height="36" CornerRadius="10" Background="{DynamicResource FolderSoftBrush}"
+                    VerticalAlignment="Center">
+              <local:Icon Kind="Folder" Size="16" Foreground="{DynamicResource FolderBrush}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
+              <TextBlock x:Name="TitleText" FontSize="14" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+              <Border x:Name="StatusBadge" CornerRadius="8" Padding="7,1" Margin="0,3,0,0" HorizontalAlignment="Left">
+                <TextBlock x:Name="StatusLabel" FontSize="10.5" FontWeight="SemiBold" />
+              </Border>
+            </StackPanel>
+          </StackPanel>
+
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Button x:Name="DualPaneButton" Classes="header" Click="DualPane_Click" Margin="0,0,14,0"
+                    ToolTip.Tip="Afficher les dossiers de ce poste à gauche, ceux de la machine à droite">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="Sidebar" Size="12" VerticalAlignment="Center" Margin="0,0,7,0" />
+                <TextBlock Text="Double volet" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="UploadButton" Classes="accentTool" Padding="12,7" Click="Upload_Click" Margin="0,0,6,0"
+                    ToolTip.Tip="Envoyer des fichiers dans ce dossier — ou les glisser depuis le Finder">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="Upload" Size="12" VerticalAlignment="Center" Margin="0,0,7,0" />
+                <TextBlock Text="Envoyer" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="DownloadButton" Classes="header" Click="Download_Click" Margin="0,0,6,0"
+                    ToolTip.Tip="Télécharger les fichiers et dossiers sélectionnés">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="Download" Size="12" VerticalAlignment="Center" Margin="0,0,7,0" />
+                <TextBlock Text="Télécharger" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="NewFolderButton" Classes="header" Click="NewFolder_Click" Margin="0,0,6,0"
+                    ToolTip.Tip="Créer un dossier sur la machine distante">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="NewFolder" Size="12" VerticalAlignment="Center" Margin="0,0,7,0" />
+                <TextBlock Text="Nouveau dossier" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="MultiDeviceButton" Classes="header" Click="SendToDevices_Click"
+                    ToolTip.Tip="Envoyer des fichiers vers cette machine et d'autres, en parallèle">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="Devices" Size="12" VerticalAlignment="Center" Margin="0,0,7,0" />
+                <TextBlock Text="Plusieurs appareils…" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- Panneau des transferts : un résumé, et le détail fichier par fichier -->
+      <Border x:Name="TransferPanel" DockPanel.Dock="Bottom" Classes="card" Margin="12,0,12,12" IsVisible="False">
+        <StackPanel>
+          <Grid ColumnDefinitions="Auto,*,Auto" Margin="14,11,10,9">
+            <Border x:Name="TransferHeaderBadge" Width="32" Height="32" CornerRadius="9"
+                    Background="{DynamicResource AccentSoftBrush}">
+              <local:Icon x:Name="TransferHeaderGlyph" Kind="Upload" Size="13"
+                          Foreground="{DynamicResource AccentBrush}"
+                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Grid.Column="1" Margin="11,0,10,0" VerticalAlignment="Center">
+              <TextBlock x:Name="TransferTitle" FontSize="12.5" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="TransferSubtitle" Classes="caption" Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="ClearFinishedButton" Content="Effacer la liste" Classes="subtle" Margin="0,0,6,0"
+                      Click="ClearFinished_Click" />
+              <Button x:Name="CancelTransferButton" Content="Tout annuler" Classes="header" Padding="10,5"
+                      Foreground="{DynamicResource DangerBrush}" Margin="0,0,6,0" Click="CancelTransfer_Click" />
+              <Button x:Name="ToggleTransfersButton" Classes="icon" Click="ToggleTransfers_Click"
+                      ToolTip.Tip="Masquer le détail">
+                <local:Icon x:Name="ToggleTransfersGlyph" Kind="ChevronDown" Size="10" />
+              </Button>
+            </StackPanel>
+          </Grid>
+
+          <ProgressBar x:Name="TransferBar" Classes="slim" Margin="14,0,14,11" />
+
+          <Border x:Name="TransferListHost" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0">
+            <ScrollViewer MaxHeight="216" VerticalScrollBarVisibility="Auto">
+              <ItemsControl x:Name="TransferList" Margin="6,4">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="local:TransferItem">
+                    <Grid Margin="8,5" ToolTip.Tip="{Binding Tooltip}" Background="Transparent"
+                          ColumnDefinitions="Auto,*,Auto,Auto">
+                      <Panel Width="30" Height="30" VerticalAlignment="Center">
+                        <Border CornerRadius="8" Background="{Binding GlyphBackground}">
+                          <local:Icon Kind="{Binding Glyph}" Size="13" Foreground="{Binding GlyphColor}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <Border Width="15" Height="15" CornerRadius="7.5" Background="{DynamicResource CardBrush}"
+                                BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="1"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-4,-4">
+                          <local:Icon Kind="{Binding DirectionGlyph}" Size="7" Foreground="{DynamicResource AccentBrush}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                      </Panel>
+                      <StackPanel Grid.Column="1" Margin="13,0,10,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <ProgressBar Classes="slim" Height="3" Value="{Binding Fraction, Mode=OneWay}"
+                                     IsVisible="{Binding ProgressVisible}" Margin="0,4,0,3" />
+                        <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{Binding DetailColor}"
+                                   TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                      <local:Icon Grid.Column="2" Kind="{Binding StateGlyph}" Size="13" Foreground="{Binding StateColor}"
+                                  VerticalAlignment="Center" Margin="0,0,6,0" />
+                      <Button Grid.Column="3" Classes="icon" ToolTip.Tip="{Binding ActionTooltip}"
+                              IsVisible="{Binding ActionVisible}" Click="TransferAction_Click"
+                              VerticalAlignment="Center">
+                        <local:Icon Kind="{Binding ActionGlyph}" Size="10" />
+                      </Button>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Border>
+        </StackPanel>
+      </Border>
+
+      <!-- Les volets : ce poste (double volet), passerelle, machine distante -->
+      <Grid x:Name="PanesGrid" Margin="12" ColumnDefinitions="0,0,*">
+
+        <!-- Volet local -->
+        <Panel x:Name="LocalPaneHost" IsVisible="False">
+          <Border x:Name="LocalPane" Classes="card" DragDrop.AllowDrop="True">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Top" Margin="12,12,12,4">
+                <StackPanel Orientation="Horizontal" Margin="4,0,0,8">
+                  <local:Icon Kind="Computer" Size="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                              VerticalAlignment="Center" Margin="0,0,7,0" />
+                  <TextBlock x:Name="LocalPaneTitle" Text="Ce poste" FontSize="12" FontWeight="SemiBold"
+                             Foreground="{DynamicResource TextSecondaryBrush}" />
+                </StackPanel>
+                <Grid ColumnDefinitions="Auto,Auto,*">
+                  <Button x:Name="LocalUpButton" Classes="header" Click="LocalUp_Click" Padding="9,8" Margin="0,0,6,0"
+                          ToolTip.Tip="Dossier parent">
+                    <local:Icon Kind="ArrowUp" Size="12" />
+                  </Button>
+                  <Button Grid.Column="1" Classes="header" Click="LocalRefresh_Click" Padding="9,8" Margin="0,0,8,0"
+                          ToolTip.Tip="Actualiser">
+                    <local:Icon Kind="Refresh" Size="12" />
+                  </Button>
+                  <Border Grid.Column="2" Background="{DynamicResource SubtleFillBrush}" CornerRadius="8"
+                          Padding="4,0" Height="32">
+                    <ScrollViewer x:Name="LocalBreadcrumbScroller" HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Disabled">
+                      <StackPanel x:Name="LocalBreadcrumbPanel" Orientation="Horizontal" VerticalAlignment="Center" />
+                    </ScrollViewer>
+                  </Border>
+                </Grid>
+              </StackPanel>
+
+              <Grid DockPanel.Dock="Top" ColumnDefinitions="*,80,125,110" Margin="6,0,17,0">
+                <TextBlock Text="Nom" Classes="columnHeader" Margin="16,10,8,8" />
+                <TextBlock Grid.Column="1" Text="Taille" Classes="columnHeader" Margin="10,10,8,8" />
+                <TextBlock Grid.Column="2" Text="Modifié le" Classes="columnHeader" Margin="10,10,8,8" />
+                <TextBlock Grid.Column="3" Text="Type" Classes="columnHeader" Margin="10,10,8,8" />
+                <Border Grid.ColumnSpan="4" Height="1" VerticalAlignment="Bottom"
+                        Background="{DynamicResource SeparatorBrush}" />
+              </Grid>
+
+              <Panel>
+                <ListBox x:Name="LocalList" Classes="files" SelectionMode="Multiple" Margin="0,0,0,6"
+                         ItemTemplate="{StaticResource FileRowNarrow}"
+                         DoubleTapped="LocalList_DoubleTapped" KeyDown="LocalList_KeyDown"
+                         SelectionChanged="PaneSelection_Changed">
+                  <ListBox.ContextMenu>
+                    <ContextMenu Opening="LocalMenu_Opening">
+                      <MenuItem x:Name="LocalMenuSend" Header="Envoyer vers la machine" FontWeight="SemiBold"
+                                Click="SendLocal_Click" />
+                      <MenuItem x:Name="LocalMenuOpen" Header="Ouvrir" Click="LocalMenuOpen_Click" />
+                      <Separator />
+                      <MenuItem x:Name="LocalMenuReveal" Header="Afficher dans le Finder" Click="LocalMenuReveal_Click" />
+                    </ContextMenu>
+                  </ListBox.ContextMenu>
+                </ListBox>
+
+                <StackPanel x:Name="LocalEmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
+                            IsHitTestVisible="False" Margin="0,30,0,0" IsVisible="False">
+                  <Border Width="52" Height="52" CornerRadius="15" Background="{DynamicResource SubtleFillBrush}"
+                          HorizontalAlignment="Center">
+                    <local:Icon Kind="Folder" Size="22" Foreground="{DynamicResource TextSecondaryBrush}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock x:Name="LocalEmptyText" FontSize="13" FontWeight="SemiBold"
+                             Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center"
+                             TextAlignment="Center" TextWrapping="Wrap" MaxWidth="260" Margin="0,12,0,0" />
+                </StackPanel>
+              </Panel>
+            </DockPanel>
+          </Border>
+
+          <!-- Voile : fichiers distants glissés vers ce poste -->
+          <Panel x:Name="LocalDropOverlay" IsVisible="False" IsHitTestVisible="False">
+            <Rectangle RadiusX="12" RadiusY="12" Fill="{DynamicResource DropZoneBrush}" Stroke="{DynamicResource AccentBrush}"
+                       StrokeThickness="2" StrokeDashArray="5,3" />
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+              <Border Width="56" Height="56" CornerRadius="28" Background="{DynamicResource AccentBrush}"
+                      HorizontalAlignment="Center">
+                <local:Icon Kind="Download" Size="22" Foreground="White" HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+              </Border>
+              <TextBlock Text="Déposer pour télécharger" FontSize="15" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center" Margin="0,12,0,0" />
+              <TextBlock x:Name="LocalDropOverlayText" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                         Margin="0,5,0,0" HorizontalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="320" />
+            </StackPanel>
+          </Panel>
+        </Panel>
+
+        <!-- Passerelle entre les volets -->
+        <StackPanel x:Name="BridgePanel" Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    IsVisible="False">
+          <Button x:Name="SendLocalButton" Classes="paneTransfer" Click="SendLocal_Click" Margin="0,0,0,10"
+                  ToolTip.Tip="Envoyer la sélection de ce poste vers la machine">
+            <local:Icon Kind="ArrowRight" Size="14" />
+          </Button>
+          <Button x:Name="DownloadHereButton" Classes="paneTransfer" Click="DownloadHere_Click"
+                  ToolTip.Tip="Télécharger la sélection de la machine dans ce dossier">
+            <local:Icon Kind="ArrowLeft" Size="14" />
+          </Button>
+        </StackPanel>
+
+        <!-- Volet distant -->
+        <Panel Grid.Column="2">
+          <Border Classes="card" Padding="0,0,0,6">
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Top" Margin="12,12,12,4">
+                <StackPanel x:Name="RemotePaneTitle" Orientation="Horizontal" Margin="4,0,0,8" IsVisible="False">
+                  <local:Icon Kind="Network" Size="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                              VerticalAlignment="Center" Margin="0,0,7,0" />
+                  <TextBlock x:Name="RemotePaneTitleText" FontSize="12" FontWeight="SemiBold"
+                             Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <Grid ColumnDefinitions="Auto,Auto,*">
+                  <Button x:Name="UpButton" Classes="header" Click="Up_Click" Padding="9,8" Margin="0,0,6,0"
+                          ToolTip.Tip="Dossier parent (Retour arrière)">
+                    <local:Icon Kind="ArrowUp" Size="12" />
+                  </Button>
+                  <Button x:Name="RefreshButton" Grid.Column="1" Classes="header" Click="Refresh_Click" Padding="9,8"
+                          Margin="0,0,8,0" ToolTip.Tip="Actualiser (F5)">
+                    <local:Icon Kind="Refresh" Size="12" />
+                  </Button>
+                  <Border Grid.Column="2" Background="{DynamicResource SubtleFillBrush}" CornerRadius="8"
+                          Padding="4,0" Height="32">
+                    <ScrollViewer x:Name="BreadcrumbScroller" HorizontalScrollBarVisibility="Hidden"
+                                  VerticalScrollBarVisibility="Disabled">
+                      <StackPanel x:Name="BreadcrumbPanel" Orientation="Horizontal" VerticalAlignment="Center" />
+                    </ScrollViewer>
+                  </Border>
+                </Grid>
+              </StackPanel>
+
+              <Grid x:Name="RemoteHeader" DockPanel.Dock="Top" ColumnDefinitions="*,110,150,150" Margin="6,0,17,0">
+                <TextBlock Text="Nom" Classes="columnHeader" Margin="16,10,8,8" />
+                <TextBlock Grid.Column="1" Text="Taille" Classes="columnHeader" Margin="10,10,8,8" />
+                <TextBlock Grid.Column="2" Text="Modifié le" Classes="columnHeader" Margin="10,10,8,8" />
+                <TextBlock Grid.Column="3" Text="Type" Classes="columnHeader" Margin="10,10,8,8" />
+                <Border Grid.ColumnSpan="4" Height="1" VerticalAlignment="Bottom"
+                        Background="{DynamicResource SeparatorBrush}" />
+              </Grid>
+
+              <Panel>
+                <ListBox x:Name="FileList" Classes="files" SelectionMode="Multiple"
+                         ItemTemplate="{StaticResource FileRowWide}"
+                         DoubleTapped="FileList_DoubleTapped" KeyDown="FileList_KeyDown"
+                         SelectionChanged="PaneSelection_Changed">
+                  <ListBox.ContextMenu>
+                    <ContextMenu Opening="FileMenu_Opening">
+                      <MenuItem x:Name="MenuOpen" Header="Ouvrir" FontWeight="SemiBold" Click="MenuOpen_Click" />
+                      <MenuItem x:Name="MenuDownload" Header="Télécharger…" Click="Download_Click" />
+                      <Separator />
+                      <MenuItem x:Name="MenuRename" Header="Renommer…" Click="MenuRename_Click" />
+                      <MenuItem x:Name="MenuDelete" Header="Supprimer…" Click="MenuDelete_Click" />
+                      <Separator />
+                      <MenuItem x:Name="MenuCopyPath" Header="Copier le chemin" Click="MenuCopyPath_Click" />
+                    </ContextMenu>
+                  </ListBox.ContextMenu>
+                </ListBox>
+
+                <!-- État vide : dossier vide, illisible, ou connexion en cours -->
+                <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
+                            IsHitTestVisible="False" Margin="0,30,0,0" IsVisible="False">
+                  <Border Width="58" Height="58" CornerRadius="16" Background="{DynamicResource SubtleFillBrush}"
+                          HorizontalAlignment="Center">
+                    <local:Icon x:Name="EmptyGlyph" Kind="Folder" Size="24" Foreground="{DynamicResource TextSecondaryBrush}"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock x:Name="EmptyTitle" FontSize="13.5" FontWeight="SemiBold"
+                             Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center" Margin="0,14,0,0" />
+                  <TextBlock x:Name="EmptyHint" Classes="caption" FontSize="12" HorizontalAlignment="Center"
+                             TextAlignment="Center" TextWrapping="Wrap" MaxWidth="320" Margin="0,5,0,0" />
+                  <ProgressBar x:Name="EmptyProgress" IsIndeterminate="True" Width="140" Height="4" MinHeight="4"
+                               Margin="0,14,0,0" Foreground="{DynamicResource AccentBrush}" IsVisible="False" />
+                </StackPanel>
+              </Panel>
+            </DockPanel>
+          </Border>
+
+          <!-- Repère du dépôt : fichiers glissés depuis le Finder -->
+          <Panel x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False">
+            <Rectangle RadiusX="12" RadiusY="12" Fill="{DynamicResource DropZoneBrush}" Stroke="{DynamicResource AccentBrush}"
+                       StrokeThickness="2" StrokeDashArray="5,3" />
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+              <Border Width="60" Height="60" CornerRadius="30" Background="{DynamicResource AccentBrush}"
+                      HorizontalAlignment="Center">
+                <local:Icon Kind="Upload" Size="24" Foreground="White" HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+              </Border>
+              <TextBlock Text="Déposer pour envoyer" FontSize="16" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center" Margin="0,14,0,0" />
+              <TextBlock x:Name="DropOverlayText" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"
+                         Margin="0,5,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                         MaxWidth="420" />
+            </StackPanel>
+          </Panel>
+        </Panel>
+      </Grid>
+    </DockPanel>
+  </DockPanel>
+</local:ChromeWindow>

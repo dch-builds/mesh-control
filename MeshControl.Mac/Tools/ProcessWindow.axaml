@@ -1,0 +1,223 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.ProcessWindow"
+                   Width="940" Height="680" MinWidth="640" MinHeight="420"
+                   WindowStartupLocation="CenterScreen">
+
+  <!-- Portage de UI/ProcessWindow.xaml (version Windows). -->
+  <DockPanel>
+    <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top" />
+
+    <DockPanel Margin="20,16,20,16">
+
+      <!-- En-tête : machine, compteur, actions -->
+      <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,14">
+        <StackPanel VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal">
+            <Ellipse x:Name="NodeDot" Width="8" Height="8" Margin="1,2,9,0"
+                     VerticalAlignment="Center" Fill="{DynamicResource OnlineBrush}" />
+            <TextBlock x:Name="TitleText" FontSize="18" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <TextBlock x:Name="CountText" Classes="caption" Margin="18,3,0,0" />
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <!-- Actualisation automatique, toutes les 5 secondes -->
+          <ToggleButton x:Name="AutoRefreshToggle" Classes="chip" Margin="0,0,8,0" Click="AutoRefresh_Click"
+                        ToolTip.Tip="Relire la liste toutes les 5 secondes">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Sync" Size="10" Foreground="{Binding $parent[ToggleButton].Foreground}"
+                          VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock Text="Auto" VerticalAlignment="Center" />
+            </StackPanel>
+          </ToggleButton>
+          <Button x:Name="RefreshButton" Classes="tool" Click="Refresh_Click" Padding="10,6" Margin="0,0,8,0"
+                  ToolTip.Tip="Relire la liste (F5)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Refresh" Size="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                          VerticalAlignment="Center" Margin="0,0,7,0" />
+              <TextBlock Text="Actualiser" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="KillButton" Classes="dangerTool" Click="Kill_Click" Padding="12,6" IsEnabled="False"
+                  ToolTip.Tip="Arrêter les processus sélectionnés (Suppr)">
+            <StackPanel Orientation="Horizontal">
+              <local:Icon Kind="Close" Size="10" Foreground="{Binding $parent[Button].Foreground}"
+                          VerticalAlignment="Center" Margin="0,1,7,0" />
+              <TextBlock x:Name="KillLabel" Text="Arrêter" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+      </Grid>
+
+      <!-- Recherche et pastilles -->
+      <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="6*" MaxWidth="460" />
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Border Classes="searchFrame" Height="36" CornerRadius="10" Background="{DynamicResource ControlBrush}"
+                BorderThickness="1" Margin="0,0,12,0" Cursor="Ibeam" PointerPressed="SearchFrame_PointerPressed">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <local:Icon Classes="searchGlyph" Kind="Search" Size="12" Margin="12,0,0,0"
+                        VerticalAlignment="Center" IsHitTestVisible="False" />
+            <Panel Grid.Column="1" Margin="9,0,0,0">
+              <TextBox x:Name="FilterBox" Classes="bare" FontSize="13"
+                       TextChanged="FilterBox_TextChanged" KeyDown="FilterBox_KeyDown" />
+              <TextBlock x:Name="FilterPlaceholder" Text="Rechercher un processus, un PID ou un utilisateur"
+                         FontSize="13" TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource PlaceholderBrush}" VerticalAlignment="Center"
+                         IsHitTestVisible="False" />
+            </Panel>
+            <Button x:Name="ClearFilterButton" Grid.Column="2" Classes="icon" Margin="0,0,5,0" IsVisible="False"
+                    Click="ClearFilter_Click" ToolTip.Tip="Effacer (Échap)">
+              <local:Icon Kind="Close" Size="10" />
+            </Button>
+          </Grid>
+        </Border>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <ToggleButton x:Name="ChipAll" Classes="chip" Tag="all" Click="Chip_Click" IsChecked="True"
+                        ToolTip.Tip="Tous les processus">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Tous" />
+              <TextBlock x:Name="ChipAllCount" Classes="chipCount" Margin="6,0,0,0" />
+            </StackPanel>
+          </ToggleButton>
+          <ToggleButton x:Name="ChipUser" Classes="chip" Tag="user" Click="Chip_Click"
+                        ToolTip.Tip="Processus lancés par des utilisateurs : ceux qu'on arrête d'ordinaire">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Utilisateurs" />
+              <TextBlock x:Name="ChipUserCount" Classes="chipCount" Margin="6,0,0,0" />
+            </StackPanel>
+          </ToggleButton>
+          <ToggleButton x:Name="ChipSystem" Classes="chip" Tag="system" Click="Chip_Click"
+                        ToolTip.Tip="Processus du système et des services : à arrêter avec prudence">
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="Système" />
+              <TextBlock x:Name="ChipSystemCount" Classes="chipCount" Margin="6,0,0,0" />
+            </StackPanel>
+          </ToggleButton>
+        </StackPanel>
+      </Grid>
+
+      <!-- Compte rendu des actions : arrêt confirmé, refusé, erreur -->
+      <Border x:Name="StatusBanner" DockPanel.Dock="Bottom" IsVisible="False" Opacity="0"
+              CornerRadius="8" Padding="12,8" Margin="0,10,0,0" Background="{DynamicResource SubtleFillBrush}">
+        <Border.Transitions>
+          <Transitions>
+            <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+          </Transitions>
+        </Border.Transitions>
+        <DockPanel>
+          <local:Icon x:Name="StatusGlyph" Size="12" VerticalAlignment="Center" Margin="0,1,10,0" />
+          <TextBlock x:Name="StatusText" FontSize="12" TextWrapping="Wrap"
+                     Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" />
+        </DockPanel>
+      </Border>
+
+      <!-- Liste -->
+      <Border Classes="card" Padding="6">
+        <DockPanel>
+          <!-- En-têtes : un clic trie la colonne, un second inverse l'ordre.
+               Marge droite : celle que la liste réserve à sa barre de défilement. -->
+          <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,0,1"
+                  Margin="0,2,0,4" Padding="10,4,21,7">
+            <Grid ColumnDefinitions="30,*,90,200,96">
+              <StackPanel Grid.Column="1" Orientation="Horizontal" Tag="name" Background="Transparent"
+                          Cursor="Hand" PointerReleased="Header_Click">
+                <TextBlock Text="Nom" FontSize="11.5" Foreground="{DynamicResource TextSecondaryBrush}" />
+                <local:Icon x:Name="ArrowName" Size="8" Margin="6,1,0,0" VerticalAlignment="Center"
+                            Foreground="{DynamicResource AccentBrush}" />
+              </StackPanel>
+              <StackPanel Grid.Column="2" Orientation="Horizontal" Tag="pid" Background="Transparent"
+                          Cursor="Hand" PointerReleased="Header_Click">
+                <TextBlock Text="PID" FontSize="11.5" Foreground="{DynamicResource TextSecondaryBrush}" />
+                <local:Icon x:Name="ArrowPid" Size="8" Margin="6,1,0,0" VerticalAlignment="Center"
+                            Foreground="{DynamicResource AccentBrush}" />
+              </StackPanel>
+              <StackPanel Grid.Column="3" Orientation="Horizontal" Tag="user" Background="Transparent"
+                          Cursor="Hand" PointerReleased="Header_Click">
+                <TextBlock Text="Utilisateur" FontSize="11.5" Foreground="{DynamicResource TextSecondaryBrush}" />
+                <local:Icon x:Name="ArrowUser" Size="8" Margin="6,1,0,0" VerticalAlignment="Center"
+                            Foreground="{DynamicResource AccentBrush}" />
+              </StackPanel>
+            </Grid>
+          </Border>
+
+          <Panel>
+            <ListBox x:Name="ProcessList" Classes="devices" SelectionMode="Multiple"
+                     SelectionChanged="ProcessList_SelectionChanged" KeyDown="ProcessList_KeyDown">
+              <ListBox.Resources>
+                <Thickness x:Key="DeviceRowPadding">10,3,10,3</Thickness>
+              </ListBox.Resources>
+              <ListBox.ContextMenu>
+                <ContextMenu Opening="RowMenu_Opening">
+                  <MenuItem x:Name="MenuKill" Header="Arrêter" InputGesture="Delete"
+                            Foreground="{DynamicResource DangerBrush}" Click="Kill_Click" />
+                  <Separator />
+                  <MenuItem Header="Copier le nom" Click="CopyName_Click" />
+                  <MenuItem Header="Copier le PID" Click="CopyPid_Click" />
+                  <MenuItem Header="Rechercher ce nom" Click="FilterSameName_Click"
+                            ToolTip.Tip="Afficher toutes les instances de ce programme" />
+                </ContextMenu>
+              </ListBox.ContextMenu>
+              <ListBox.ItemTemplate>
+                <DataTemplate DataType="local:ProcessRow">
+                  <Grid ColumnDefinitions="30,*,90,200,96" MinHeight="30" Background="Transparent">
+                    <local:Icon Kind="{Binding Glyph}" Size="13" Foreground="{Binding GlyphColor}"
+                                VerticalAlignment="Center" HorizontalAlignment="Left" />
+                    <TextBlock Grid.Column="1" local:Highlight.Text="{Binding Name}"
+                               FontSize="12.5" FontWeight="{Binding NameWeight}" Foreground="{Binding NameBrush}"
+                               TextDecorations="{Binding NameDecorations}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0"
+                               ToolTip.Tip="{Binding Name}" />
+                    <TextBlock Grid.Column="2" local:Highlight.Text="{Binding PidText}"
+                               FontFamily="Cascadia Mono, Consolas, Menlo, monospace" FontSize="11.5"
+                               Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="3" local:Highlight.Text="{Binding UserLabel}" FontSize="12"
+                               Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <!-- Arrêt en un clic, au survol ; état pendant l'arrêt -->
+                    <Panel Grid.Column="4" IsVisible="{Binding !IsStopping}">
+                      <StackPanel Classes="hoverActions" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <Button Classes="dangerTool" Padding="9,3" FontSize="11" Focusable="False"
+                                Click="RowKill_Click">
+                          <StackPanel Orientation="Horizontal">
+                            <local:Icon Kind="Close" Size="9" Foreground="{Binding $parent[Button].Foreground}"
+                                        VerticalAlignment="Center" Margin="0,1,6,0" />
+                            <TextBlock Text="Arrêter" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </Button>
+                      </StackPanel>
+                    </Panel>
+                    <TextBlock Grid.Column="4" Text="Arrêt…" IsVisible="{Binding IsStopping}"
+                               FontSize="11.5" FontStyle="Italic" HorizontalAlignment="Right"
+                               Foreground="{DynamicResource DangerBrush}" VerticalAlignment="Center"
+                               Margin="0,0,6,0" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- Chargement et liste vide -->
+            <StackPanel x:Name="LoadingState" VerticalAlignment="Center" HorizontalAlignment="Center" IsVisible="False">
+              <ProgressBar IsIndeterminate="True" Width="180" Height="4" MinHeight="4"
+                           Foreground="{DynamicResource AccentBrush}" />
+              <TextBlock Text="Lecture des processus…" Classes="caption" HorizontalAlignment="Center"
+                         Margin="0,10,0,0" />
+            </StackPanel>
+            <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" IsVisible="False">
+              <local:Icon Kind="Search" Size="24" Foreground="{DynamicResource PlaceholderBrush}"
+                          HorizontalAlignment="Center" />
+              <TextBlock Text="Aucun processus ne correspond" FontSize="13" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center"
+                         Margin="0,10,0,0" />
+            </StackPanel>
+          </Panel>
+        </DockPanel>
+      </Border>
+    </DockPanel>
+  </DockPanel>
+</local:ChromeWindow>

@@ -270,8 +270,17 @@
                                 Content="Redémarrer…" Click="BulkReboot_Click" />
                         <Button x:Name="BulkPowerOffButton" Classes="tool" Padding="10,5" Margin="0,0,6,0"
                                 Content="Éteindre…" Click="BulkPowerOff_Click" />
-                        <Button x:Name="BulkFavoriteButton" Classes="tool" Padding="10,5"
+                        <Button x:Name="BulkFavoriteButton" Classes="tool" Padding="10,5" Margin="0,0,6,0"
                                 Content="Ajouter aux favoris" Click="BulkFavorite_Click" />
+                        <Button x:Name="BulkSendFilesButton" Classes="accentTool" Padding="10,5"
+                                Click="BulkSendFiles_Click"
+                                ToolTip.Tip="Envoyer des fichiers aux machines en ligne de la sélection">
+                          <StackPanel Orientation="Horizontal">
+                            <local:Icon Kind="Upload" Size="11" Foreground="{Binding $parent[Button].Foreground}"
+                                        VerticalAlignment="Center" Margin="0,0,7,0" />
+                            <TextBlock Text="Envoyer des fichiers" FontSize="11.5" VerticalAlignment="Center" />
+                          </StackPanel>
+                        </Button>
                       </StackPanel>
                       <TextBlock x:Name="SelectionText" VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
                                  Foreground="{DynamicResource InfoTextBrush}" TextTrimming="CharacterEllipsis"
@@ -321,6 +330,10 @@
                           <MenuItem x:Name="MenuTerminal" Header="Terminal" InputGesture="Ctrl+T"
                                     Click="MenuTerminal_Click"
                                     ToolTip.Tip="Invite de commandes / PowerShell via l'agent" />
+                          <MenuItem x:Name="MenuFiles" Header="Fichiers" InputGesture="Ctrl+E"
+                                    Click="MenuFiles_Click" ToolTip.Tip="Parcourir et transférer des fichiers" />
+                          <MenuItem x:Name="MenuSendFiles" Header="Envoyer des fichiers…" Click="MenuSendFiles_Click"
+                                    ToolTip.Tip="Vers cette machine et d'autres, en parallèle" />
                           <MenuItem x:Name="MenuSsh" Header="Terminal SSH" Click="MenuSsh_Click"
                                     ToolTip.Tip="Nécessite SSH activé sur le serveur MeshCentral" />
                           <Separator />
@@ -329,10 +342,19 @@
                           <MenuItem x:Name="MenuSleep" Header="Mettre en veille…" Click="MenuSleep_Click" />
                           <MenuItem x:Name="MenuPowerOff" Header="Éteindre…" Click="MenuPowerOff_Click" />
                           <Separator />
+                          <MenuItem x:Name="MenuProcesses" Header="Processus…" Click="MenuProcesses_Click"
+                                    ToolTip.Tip="Voir et arrêter les processus de la machine" />
+                          <MenuItem x:Name="MenuOpenUrl" Header="Ouvrir une URL…" Click="MenuOpenUrl_Click"
+                                    ToolTip.Tip="Lancer le navigateur de la machine sur une adresse" />
+                          <Separator />
                           <MenuItem x:Name="MenuFavorite" Header="Ajouter aux favoris" Click="MenuFavorite_Click" />
+                          <MenuItem x:Name="MenuShare" Header="Partager un lien…" Click="MenuShare_Click"
+                                    ToolTip.Tip="Créer un lien public temporaire (et son code iframe)" />
                           <MenuItem x:Name="MenuRename" Header="Renommer…" InputGesture="F2"
                                     Click="MenuRename_Click" ToolTip.Tip="Changer le nom affiché dans MeshCentral" />
                           <MenuItem x:Name="MenuCopyName" Header="Copier le nom" Click="MenuCopyName_Click" />
+                          <MenuItem x:Name="MenuInfo" Header="Informations système…" Click="MenuInfo_Click"
+                                    ToolTip.Tip="Processeur, mémoire, disques, BIOS" />
                           <MenuItem x:Name="MenuWebPage" Header="Ouvrir la page web…" Click="MenuWebPage_Click"
                                     ToolTip.Tip="Voir cette machine dans MeshCentral" />
                         </ContextMenu>
@@ -383,6 +405,10 @@
                                 <Button Classes="rowAction" Tag="Terminal" Click="RowAction_Click"
                                         IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Terminal">
                                   <local:Icon Kind="Terminal" Size="12" />
+                                </Button>
+                                <Button Classes="rowAction" Tag="Files" Click="RowAction_Click"
+                                        IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Fichiers">
+                                  <local:Icon Kind="Folder" Size="12" />
                                 </Button>
                                 <Button Classes="rowAction" Tag="Wake" Click="RowAction_Click"
                                         IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="Réveiller (Wake-on-LAN)">
@@ -459,6 +485,10 @@
                                 <Button Classes="rowAction" Tag="Terminal" Click="RowAction_Click" Width="28" Height="26"
                                         IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Terminal">
                                   <local:Icon Kind="Terminal" Size="12" />
+                                </Button>
+                                <Button Classes="rowAction" Tag="Files" Click="RowAction_Click" Width="28" Height="26"
+                                        IsVisible="{Binding RemoteActionsVisible}" ToolTip.Tip="Fichiers">
+                                  <local:Icon Kind="Folder" Size="12" />
                                 </Button>
                                 <Button Classes="rowAction" Tag="Wake" Click="RowAction_Click" Width="28" Height="26"
                                         IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="Réveiller (Wake-on-LAN)">
