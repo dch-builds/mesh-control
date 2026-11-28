@@ -340,6 +340,7 @@ public partial class DesktopDock : UserControl
             Height = Math.Max(MinDockHeight, App.Settings.DesktopDockHeight);
         }
 
+        _desktop?.UpdateStreamPause();
         if (hadKeyboard) KeyboardReturned?.Invoke();
     }
 

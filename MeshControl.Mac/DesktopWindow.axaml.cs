@@ -114,6 +114,7 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
         InitializeClipboardSync();
         InitializeZoom();
         InitializeDrop();
+        InitializeStreamPause();
         UpdateModeControls();
         UpdateInputControls();
 
@@ -140,6 +141,7 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
         ScreenHost.Focus();
         _statsTimer.Start();
         await _session.StartAsync();
+        UpdateStreamPause();
     }
 
     public void ReleaseKeyboard() => ReleaseAllKeys();
@@ -406,36 +408,6 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
         return item;
     }
 
-    private void UpdateDisplays()
-    {
-        DisplayButton.IsVisible = _session.HasMultipleDisplays;
-        var menu = (MenuFlyout)DisplayButton.Flyout!;
-        menu.Items.Clear();
-        foreach (var display in _session.DisplayList)
-        {
-            var item = new MenuItem
-            {
-                Header = display.Label,
-                ToggleType = MenuItemToggleType.CheckBox,
-                IsChecked = display.Id == _session.SelectedDisplay,
-            };
-            var id = display.Id;
-            item.Click += (_, _) => { _session.SelectDisplay(id); ScreenHost.Focus(); };
-            menu.Items.Add(item);
-        }
-        if (_session.HasMultipleDisplays)
-        {
-            var all = new MenuItem
-            {
-                Header = "Tous les écrans",
-                ToggleType = MenuItemToggleType.CheckBox,
-                IsChecked = _session.SelectedDisplay == RemoteDisplay.AllDisplays,
-            };
-            all.Click += (_, _) => { _session.SelectDisplay(RemoteDisplay.AllDisplays); ScreenHost.Focus(); };
-            menu.Items.Insert(0, all);
-        }
-    }
-
     private void Scale_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { Tag: string tag } || !int.TryParse(tag, out var percent)) return;
@@ -584,6 +556,7 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
     /// </summary>
     protected override void OnHostWindowStateChanged()
     {
+        UpdateStreamPause();
         // En vignette, les barres restent masquées, quoi que fasse le terminal.
         if (WindowTitleBar is null || _docked) return;
 
@@ -701,7 +674,8 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
         var (title, detail) = action switch
         {
             PowerActionType.Reboot => ($"Redémarrer « {_node.Name} » ?",
-                "La machine va redémarrer. Les travaux non enregistrés seront perdus. La session reprendra à son retour."),
+                "La machine va redémarrer. Les travaux non enregistrés seront perdus.\n\n"
+                + "La session de bureau reprendra d'elle-même au retour de la machine."),
             PowerActionType.Sleep => ($"Mettre « {_node.Name} » en veille ?",
                 "La machine sera suspendue et ne répondra plus jusqu'à son réveil."),
             _ => ($"Éteindre « {_node.Name} » ?",
@@ -711,7 +685,15 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
         try
         {
             await _connection.PowerActionAsync(_node.Id, action);
-            ShowStatus("Ordre envoyé");
+            var done = action switch
+            {
+                PowerActionType.Reboot => "Redémarrage demandé.",
+                PowerActionType.Sleep => "Mise en veille demandée.",
+                _ => "Extinction demandée.",
+            };
+            ShowStatus(done);
+            Log.Info($"{done} ({_node.Name}, depuis le bureau à distance)", "Bureau");
+            if (action == PowerActionType.Reboot) WatchForReboot();
         }
         catch (Exception ex) { ShowStatus($"Action refusée : {ex.Message}"); }
     }
@@ -840,6 +822,12 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
     /// </summary>
     private bool HandleLocalShortcut(KeyEventArgs e)
     {
+        // Ctrl+Maj+Alt+V : coller en simulant la frappe.
+        if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift | KeyModifiers.Alt) && e.Key == Key.V)
+        {
+            PasteAsTyping_Click(this, e);
+            return true;
+        }
         if (e.KeyModifiers != (KeyModifiers.Control | KeyModifiers.Shift)) return false;
         switch (e.Key)
         {
@@ -856,6 +844,8 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
             case Key.E: OpenFiles?.Invoke(); break;
             case Key.P: OpenProcesses?.Invoke(); break;
             case Key.Z: ToggleZoom(); break;
+            case Key.Left when _displayChoices.Count > 0: CycleDisplay(-1); break;
+            case Key.Right when _displayChoices.Count > 0: CycleDisplay(+1); break;
             case Key.O: SetViewOnly(!_viewOnly); break;
             case Key.Delete: SendCtrlAltDel(); break;
             default: return false;

@@ -59,6 +59,9 @@ public partial class MainWindow
     /// <summary>Ramène la fenêtre principale au premier plan (masquée dans la barre de menus, réduite…).</summary>
     public void RestoreMainWindow()
     {
+        // L'utilisateur revient regarder la liste : c'est le moment de vérifier
+        // qu'elle est juste, sans attendre la relecture périodique.
+        if (!IsVisible) ScheduleResync("retour dans la fenêtre");
         if (!IsVisible) Show();
         if (WindowState == Avalonia.Controls.WindowState.Minimized) WindowState = Avalonia.Controls.WindowState.Normal;
         Activate();

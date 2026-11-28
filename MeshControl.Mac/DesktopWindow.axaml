@@ -79,8 +79,11 @@
 
             <!-- Sélecteur d'écran : masqué tant que la machine n'en a qu'un. -->
             <Button x:Name="DisplayButton" Classes="tool" IsVisible="False" Focusable="False"
-                    Padding="9,5" Margin="12,0,0,0" ToolTip.Tip="Choisir l'écran affiché">
-              <local:Icon Kind="Desktop" Size="13" />
+                    Padding="9,5" Margin="12,0,0,0" ToolTip.Tip="Choisir l'écran affiché (Ctrl+Maj+← / →)">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="Desktop" Size="13" VerticalAlignment="Center" />
+                <TextBlock x:Name="DisplayButtonText" FontSize="12" VerticalAlignment="Center" Margin="6,0,0,0" />
+              </StackPanel>
               <Button.Flyout>
                 <MenuFlyout Placement="BottomEdgeAlignedLeft" />
               </Button.Flyout>

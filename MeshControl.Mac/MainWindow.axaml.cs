@@ -81,6 +81,7 @@ public partial class MainWindow : ChromeWindow
         _initialized = true;
         SetupHotkey();
         SetupTray();
+        InitializeListExtras();
         Start();
 
         // Volontairement non attendu : une recherche lente ou en échec ne doit
@@ -416,7 +417,7 @@ public partial class MainWindow : ChromeWindow
         {
             _reconnectAttempt++;
             SetHeader(host, "reconnexion…", HeaderStatus.Warning);
-            await Task.Delay(TimeSpan.FromSeconds(Math.Min(30, 2 * _reconnectAttempt)));
+            await WaitBeforeRetryAsync(TimeSpan.FromSeconds(Math.Min(30, 2 * _reconnectAttempt)));
             if (_connection != lost) return;
 
             var connection = new MeshServerConnection(new ServerProfile
@@ -1877,6 +1878,14 @@ public partial class MainWindow : ChromeWindow
 
     private void ShowToast(string message)
     {
+        // Action lancée depuis la recherche rapide : la fenêtre principale est
+        // souvent masquée, le bandeau serait invisible. On passe par une notification.
+        if (!IsVisible)
+        {
+            SystemNotification.Show("Mesh Control", message);
+            return;
+        }
+
         ToastText.Text = message;
         ToastBanner.IsVisible = true;
         ToastBanner.Opacity = 1;
