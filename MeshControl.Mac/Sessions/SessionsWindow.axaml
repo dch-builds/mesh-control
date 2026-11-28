@@ -1,0 +1,120 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.SessionsWindow"
+                   Width="1180" Height="740" MinWidth="640" MinHeight="360"
+                   WindowStartupLocation="CenterScreen" Background="#1B1D21">
+
+  <!-- Portage de UI/SessionsWindow.xaml (version Windows) : une fenêtre,
+       les sessions en onglets. Le bandeau d'onglets occupe la barre de titre
+       dès deux sessions ; avec une seule, la session garde sa propre barre. -->
+  <local:ChromeWindow.Styles>
+    <!-- Onglet compact, avec bouton de fermeture : l'onglet actif se détache par
+         un fond teinté d'accent, un trait d'accent et un texte plein ; les
+         autres restent transparents, texte atténué. -->
+    <Style Selector="Button.sessionTab">
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Margin" Value="2,0,0,0" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Panel>
+            <Border Name="Bd" CornerRadius="7" Background="Transparent" Padding="11,6,6,6">
+              <ContentPresenter Name="Presenter" Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" />
+            </Border>
+            <Border Name="Indicator" Height="2" CornerRadius="1" VerticalAlignment="Bottom" Margin="10,0,10,0"
+                    Background="{DynamicResource AccentBrush}" IsVisible="False" />
+          </Panel>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.sessionTab:pointerover /template/ Border#Bd">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
+    </Style>
+    <Style Selector="Button.sessionTab:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+    <Style Selector="Button.sessionTab.selected /template/ Border#Bd">
+      <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+    </Style>
+    <Style Selector="Button.sessionTab.selected /template/ Border#Indicator">
+      <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="Button.sessionTab.selected">
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <Style Selector="Button.tabClose">
+      <Setter Property="Width" Value="20" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Margin" Value="8,0,0,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="CloseBd" CornerRadius="5" Background="Transparent">
+            <ContentPresenter Name="Presenter" Content="{TemplateBinding Content}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.tabClose:pointerover /template/ Border#CloseBd">
+      <Setter Property="Background" Value="{DynamicResource ControlHoverBrush}" />
+    </Style>
+
+    <Style Selector="RepeatButton.tabScroll">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="Delay" Value="300" />
+      <Setter Property="Interval" Value="60" />
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="Bd" Background="Transparent" CornerRadius="6">
+            <ContentPresenter Name="Presenter" Content="{TemplateBinding Content}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="RepeatButton.tabScroll:pointerover /template/ Border#Bd">
+      <Setter Property="Background" Value="{DynamicResource RowHoverBrush}" />
+    </Style>
+    <Style Selector="RepeatButton.tabScroll:disabled">
+      <Setter Property="Opacity" Value="0.35" />
+    </Style>
+  </local:ChromeWindow.Styles>
+
+  <DockPanel>
+    <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top" IsVisible="False">
+      <local:TitleBar.Content>
+        <!-- Une seule rangée qui défile (molette, flèches) ; les flèches ne
+             paraissent que si les onglets débordent. -->
+        <DockPanel x:Name="TabStrip">
+          <RepeatButton x:Name="ScrollTabsLeft" DockPanel.Dock="Left" Classes="tabScroll" IsVisible="False"
+                        Click="ScrollTabsLeft_Click" ToolTip.Tip="Onglets précédents (ou molette sur les onglets)">
+            <local:Icon Kind="ArrowLeft" Size="10" />
+          </RepeatButton>
+          <RepeatButton x:Name="ScrollTabsRight" DockPanel.Dock="Right" Classes="tabScroll" IsVisible="False"
+                        Click="ScrollTabsRight_Click" ToolTip.Tip="Onglets suivants (ou molette sur les onglets)">
+            <local:Icon Kind="ArrowRight" Size="10" />
+          </RepeatButton>
+          <ScrollViewer x:Name="TabScroller" HorizontalScrollBarVisibility="Hidden"
+                        VerticalScrollBarVisibility="Disabled" HorizontalAlignment="Left">
+            <StackPanel x:Name="TabPanel" Orientation="Horizontal" VerticalAlignment="Center" />
+          </ScrollViewer>
+        </DockPanel>
+      </local:TitleBar.Content>
+    </local:TitleBar>
+
+    <!-- Contenu de la session affichée -->
+    <Panel x:Name="SessionHost" />
+  </DockPanel>
+</local:ChromeWindow>

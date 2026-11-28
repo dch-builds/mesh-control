@@ -34,6 +34,8 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
     <!-- DPAPI, pour conserver les secrets quand l'application tourne sous Windows. -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.13" />
+    <!-- Mises à jour : même mécanique que la version Windows (canal « osx »). -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
   <ItemGroup>
@@ -43,6 +45,7 @@
   <!-- Code d'interface portable, partagé avec la version Windows. -->
   <ItemGroup>
     <Compile Include="..\UI\TextMatch.cs" Link="Shared\TextMatch.cs" />
+    <Compile Include="..\Core\UpdateService.cs" Link="Shared\UpdateService.cs" />
   </ItemGroup>
 
   <ItemGroup>

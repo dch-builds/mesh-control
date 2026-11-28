@@ -35,6 +35,9 @@ public sealed class TitleBar : Border
     public static readonly StyledProperty<bool> ShowMinMaxProperty =
         AvaloniaProperty.Register<TitleBar, bool>(nameof(ShowMinMax), true);
 
+    public static readonly StyledProperty<bool> IsEmbeddedProperty =
+        AvaloniaProperty.Register<TitleBar, bool>(nameof(IsEmbedded));
+
     public string? Title { get => GetValue(TitleProperty); set => SetValue(TitleProperty, value); }
 
     /// <summary>Contenu posé dans la barre à la place du titre (onglets, nom de machine).</summary>
@@ -43,7 +46,19 @@ public sealed class TitleBar : Border
     /// <summary>Faux pour une boîte de dialogue : ni réduction ni agrandissement.</summary>
     public bool ShowMinMax { get => GetValue(ShowMinMaxProperty); set => SetValue(ShowMinMaxProperty, value); }
 
+    /// <summary>
+    /// Barre d'une session affichée dans un onglet, sous le bandeau d'onglets :
+    /// elle ne garde que son contenu (la barre d'outils du bureau à distance),
+    /// sans icône, boutons de fenêtre ni déplacement. Sans contenu, elle s'efface.
+    /// </summary>
+    public bool IsEmbedded { get => GetValue(IsEmbeddedProperty); set => SetValue(IsEmbeddedProperty, value); }
+
+    /// <summary>Le contenu posé par la fenêtre (barre d'outils), pour savoir si la barre intégrée a lieu d'être.</summary>
+    private bool HasContent => Content is not null;
+
     private readonly TextBlock _title;
+    private readonly DockPanel _left;
+    private readonly Image _icon;
     private readonly ContentControl _host;
     private readonly StackPanel _buttons;
     private readonly Button _minButton;
@@ -58,13 +73,14 @@ public sealed class TitleBar : Border
         BorderBrush = Palette.Resource("SeparatorBrush");
         BorderThickness = new Thickness(0, 0, 0, 1);
 
-        var left = new DockPanel
+        _left = new DockPanel
         {
             Margin = new Thickness(OperatingSystem.IsMacOS() ? MacButtonsWidth : 15, 0, 8, 0),
             LastChildFill = true,
         };
+        var left = _left;
 
-        var icon = new Image
+        var icon = _icon = new Image
         {
             Source = _appIcon ??= LoadIcon(),
             Width = 17,
@@ -129,6 +145,9 @@ public sealed class TitleBar : Border
 
     private Window? Window => TopLevel.GetTopLevel(this) as Window;
 
+    /// <summary>Fenêtre dont l'état est suivi (une barre peut passer d'une fenêtre à l'autre).</summary>
+    private Window? _observed;
+
     private static Bitmap? LoadIcon()
     {
         try { return new Bitmap(AssetLoader.Open(new Uri("avares://MeshControl.Mac/Assets/app.png"))); }
@@ -140,10 +159,15 @@ public sealed class TitleBar : Border
         base.OnAttachedToVisualTree(e);
         if (Window is { } window)
         {
-            window.PropertyChanged += (_, args) =>
+            if (!ReferenceEquals(_observed, window))
             {
-                if (args.Property == Window.WindowStateProperty) UpdateMaxGlyph(window);
-            };
+                _observed = window;
+                window.PropertyChanged += (_, args) =>
+                {
+                    if (args.Property == Window.WindowStateProperty && ReferenceEquals(_observed, window))
+                        UpdateMaxGlyph(window);
+                };
+            }
             UpdateMaxGlyph(window);
         }
     }
@@ -164,6 +188,21 @@ public sealed class TitleBar : Border
             _minButton.IsVisible = ShowMinMax;
             _maxButton.IsVisible = ShowMinMax;
         }
+        if (change.Property == IsEmbeddedProperty || change.Property == ContentProperty)
+            ApplyEmbedded();
+    }
+
+    private void ApplyEmbedded()
+    {
+        var embedded = IsEmbedded;
+        _icon.IsVisible = !embedded;
+        _buttons.IsVisible = !embedded && !OperatingSystem.IsMacOS();
+        _left.Margin = new Thickness(embedded ? 6 : OperatingSystem.IsMacOS() ? MacButtonsWidth : 15, 0, 8, 0);
+        // Sous les onglets, une barre sans barre d'outils n'apporterait qu'une bande vide.
+        IsVisible = !embedded || HasContent;
+        WindowDecorationProperties.SetElementRole(this, embedded
+            ? WindowDecorationsElementRole.None
+            : WindowDecorationsElementRole.TitleBar);
     }
 
     private void UpdateMaxGlyph(Window window)
@@ -177,6 +216,7 @@ public sealed class TitleBar : Border
 
     private void ToggleMaximize()
     {
+        if (IsEmbedded) return;
         if (Window is not { } window || !ShowMinMax || !window.CanResize) return;
         window.WindowState = window.WindowState == WindowState.Maximized
             ? WindowState.Normal
@@ -186,7 +226,7 @@ public sealed class TitleBar : Border
     /// <summary>Glisser la barre déplace la fenêtre, comme une barre de titre système.</summary>
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (IsOnButton(e.Source)) return;
+        if (IsEmbedded || IsOnButton(e.Source)) return;
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.ClickCount > 1) return;
         Window?.BeginMoveDrag(e);
     }

@@ -60,6 +60,12 @@ public enum IconKind
     Sync,            // E895
     Add,             // E710
     Send,            // E724
+    ZoomIn,          // E8A3
+    ZoomOut,         // E71F
+    View,            // E890
+    Stop,            // E71A
+    BellOff,         // EA8F
+    Home,            // E80F
 }
 
 /// <summary>
@@ -136,6 +142,12 @@ public sealed class Icon : Control
     /// <summary>Tracés dans un carré de 16 × 16 ; « filled » pour les formes pleines.</summary>
     private static readonly Dictionary<IconKind, (string Data, bool Filled)> Shapes = new()
     {
+        [IconKind.Home] = ("M 1.5,8 L 8,2 L 14.5,8 M 3.5,6.3 L 3.5,14 L 12.5,14 L 12.5,6.3", false),
+        [IconKind.BellOff] = ("M 3,11.5 L 3,7 A 5,5 0 0 1 13,7 L 13,11.5 L 14.5,13 L 1.5,13 Z M 6.2,13 A 1.8,1.8 0 0 0 9.8,13 M 1.5,1.5 L 14.5,14.5", false),
+        [IconKind.ZoomIn] = ("M 11.5,6.5 A 5,5 0 1 1 1.5,6.5 A 5,5 0 1 1 11.5,6.5 Z M 10.1,10.1 L 14.5,14.5 M 4,6.5 L 9,6.5 M 6.5,4 L 6.5,9", false),
+        [IconKind.ZoomOut] = ("M 11.5,6.5 A 5,5 0 1 1 1.5,6.5 A 5,5 0 1 1 11.5,6.5 Z M 10.1,10.1 L 14.5,14.5 M 4,6.5 L 9,6.5", false),
+        [IconKind.View] = ("M 1.2,10.5 A 7.4,6.4 0 0 1 14.8,10.5 M 10,10.5 A 2,2 0 1 1 6,10.5 A 2,2 0 1 1 10,10.5 Z", false),
+        [IconKind.Stop] = ("M 2.5,2.5 L 13.5,2.5 L 13.5,13.5 L 2.5,13.5 Z", false),
         [IconKind.Add] = ("M 8,1.5 L 8,14.5 M 1.5,8 L 14.5,8", false),
         [IconKind.Send] = ("M 1.5,7.2 L 14.5,1.5 L 9.2,14.5 L 7.3,8.7 Z M 7.3,8.7 L 14.5,1.5", false),
         [IconKind.Settings] = ("M 13.11,6.25 L 13.35,7.24 L 15.16,7.27 L 15.16,8.73 L 13.35,8.76 L 12.85,10.38 L 12.32,11.24 L 13.58,12.55 L 12.55,13.58 L 11.24,12.32 L 9.75,13.11 L 8.76,13.35 L 8.73,15.16 L 7.27,15.16 L 7.24,13.35 L 5.62,12.85 L 4.76,12.32 L 3.45,13.58 L 2.42,12.55 L 3.68,11.24 L 2.89,9.75 L 2.65,8.76 L 0.84,8.73 L 0.84,7.27 L 2.65,7.24 L 3.15,5.62 L 3.68,4.76 L 2.42,3.45 L 3.45,2.42 L 4.76,3.68 L 6.25,2.89 L 7.24,2.65 L 7.27,0.84 L 8.73,0.84 L 8.76,2.65 L 10.38,3.15 L 11.24,3.68 L 12.55,2.42 L 13.58,3.45 L 12.32,4.76 Z M 10.4,8 A 2.4,2.4 0 1 1 5.6,8 A 2.4,2.4 0 1 1 10.4,8 Z", false),

@@ -1,0 +1,46 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.UpdateWindow"
+                   Width="480" SizeToContent="Height" CanResize="False"
+                   WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+
+  <!-- Portage de UI/UpdateWindow.xaml (version Windows). -->
+  <DockPanel>
+    <local:TitleBar DockPanel.Dock="Top" Title="Mise à jour — Mesh Control" ShowMinMax="False" />
+
+    <StackPanel Margin="22">
+      <TextBlock x:Name="HeadlineText" FontSize="15" FontWeight="SemiBold"
+                 Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" Margin="0,0,0,4" />
+      <TextBlock x:Name="VersionText" Classes="caption" TextWrapping="Wrap" Margin="0,0,0,14" />
+
+      <!-- Notes de version : hauteur bornée, la release peut être longue -->
+      <Border x:Name="NotesBox" Classes="card" Padding="12" Margin="0,0,0,14" IsVisible="False">
+        <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto">
+          <TextBlock x:Name="NotesText" Classes="caption" TextWrapping="Wrap" />
+        </ScrollViewer>
+      </Border>
+
+      <!-- Progression du téléchargement -->
+      <StackPanel x:Name="ProgressPanel" IsVisible="False" Margin="0,0,0,14">
+        <TextBlock x:Name="ProgressLabel" Classes="caption" Margin="0,0,0,6" />
+        <ProgressBar x:Name="ProgressBarControl" Classes="slim" Height="5"
+                     Background="{DynamicResource SubtleFillBrush}" />
+      </StackPanel>
+
+      <TextBlock x:Name="ErrorText" Classes="caption" Foreground="{DynamicResource DangerBrush}"
+                 TextWrapping="Wrap" Margin="0,0,0,12" IsVisible="False" />
+
+      <!-- Avertissement : l'application va se fermer -->
+      <TextBlock Classes="caption" TextWrapping="Wrap" Margin="0,0,0,14"
+                 Text="L'installation fermera l'application, puis la relancera automatiquement. Vos sessions ouvertes seront interrompues." />
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button x:Name="LaterButton" Content="Plus tard" Classes="tool" Click="Later_Click" Padding="16,8"
+                Margin="0,0,8,0" />
+        <Button x:Name="InstallButton" Content="Installer maintenant" Classes="primary" Click="Install_Click"
+                Padding="18,8" HorizontalAlignment="Right" />
+      </StackPanel>
+    </StackPanel>
+  </DockPanel>
+</local:ChromeWindow>

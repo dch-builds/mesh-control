@@ -338,6 +338,8 @@
                                     ToolTip.Tip="Nécessite SSH activé sur le serveur MeshCentral" />
                           <Separator />
                           <MenuItem x:Name="MenuWake" Header="Réveiller (Wake-on-LAN)" Click="MenuWake_Click" />
+                          <MenuItem x:Name="MenuWatch" Header="Me prévenir à son retour" Click="MenuWatch_Click"
+                                    ToolTip.Tip="Notification dès que la machine se reconnecte" />
                           <MenuItem x:Name="MenuReboot" Header="Redémarrer…" Click="MenuReboot_Click" />
                           <MenuItem x:Name="MenuSleep" Header="Mettre en veille…" Click="MenuSleep_Click" />
                           <MenuItem x:Name="MenuPowerOff" Header="Éteindre…" Click="MenuPowerOff_Click" />
@@ -414,6 +416,10 @@
                                         IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="Réveiller (Wake-on-LAN)">
                                   <local:Icon Kind="Power" Size="12" />
                                 </Button>
+                                <Button Classes="rowAction" Tag="Watch" Click="RowAction_Click"
+                                        IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="{Binding WatchTooltip}">
+                                  <local:Icon Kind="{Binding WatchGlyph}" Size="12" />
+                                </Button>
                               </StackPanel>
 
                               <Border Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"
@@ -432,7 +438,11 @@
                                 <Ellipse Classes="status" Classes.online="{Binding IsStatusOnline}"
                                          Classes.session="{Binding IsStatusSession}"
                                          Classes.inactive="{Binding IsStatusInactive}"
+                                         IsVisible="{Binding StatusDotVisible}"
                                          ToolTip.Tip="{Binding StatusTooltip}" />
+                                <local:Icon Kind="Bell" Size="12" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center"
+                                            IsVisible="{Binding WatchIndicatorVisible}"
+                                            ToolTip.Tip="Vous serez prévenu dès son retour en ligne" />
                               </Panel>
 
                               <Button Classes="bare" Content="{Binding FavoriteGlyph}" Foreground="{Binding FavoriteColor}"
@@ -449,7 +459,11 @@
                               <Ellipse Classes="status" Classes.online="{Binding IsStatusOnline}"
                                        Classes.session="{Binding IsStatusSession}"
                                        Classes.inactive="{Binding IsStatusInactive}"
+                                       IsVisible="{Binding StatusDotVisible}"
                                        ToolTip.Tip="{Binding StatusTooltip}" />
+                              <local:Icon Kind="Bell" Size="11" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Center"
+                                          IsVisible="{Binding WatchIndicatorVisible}"
+                                          ToolTip.Tip="Vous serez prévenu dès son retour en ligne" />
                             </Panel>
                             <TextBlock Grid.Column="1" local:Highlight.Text="{Binding Name}" FontSize="12.5"
                                        FontWeight="SemiBold" Foreground="{Binding NameBrush}"
@@ -493,6 +507,10 @@
                                 <Button Classes="rowAction" Tag="Wake" Click="RowAction_Click" Width="28" Height="26"
                                         IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="Réveiller (Wake-on-LAN)">
                                   <local:Icon Kind="Power" Size="12" />
+                                </Button>
+                                <Button Classes="rowAction" Tag="Watch" Click="RowAction_Click" Width="28" Height="26"
+                                        IsVisible="{Binding WakeActionVisible}" ToolTip.Tip="{Binding WatchTooltip}">
+                                  <local:Icon Kind="{Binding WatchGlyph}" Size="12" />
                                 </Button>
                               </StackPanel>
                               <Button Classes="bare" Content="{Binding FavoriteGlyph}" Foreground="{Binding FavoriteColor}"
@@ -633,6 +651,12 @@
 
                   <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
 
+                  <CheckBox x:Name="TabbedSessionsCheck" Content="Regrouper les sessions en onglets" />
+                  <TextBlock Classes="fieldHint" Margin="24,4,0,0"
+                             Text="Décochez pour ouvrir chaque session dans sa propre fenêtre. S'applique aux nouvelles sessions." />
+
+                  <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
+
                   <TextBlock Text="Densité de la liste" Classes="caption" Margin="0,0,0,5" />
                   <ComboBox x:Name="DensityCombo" HorizontalAlignment="Stretch"
                             SelectionChanged="DensityCombo_SelectionChanged">
@@ -647,6 +671,19 @@
                   <CheckBox x:Name="DarkModeCheck" Content="Thème sombre" IsCheckedChanged="DarkMode_Changed" />
                   <TextBlock x:Name="DarkModeHint" Classes="fieldHint" Margin="24,4,0,0"
                              Text="Pour toutes les fenêtres de l'application. S'applique au prochain démarrage." />
+                </StackPanel>
+              </Border>
+
+              <TextBlock Text="Comportement" Classes="panelSectionTitle" />
+              <Border Classes="panelSection" Margin="0,8,0,14">
+                <StackPanel>
+                  <CheckBox x:Name="TrayCheck" Content="Garder l'application dans la barre des menus" />
+                  <TextBlock Classes="fieldHint" Margin="24,4,0,14"
+                             Text="Fermer la fenêtre garde l'application active, joignable par son icône et par le raccourci de recherche rapide." />
+                  <CheckBox x:Name="AutoStartCheck" Content="Ouvrir à la connexion de session" Margin="0,0,0,12" />
+                  <CheckBox x:Name="StartMinimizedCheck" Content="Démarrer réduit dans la barre des menus" />
+                  <TextBlock x:Name="StartupWarning" Classes="fieldHint" Foreground="{DynamicResource DangerBrush}"
+                             IsVisible="False" />
                 </StackPanel>
               </Border>
 
@@ -673,6 +710,16 @@
                   <Button x:Name="LogoutButton" Content="Se déconnecter" Classes="tool" Click="Logout_Click"
                           Padding="14,7" HorizontalAlignment="Left" Foreground="{DynamicResource DangerBrush}" />
                   <TextBlock Classes="fieldHint" Text="Ferme la session et efface le mot de passe mémorisé." />
+                </StackPanel>
+              </Border>
+
+              <TextBlock Text="Mises à jour" Classes="panelSectionTitle" />
+              <Border Classes="panelSection" Margin="0,8,0,14">
+                <StackPanel>
+                  <CheckBox x:Name="CheckUpdatesCheck" Content="Rechercher les mises à jour au démarrage" />
+                  <TextBlock Classes="fieldHint" Margin="24,4,0,14" Text="L'installation ferme puis relance l'application." />
+                  <Button Content="Rechercher maintenant" Classes="tool" Click="CheckUpdates_Click" Padding="12,7"
+                          HorizontalAlignment="Left" />
                 </StackPanel>
               </Border>
 

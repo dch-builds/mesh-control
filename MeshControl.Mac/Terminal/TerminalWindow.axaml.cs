@@ -22,7 +22,7 @@ namespace MeshControl.Mac;
 /// Cmd+V colle, Cmd+F cherche, Cmd+K efface, Cmd+± zoome. Les raccourcis
 /// Ctrl+Maj+… de la version Windows restent disponibles.
 /// </summary>
-public partial class TerminalWindow : ChromeWindow
+public partial class TerminalWindow : ChromeWindow, ISessionWindow
 {
     public enum Mode { Agent, Ssh }
 
@@ -84,17 +84,14 @@ public partial class TerminalWindow : ChromeWindow
         TerminalHost.Child = _terminal;
         SearchBar.Attach(_terminal);
 
-        AddHandler(KeyDownEvent, Window_KeyDown, RoutingStrategies.Tunnel);
+        // Sur le contenu : en onglet, la fenêtre porteuse n'est jamais affichée.
+        RootPanel.AddHandler(KeyDownEvent, Window_KeyDown, RoutingStrategies.Tunnel);
         Toolbar.SizeChanged += (_, _) => Dispatcher.UIThread.Post(FitToolbar, DispatcherPriority.Loaded);
 
         if (agent) PopulateShellChoices();
         _uiReady = true;
 
-        Opened += async (_, _) =>
-        {
-            _terminal.Focus();
-            await StartSessionAsync();
-        };
+        Opened += async (_, _) => await ((ISessionWindow)this).StartSessionAsync();
         Closed += (_, _) => StopSession();
     }
 
@@ -122,8 +119,23 @@ public partial class TerminalWindow : ChromeWindow
         _ssh?.Stop();
     }
 
+    private bool _sessionStarted;
+
+    /// <summary>Premier démarrage, par l'ouverture de la fenêtre ou par la fenêtre à onglets.</summary>
+    async Task ISessionWindow.StartSessionAsync()
+    {
+        if (_sessionStarted) return;
+        _terminal.Focus();
+        await StartSessionAsync();
+    }
+
+    void ISessionWindow.ReleaseKeyboard() { }
+    public TitleBar SessionTitleBar => WindowTitleBar;
+    public Control FocusTarget => _terminal;
+
     private async Task StartSessionAsync()
     {
+        _sessionStarted = true;
         if (_mode == Mode.Ssh)
         {
             if (_ssh is not null) return;
@@ -345,6 +357,21 @@ public partial class TerminalWindow : ChromeWindow
         if (_mode != Mode.Agent) return;
         var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedLeft };
 
+        // Commandes de l'utilisateur en tête : ce sont ses plus fréquentes.
+        var mine = CustomCommandsForShell();
+        if (mine.Count > 0)
+        {
+            flyout.Items.Add(new MenuItem { Header = "Mes commandes", IsEnabled = false });
+            foreach (var command in mine)
+            {
+                var item = new MenuItem { Header = command.Run ? command.Label : command.Label + "…" };
+                ToolTip.SetTip(item, QuickCommandToolTip(command));
+                item.Click += (_, _) => SendQuickCommand(command);
+                flyout.Items.Add(item);
+            }
+            flyout.Items.Add(new Separator());
+        }
+
         foreach (var group in QuickCommands.For(_node.OsFamily, SelectedShell))
         {
             var submenu = new MenuItem { Header = group.Title };
@@ -364,6 +391,22 @@ public partial class TerminalWindow : ChromeWindow
         }
 
         flyout.Items.Add(new Separator());
+
+        // Ajout : la sélection du terminal, si elle existe, sert de point de
+        // départ — on retient ainsi une commande qu'on vient de taper.
+        var selection = _terminal.GetSelectedText()?.Trim();
+        var add = new MenuItem
+        {
+            Header = string.IsNullOrEmpty(selection) ? "Ajouter une commande…" : "Ajouter la sélection à mes commandes…",
+        };
+        add.Click += async (_, _) => await OpenCustomCommandsAsync(selection ?? "");
+        flyout.Items.Add(add);
+
+        var manage = new MenuItem { Header = "Gérer mes commandes…" };
+        manage.Click += async (_, _) => await OpenCustomCommandsAsync(null);
+        flyout.Items.Add(manage);
+
+        flyout.Items.Add(new Separator());
         flyout.Items.Add(new MenuItem { Header = "« … » : commande tapée, à valider par Entrée", IsEnabled = false });
         flyout.Closed += (_, _) => _terminal.Focus();
 
@@ -373,6 +416,38 @@ public partial class TerminalWindow : ChromeWindow
             flyout.Placement = PlacementMode.Center;
             flyout.ShowAt(_terminal);
         }
+    }
+
+    // MARK: - Commandes personnalisées
+
+    /// <summary>Famille du shell ouvert, au sens des commandes personnalisées.</summary>
+    private CustomCommandShell CurrentCustomShell =>
+        _node.OsFamily != OSFamily.Windows
+            ? CustomCommandShell.Unix
+            : SelectedShell is ShellKind.PowerShell or ShellKind.UserPowerShell
+                ? CustomCommandShell.PowerShell
+                : CustomCommandShell.Cmd;
+
+    /// <summary>Commandes de l'utilisateur destinées au shell ouvert.</summary>
+    private List<QuickCommand> CustomCommandsForShell()
+    {
+        var shell = CurrentCustomShell;
+        return App.Settings.CustomTerminalCommands
+            .Where(c => !string.IsNullOrWhiteSpace(c.Command)
+                        && (c.Shell == CustomCommandShell.Any || c.Shell == shell))
+            .Select(c => new QuickCommand(
+                string.IsNullOrWhiteSpace(c.Label) ? c.Command : c.Label,
+                // Plusieurs lignes : chacune part avec Entrée, comme tapée.
+                c.Command.Replace("\r\n", "\r").Replace('\n', '\r'),
+                c.Run))
+            .ToList();
+    }
+
+    /// <param name="newCommand">Commande à créer (texte de départ, éventuellement vide), ou null pour la liste.</param>
+    private async Task OpenCustomCommandsAsync(string? newCommand)
+    {
+        await new CustomCommandsWindow(CurrentCustomShell, newCommand).ShowDialog<bool>(Host);
+        _terminal.Focus();
     }
 
     private static Control QuickCommandToolTip(QuickCommand command)
@@ -430,18 +505,18 @@ public partial class TerminalWindow : ChromeWindow
 
     private void ToggleFullscreen()
     {
-        WindowState = WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
+        Host.WindowState = Host.WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
         _terminal.Focus();
     }
 
     /// <summary>Barres réglées sur l'état réel de la fenêtre (voir DesktopWindow).</summary>
-    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    protected override void OnHostWindowStateChanged()
     {
-        base.OnPropertyChanged(change);
-        if (change.Property != WindowStateProperty || WindowTitleBar is null) return;
+        if (WindowTitleBar is null) return;
 
-        bool full = WindowState == WindowState.FullScreen;
-        WindowTitleBar.IsVisible = !full;
+        bool full = Host.WindowState == WindowState.FullScreen;
+        // Sous les onglets, la barre du terminal (sans barre d'outils) reste effacée.
+        WindowTitleBar.IsVisible = !full && !WindowTitleBar.IsEmbedded;
         Toolbar.IsVisible = !full;
         FullscreenHint.IsVisible = full;
         ToolTip.SetTip(FullscreenButton, full ? "Quitter le plein écran (Ctrl+Maj+F)" : "Plein écran (Ctrl+Maj+F)");
@@ -502,11 +577,11 @@ public partial class TerminalWindow : ChromeWindow
 
     private async void Paste_Click(object? sender, RoutedEventArgs e)
     {
-        if (!IsConnected || Clipboard is not { } clipboard) return;
+        if (!IsConnected || Host.Clipboard is not { } clipboard) return;
         try
         {
             var data = await TerminalPaste.PrepareAsync(await clipboard.TryGetTextAsync(),
-                                                         _terminal.Emulator.BracketedPaste, this);
+                                                         _terminal.Emulator.BracketedPaste, Host);
             if (data is not null) Send(data);
         }
         catch { /* presse-papiers indisponible */ }

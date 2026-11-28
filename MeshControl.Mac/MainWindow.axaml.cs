@@ -67,10 +67,26 @@ public partial class MainWindow : ChromeWindow
         SetHeader(null, null, HeaderStatus.Idle);
 
         AddHandler(KeyDownEvent, Window_KeyDown, RoutingStrategies.Tunnel);
-        Opened += (_, _) => Start();
+        Opened += (_, _) => Initialize();
     }
 
     // MARK: - Démarrage et vues
+
+    private bool _initialized;
+
+    /// <summary>Une seule fois : à l'ouverture de la fenêtre, ou au démarrage réduit.</summary>
+    private void Initialize()
+    {
+        if (_initialized) return;
+        _initialized = true;
+        SetupHotkey();
+        SetupTray();
+        Start();
+
+        // Volontairement non attendu : une recherche lente ou en échec ne doit
+        // jamais bloquer le démarrage.
+        if (Settings.CheckForUpdates) _ = CheckForUpdatesAsync(manual: false);
+    }
 
     private void Start()
     {
@@ -378,6 +394,7 @@ public partial class MainWindow : ChromeWindow
         {
             case ConnectionState.Connected:
                 SetHeader(connection.Profile.Host, connection.UserInfo?.Name, HeaderStatus.Connected);
+                UpdateTrayTooltip();
                 break;
             case ConnectionState.Failed:
             case ConnectionState.Disconnected:
@@ -495,6 +512,19 @@ public partial class MainWindow : ChromeWindow
     }
 
     private void RebuildDeviceList()
+    {
+        try
+        {
+            RebuildDeviceListCore();
+        }
+        finally
+        {
+            CheckWatchedNodes();
+            UpdateTrayTooltip();
+        }
+    }
+
+    private void RebuildDeviceListCore()
     {
         if (_connection is null) return;
 
@@ -1359,6 +1389,7 @@ public partial class MainWindow : ChromeWindow
         {
             case "Desktop": OpenDesktop(row); break;
             case "Terminal": OpenTerminal(row.Node, TerminalWindow.Mode.Agent); break;
+            case "Watch": SetWatched([row.Node], !row.IsWatched); break;
             case "Files": OpenFiles(row.Node); break;
             case "Wake": _ = RunPowerAsync(() => _connection!.WakeAsync(row.Node.Id),
                                            $"Signal de réveil envoyé à « {row.Name} »."); break;
@@ -1403,7 +1434,7 @@ public partial class MainWindow : ChromeWindow
         var existing = _desktops.FirstOrDefault(w => w.NodeId == node.Id);
         if (existing is not null)
         {
-            existing.Activate();
+            SessionsWindow.Activate(existing);
             return;
         }
         var window = new DesktopWindow(_connection, node)
@@ -1415,7 +1446,7 @@ public partial class MainWindow : ChromeWindow
         };
         window.Closed += (_, _) => _desktops.Remove(window);
         _desktops.Add(window);
-        window.Show();
+        OpenSession(window, node.Name, "🖥");
 
         if (Settings.FolderView) RebuildFolderPanel();
     }
@@ -1439,7 +1470,7 @@ public partial class MainWindow : ChromeWindow
         var existing = _terminals.FirstOrDefault(w => w.NodeId == node.Id && w.SessionMode == mode);
         if (existing is not null)
         {
-            existing.Activate();
+            SessionsWindow.Activate(existing);
             return;
         }
         var row = _rowsById.GetValueOrDefault(node.Id);
@@ -1449,7 +1480,7 @@ public partial class MainWindow : ChromeWindow
         };
         window.Closed += (_, _) => _terminals.Remove(window);
         _terminals.Add(window);
-        window.Show();
+        OpenSession(window, node.Name, "▶");
     }
 
     /// <summary>Fichiers de la machine : une seule fenêtre par machine.</summary>
@@ -1468,13 +1499,27 @@ public partial class MainWindow : ChromeWindow
         var existing = _filesWindows.FirstOrDefault(w => w.NodeId == node.Id);
         if (existing is not null)
         {
-            existing.Activate();
+            SessionsWindow.Activate(existing);
             return;
         }
         var window = new FilesWindow(_connection, node);
         window.Closed += (_, _) => _filesWindows.Remove(window);
         _filesWindows.Add(window);
-        window.Show();
+        OpenSession(window, node.Name, "📁");
+    }
+
+    /// <summary>
+    /// Présente une session selon la préférence : dans un onglet de la fenêtre
+    /// commune, ou dans sa propre fenêtre.
+    /// </summary>
+    private void OpenSession(ChromeWindow session, string title, string glyph)
+    {
+        if (Settings.UseTabbedSessions) SessionsWindow.AddSession(session, title, glyph);
+        else
+        {
+            session.Show();
+            session.Activate();
+        }
     }
 
     // MARK: - Menu contextuel
@@ -1498,6 +1543,11 @@ public partial class MainWindow : ChromeWindow
         MenuInfo.IsEnabled = single;
         MenuSsh.IsEnabled = single && first!.IsOnline;
         MenuWake.IsEnabled = any && rows.Any(r => !r.IsOnline);
+        var offlineRows = rows.Where(r => !r.IsOnline).ToList();
+        MenuWatch.IsVisible = offlineRows.Count > 0;
+        MenuWatch.Header = offlineRows.Count > 0 && offlineRows.All(r => r.IsWatched)
+            ? (offlineRows.Count == 1 ? "Ne plus me prévenir de son retour" : "Ne plus me prévenir de leur retour")
+            : (offlineRows.Count > 1 ? "Me prévenir de leur retour" : "Me prévenir à son retour");
         MenuReboot.IsEnabled = MenuSleep.IsEnabled = MenuPowerOff.IsEnabled = any && rows.Any(r => r.IsOnline);
         MenuRename.IsEnabled = single;
         MenuWebPage.IsEnabled = single;
@@ -1524,6 +1574,78 @@ public partial class MainWindow : ChromeWindow
     private void MenuSsh_Click(object? sender, RoutedEventArgs e)
     {
         if (SelectedRows.FirstOrDefault() is { } row) OpenTerminal(row.Node, TerminalWindow.Mode.Ssh);
+    }
+
+    // MARK: - Alerte de retour en ligne
+
+    /// <summary>Machines dont on attend le retour en ligne (pour cette session de l'application).</summary>
+    private readonly HashSet<string> _watchOnline = new();
+
+    private void MenuWatch_Click(object? sender, RoutedEventArgs e)
+    {
+        var offline = SelectedRows.Where(r => !r.IsOnline).Select(r => r.Node).ToList();
+        if (offline.Count == 0) return;
+        SetWatched(offline, offline.Any(n => !_watchOnline.Contains(n.Id)));
+    }
+
+    /// <summary>Pose ou retire l'alerte de retour en ligne sur ces machines.</summary>
+    private void SetWatched(IReadOnlyList<MeshNode> nodes, bool watch)
+    {
+        foreach (var node in nodes)
+        {
+            if (watch && !node.IsOnline) _watchOnline.Add(node.Id);
+            else _watchOnline.Remove(node.Id);
+        }
+        RefreshWatchMarks();
+
+        if (nodes.Count == 1)
+            ShowToast(watch
+                ? $"Vous serez prévenu dès que « {nodes[0].Name} » sera en ligne."
+                : $"Alerte retirée pour « {nodes[0].Name} ».");
+        else
+            ShowToast(watch
+                ? $"Vous serez prévenu du retour de {Machines(nodes.Count)}."
+                : $"Alertes retirées pour {Machines(nodes.Count)}.");
+    }
+
+    /// <summary>Aligne les cloches des lignes (réelles et copies) sur les alertes posées.</summary>
+    private void RefreshWatchMarks()
+    {
+        foreach (var row in _rowsById.Values.Concat(_virtualRows))
+            row.IsWatched = _watchOnline.Contains(row.Node.Id);
+    }
+
+    /// <summary>
+    /// Appelée à chaque mise à jour de l'inventaire : une machine attendue qui
+    /// vient de se connecter déclenche une notification, une seule fois.
+    /// </summary>
+    private void CheckWatchedNodes()
+    {
+        if (_watchOnline.Count == 0 || _connection is not { } connection) return;
+
+        var back = _watchOnline
+            .Select(id => connection.Nodes.TryGetValue(id, out var node) ? node : null)
+            .OfType<MeshNode>()
+            .Where(n => n.IsOnline)
+            .ToList();
+        if (back.Count == 0)
+        {
+            RefreshWatchMarks();
+            return;
+        }
+
+        foreach (var node in back)
+        {
+            _watchOnline.Remove(node.Id);
+            Log.Info($"Retour en ligne signalé : {node.Name}", "Appareil");
+        }
+        RefreshWatchMarks();
+
+        var first = back[0];
+        var title = back.Count == 1 ? $"« {first.Name} » est en ligne" : $"{back.Count} machines sont en ligne";
+        var message = back.Count == 1 ? "La machine est de nouveau joignable." : string.Join(", ", back.Select(n => n.Name));
+        SystemNotification.Show(title, message);
+        ShowToast(back.Count == 1 ? $"« {first.Name} » est de retour en ligne." : $"{title}.");
     }
 
     private void MenuWake_Click(object? sender, RoutedEventArgs e) => BulkWake_Click(sender, e);
@@ -1782,6 +1904,13 @@ public partial class MainWindow : ChromeWindow
         DensityCombo.SelectedIndex = Math.Clamp(Settings.ListDensity, 0, 2);
         _densityLoading = false;
         DarkModeCheck.IsChecked = Settings.DarkMode;
+        TabbedSessionsCheck.IsChecked = Settings.UseTabbedSessions;
+        TrayCheck.IsChecked = Settings.KeepInMenuBar;
+        AutoStartCheck.IsVisible = StartupManager.IsSupported;
+        AutoStartCheck.IsChecked = StartupManager.IsEnabled();
+        StartMinimizedCheck.IsChecked = Settings.StartMinimized;
+        CheckUpdatesCheck.IsChecked = Settings.CheckForUpdates;
+        StartupWarning.IsVisible = false;
         HostBox.Text = Settings.Host;
         SelfSignedCheck.IsChecked = Settings.AllowSelfSigned;
         RememberSettingCheck.IsChecked = Settings.RememberPassword;
@@ -1846,6 +1975,17 @@ public partial class MainWindow : ChromeWindow
         if (DefaultFrameRateCombo.SelectedIndex >= 0) Settings.DesktopFrameRate = FrameRates[DefaultFrameRateCombo.SelectedIndex];
         if (DensityCombo.SelectedIndex >= 0) Settings.ListDensity = DensityCombo.SelectedIndex;
         Settings.DarkMode = DarkModeCheck.IsChecked == true;
+        Settings.UseTabbedSessions = TabbedSessionsCheck.IsChecked == true;
+        Settings.KeepInMenuBar = TrayCheck.IsChecked == true;
+        Settings.StartMinimized = StartMinimizedCheck.IsChecked == true;
+        Settings.CheckForUpdates = CheckUpdatesCheck.IsChecked == true;
+        var wantAutoStart = AutoStartCheck.IsChecked == true;
+        if (StartupManager.IsSupported && wantAutoStart != StartupManager.IsEnabled()
+            && !StartupManager.SetEnabled(wantAutoStart))
+        {
+            StartupWarning.Text = "Impossible de modifier l'ouverture à la connexion (voir le journal).";
+            StartupWarning.IsVisible = true;
+        }
         Settings.RememberPassword = RememberSettingCheck.IsChecked == true;
         if (!Settings.RememberPassword) Keychain.Delete(PasswordAccount(Settings.Host, Settings.Username));
 

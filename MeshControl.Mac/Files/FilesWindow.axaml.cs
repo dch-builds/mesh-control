@@ -21,7 +21,7 @@ namespace MeshControl.Mac;
 /// qu'un par tunnel), envoi et téléchargement de dossiers entiers, double
 /// volet avec ce poste, glisser-déposer depuis le Finder et d'un volet à l'autre.
 /// </summary>
-public partial class FilesWindow : ChromeWindow
+public partial class FilesWindow : ChromeWindow, ISessionWindow
 {
     private readonly FilesSession _session;
     private readonly MeshServerConnection _connection;
@@ -70,7 +70,7 @@ public partial class FilesWindow : ChromeWindow
         _session.EntriesChanged += OnEntriesChanged;
         _session.TransferChanged += OnTransferChanged;
 
-        Opened += async (_, _) => await _session.StartAsync();
+        Opened += async (_, _) => await StartSessionAsync();
         Closed += (_, _) =>
         {
             CancelQueue();
@@ -79,6 +79,20 @@ public partial class FilesWindow : ChromeWindow
     }
 
     // MARK: - Session
+
+    private bool _started;
+
+    /// <summary>Démarrage, par l'ouverture de la fenêtre ou par la fenêtre à onglets.</summary>
+    public async Task StartSessionAsync()
+    {
+        if (_started) return;
+        _started = true;
+        await _session.StartAsync();
+    }
+
+    public void ReleaseKeyboard() { }
+    public TitleBar SessionTitleBar => WindowTitleBar;
+    public Control FocusTarget => FileList;
 
     private void OnStateChanged()
     {
@@ -153,7 +167,7 @@ public partial class FilesWindow : ChromeWindow
         => $"{count} {(count > 1 ? plural : singular)}";
 
     private Task InformAsync(string message)
-        => Dialogs.InformAsync(this, message);
+        => Dialogs.InformAsync(Host, message);
 
     // MARK: - Navigation
 
@@ -483,7 +497,7 @@ public partial class FilesWindow : ChromeWindow
     private async void Upload_Click(object? sender, RoutedEventArgs e)
     {
         if (!await CanUploadHereAsync()) return;
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        var files = await Host.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Choisir les fichiers à envoyer",
             AllowMultiple = true,
@@ -590,7 +604,7 @@ public partial class FilesWindow : ChromeWindow
         // Un seul fichier : on laisse choisir son nom. Sinon : le dossier d'arrivée.
         if (selection is [{ IsDirectory: false } single])
         {
-            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            var file = await Host.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Enregistrer le fichier",
                 SuggestedFileName = SafeLocalName(single.Name),
@@ -600,7 +614,7 @@ public partial class FilesWindow : ChromeWindow
             return;
         }
 
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        var folders = await Host.StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "Choisir le dossier de destination",
         });
@@ -776,10 +790,11 @@ public partial class FilesWindow : ChromeWindow
     /// <summary>Élargit la fenêtre pour loger deux volets, sans déborder de l'écran.</summary>
     private void EnsureWidth()
     {
-        if (WindowState != WindowState.Normal || Width >= DualPaneWidth) return;
-        var screen = Screens.ScreenFromWindow(this)?.WorkingArea;
-        var available = screen is { } area ? area.Width / (RenderScaling > 0 ? RenderScaling : 1) - 40 : DualPaneWidth;
-        Width = Math.Min(DualPaneWidth, available);
+        var host = Host;
+        if (host.WindowState != WindowState.Normal || host.Width >= DualPaneWidth) return;
+        var screen = host.Screens.ScreenFromWindow(host)?.WorkingArea;
+        var available = screen is { } area ? area.Width / (host.RenderScaling > 0 ? host.RenderScaling : 1) - 40 : DualPaneWidth;
+        host.Width = Math.Min(DualPaneWidth, available);
     }
 
     private void UpdateBridgeButtons()
@@ -1084,7 +1099,7 @@ public partial class FilesWindow : ChromeWindow
 
     private async void NewFolder_Click(object? sender, RoutedEventArgs e)
     {
-        var name = await Dialogs.PromptAsync(this, "Nouveau dossier", "Nom du nouveau dossier :", "Nouveau dossier", "Créer");
+        var name = await Dialogs.PromptAsync(Host, "Nouveau dossier", "Nom du nouveau dossier :", "Nouveau dossier", "Créer");
         if (string.IsNullOrWhiteSpace(name)) return;
         await _session.CreateFolderAsync(name);
         // Les mutations ne renvoient rien : on relit le dossier.
@@ -1095,7 +1110,7 @@ public partial class FilesWindow : ChromeWindow
     private async void MenuRename_Click(object? sender, RoutedEventArgs e)
     {
         if (SelectedRow is not { } row) return;
-        var name = await Dialogs.PromptAsync(this, "Renommer", $"Nouveau nom de « {row.Name} » :", row.Name, "Renommer");
+        var name = await Dialogs.PromptAsync(Host, "Renommer", $"Nouveau nom de « {row.Name} » :", row.Name, "Renommer");
         if (string.IsNullOrWhiteSpace(name) || name == row.Name) return;
         await _session.RenameAsync(row.Name, name);
         await Task.Delay(300);
@@ -1111,7 +1126,7 @@ public partial class FilesWindow : ChromeWindow
         var detail = hasDirectory
             ? "Les dossiers seront supprimés avec tout leur contenu. Cette action est irréversible."
             : "Cette action est irréversible.";
-        if (!await Dialogs.ConfirmAsync(this, description, detail, "Supprimer")) return;
+        if (!await Dialogs.ConfirmAsync(Host, description, detail, "Supprimer")) return;
 
         await _session.DeleteAsync(rows.Select(r => r.Name), recursive: hasDirectory);
         await Task.Delay(300);
@@ -1120,7 +1135,7 @@ public partial class FilesWindow : ChromeWindow
 
     private async void MenuCopyPath_Click(object? sender, RoutedEventArgs e)
     {
-        if (SelectedRow is not { } row || Clipboard is not { } clipboard) return;
+        if (SelectedRow is not { } row || Host.Clipboard is not { } clipboard) return;
         try { await clipboard.SetTextAsync(_session.FullPathOf(row.Entry)); } catch { }
     }
 

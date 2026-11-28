@@ -55,11 +55,60 @@ public class ChromeWindow : Window
             ExtendClientAreaTitleBarHeightHint = full ? 0 : TitleBar.BarHeight;
             if (!OperatingSystem.IsMacOS())
                 WindowDecorations = full ? WindowDecorations.None : NormalDecorations;
+            if (HostedIn is null) OnHostWindowStateChanged();
+        };
+        Activated += (_, _) =>
+        {
+            if (HostedIn is null) OnHostActivated();
         };
 
         try { Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://MeshControl.Mac/Assets/app.png"))); }
         catch { /* icône absente : celle par défaut */ }
     }
+
+    // MARK: - Session dans un onglet
+
+    /// <summary>
+    /// Fenêtre à onglets qui affiche le contenu de celle-ci (voir SessionsWindow).
+    /// La fenêtre d'origine n'est alors jamais montrée : elle porte la session.
+    /// </summary>
+    public Window? HostedIn { get; private set; }
+
+    /// <summary>
+    /// Fenêtre réellement à l'écran : propriétaire des boîtes de dialogue, des
+    /// sélecteurs de fichiers, du presse-papiers et du plein écran. Une fenêtre
+    /// masquée ne peut pas porter de boîte de dialogue.
+    /// </summary>
+    public Window Host => HostedIn ?? this;
+
+    internal void SetHost(Window? host)
+    {
+        if (HostedIn is { } previous)
+        {
+            previous.PropertyChanged -= OnHostPropertyChanged;
+            previous.Activated -= OnHostActivatedHandler;
+        }
+        HostedIn = host;
+        if (host is not null)
+        {
+            host.PropertyChanged += OnHostPropertyChanged;
+            host.Activated += OnHostActivatedHandler;
+        }
+        OnHostWindowStateChanged();
+    }
+
+    private void OnHostPropertyChanged(object? sender, Avalonia.AvaloniaPropertyChangedEventArgs e)
+    {
+        if (e.Property == WindowStateProperty) OnHostWindowStateChanged();
+    }
+
+    private void OnHostActivatedHandler(object? sender, EventArgs e) => OnHostActivated();
+
+    /// <summary>La fenêtre affichée a changé d'état (plein écran notamment).</summary>
+    protected virtual void OnHostWindowStateChanged() { }
+
+    /// <summary>La fenêtre affichée revient au premier plan.</summary>
+    protected virtual void OnHostActivated() { }
 
     private static readonly ControlTheme NoDrawnDecorations = new(typeof(WindowDrawnDecorations))
     {

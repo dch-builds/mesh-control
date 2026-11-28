@@ -61,6 +61,27 @@ public sealed class MacSettings : ICertificatePinStore
     /// <summary>Taille de police du terminal, retenue au zoom.</summary>
     public int TerminalFontSize { get; set; } = 13;
 
+    /// <summary>Bureau à distance : presse-papiers synchronisé avec la machine (préférence de travail).</summary>
+    public bool DesktopClipboardSync { get; set; }
+
+    /// <summary>Sessions (bureau, terminal, fichiers) regroupées en onglets dans une seule fenêtre.</summary>
+    public bool UseTabbedSessions { get; set; } = true;
+
+    /// <summary>La fermeture de la fenêtre garde l'application active dans la barre des menus.</summary>
+    public bool KeepInMenuBar { get; set; } = true;
+
+    /// <summary>Démarrer réduit dans la barre des menus, connexion en tâche de fond.</summary>
+    public bool StartMinimized { get; set; }
+
+    /// <summary>Rechercher les mises à jour au démarrage.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    /// <summary>Version proposée puis refusée : on ne réinsiste pas à chaque démarrage.</summary>
+    public string? SkippedUpdateVersion { get; set; }
+
+    /// <summary>Commandes ajoutées par l'utilisateur au menu « Commandes » du terminal.</summary>
+    public List<CustomTerminalCommand> CustomTerminalCommands { get; set; } = new();
+
     /// <summary>Fenêtre Fichiers : volet de ce poste affiché à côté de la machine.</summary>
     public bool FilesDualPane { get; set; }
 

@@ -27,6 +27,7 @@
     <Compile Include="..\Core\CertificateTrust.cs" Link="Core\CertificateTrust.cs" />
     <Compile Include="..\Core\ICertificatePinStore.cs" Link="Core\ICertificatePinStore.cs" />
     <Compile Include="..\Core\IUiDispatcher.cs" Link="Core\IUiDispatcher.cs" />
+    <Compile Include="..\Core\CustomTerminalCommand.cs" Link="Core\CustomTerminalCommand.cs" />
     <Compile Include="..\Core\Log.cs" Link="Core\Log.cs" />
     <Compile Include="..\Core\MeshModels.cs" Link="Core\MeshModels.cs" />
     <Compile Include="..\Core\MeshServerConnection.cs" Link="Core\MeshServerConnection.cs" />

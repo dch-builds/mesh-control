@@ -53,7 +53,8 @@
     </DataTemplate>
   </local:ChromeWindow.Resources>
 
-  <DockPanel>
+  <!-- Fond porté par le contenu : en onglet, il quitte sa fenêtre. -->
+  <DockPanel Background="{DynamicResource WindowBackgroundBrush}">
     <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top" />
 
     <DockPanel x:Name="RootPanel" Background="Transparent" DragDrop.AllowDrop="True">

@@ -24,7 +24,7 @@ namespace MeshControl.Mac;
 /// codes VK Windows, Cmd étant traduit en Ctrl. Les modificateurs ne sont
 /// transmis qu'au moment où une touche de commande en a besoin.
 /// </summary>
-public partial class DesktopWindow : ChromeWindow
+public partial class DesktopWindow : ChromeWindow, ISessionWindow
 {
     private readonly MeshServerConnection _connection;
     private readonly MeshNode _node;
@@ -84,6 +84,7 @@ public partial class DesktopWindow : ChromeWindow
         _session.ScreenSizeChanged += OnScreenSizeChanged;
         _session.FrameUpdated += OnFrameUpdated;
         _session.DisplaysChanged += UpdateDisplays;
+        _session.SlowLinkDetected += OnSlowLinkDetected;
 
         foreach (var image in new[] { ScreenImage, ScreenImageNative })
         {
@@ -94,8 +95,10 @@ public partial class DesktopWindow : ChromeWindow
             image.PointerWheelChanged += Screen_PointerWheelChanged;
         }
 
-        AddHandler(KeyDownEvent, Screen_KeyDown, RoutingStrategies.Tunnel);
-        AddHandler(KeyUpEvent, Screen_KeyUp, RoutingStrategies.Tunnel);
+        // Sur le contenu et non sur la fenêtre : en onglet, la fenêtre porteuse
+        // n'est jamais affichée, c'est le contenu qui reçoit les frappes.
+        RootPanel.AddHandler(KeyDownEvent, Screen_KeyDown, RoutingStrategies.Tunnel);
+        RootPanel.AddHandler(KeyUpEvent, Screen_KeyUp, RoutingStrategies.Tunnel);
         ScreenHost.TextInput += Screen_TextInput;
         ScreenHost.PointerPressed += (_, _) => ScreenHost.Focus();
         Deactivated += (_, _) => ReleaseAllKeys();
@@ -104,6 +107,11 @@ public partial class DesktopWindow : ChromeWindow
         InitializeFullscreenBar();
         UpdateScaleMenu();
         InitializeToolbarLayout();
+        InitializeClipboardSync();
+        InitializeZoom();
+        InitializeDrop();
+        UpdateModeControls();
+        UpdateInputControls();
 
         _statsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _statsTimer.Tick += (_, _) => UpdateStats();
@@ -114,15 +122,30 @@ public partial class DesktopWindow : ChromeWindow
     protected override async void OnOpened(EventArgs e)
     {
         base.OnOpened(e);
+        await StartSessionAsync();
+    }
+
+    private bool _started;
+
+    /// <summary>Démarre la session : à l'ouverture de la fenêtre, ou par la fenêtre à onglets.</summary>
+    public async Task StartSessionAsync()
+    {
+        if (_started) return;
+        _started = true;
         ScreenHost.Focus();
         _statsTimer.Start();
         await _session.StartAsync();
     }
 
+    public void ReleaseKeyboard() => ReleaseAllKeys();
+    public TitleBar SessionTitleBar => WindowTitleBar;
+    public Control FocusTarget => ScreenHost;
+
     protected override void OnClosed(EventArgs e)
     {
         _statsTimer.Stop();
         _typingCts?.Cancel();
+        _clipboardPollTimer.Stop();
         _session.AutoReconnect = false;
         ReleaseAllKeys();
         _session.Stop();
@@ -205,14 +228,86 @@ public partial class DesktopWindow : ChromeWindow
     {
         if (!_ready || QualityCombo.SelectedIndex < 0) return;
         _session.Quality = (DesktopQuality)QualityTags[QualityCombo.SelectedIndex];
+        UpdateModeControls();
         UpdateStats();
+        if (_session.IsTroubleshootMode) SlowLinkBanner.IsVisible = false;
+        var message = _session.Quality switch
+        {
+            DesktopQuality.Troubleshoot => "Mode dépannage. « Image nette » (Ctrl+Maj+R) pour lire le texte.",
+            DesktopQuality.Fluid => "Mode fluide : 40 img/s, bonne qualité.",
+            _ => "",
+        };
+        if (message.Length > 0) ShowStatus(message);
         ScreenHost.Focus();
+    }
+
+    /// <summary>Vrai pendant que le code aligne la liste de fluidité sur le mode.</summary>
+    private bool _syncingFrameRate;
+
+    /// <summary>
+    /// Aligne les contrôles sur le mode de qualité. Les modes dépannage et
+    /// fluide fixent eux-mêmes la cadence : la liste l'affiche, grisée, et
+    /// retrouve le choix de l'utilisateur quand on en sort. En dépannage, le
+    /// bouton « Rafraîchir » devient « Image nette ».
+    /// </summary>
+    private void UpdateModeControls()
+    {
+        var forced = _session.IsTroubleshootMode || _session.IsFluidMode;
+        var shown = forced ? DesktopSession.NearestFrameRate(_session.EffectiveFrameRate) : _session.FrameRate;
+
+        _syncingFrameRate = true;
+        try
+        {
+            var index = Array.IndexOf(FrameRates, shown);
+            if (index >= 0) FrameRateCombo.SelectedIndex = index;
+        }
+        finally
+        {
+            _syncingFrameRate = false;
+        }
+
+        FrameRateCombo.IsEnabled = !forced;
+        ToolTip.SetTip(FrameRateCombo, _session.Quality switch
+        {
+            DesktopQuality.Troubleshoot => "Fluidité fixée par le mode dépannage",
+            DesktopQuality.Fluid => "Fluidité fixée par le mode fluide",
+            _ => "Fluidité : taux de rafraîchissement de l'écran distant",
+        });
+
+        var troubleshoot = _session.IsTroubleshootMode;
+        _refreshLabel = troubleshoot ? "Image nette" : "Rafraîchir";
+        if (RefreshButton.Content is not MeshControl.Mac.Icon) RefreshButton.Content = _refreshLabel;
+        ToolTip.SetTip(RefreshButton, troubleshoot
+            ? "Recevoir une fois l'écran en bonne qualité, pour lire le texte (Ctrl+Maj+R)"
+            : "Redemander une image complète (Ctrl+Maj+R)");
+        ScheduleFitToolbar();
     }
 
     private void FrameRateCombo_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (!_ready || FrameRateCombo.SelectedIndex < 0) return;
+        if (!_ready || _syncingFrameRate || FrameRateCombo.SelectedIndex < 0) return;
         _session.FrameRate = FrameRates[FrameRateCombo.SelectedIndex];
+        ScreenHost.Focus();
+    }
+
+    // MARK: - Liaison lente
+
+    private void OnSlowLinkDetected()
+    {
+        if (_session.IsTroubleshootMode) return;
+        SlowLinkBanner.IsVisible = true;
+    }
+
+    private void SlowLinkSwitch_Click(object? sender, RoutedEventArgs e)
+    {
+        SlowLinkBanner.IsVisible = false;
+        QualityCombo.SelectedIndex = Array.IndexOf(QualityTags, (int)DesktopQuality.Troubleshoot);
+        ScreenHost.Focus();
+    }
+
+    private void SlowLinkDismiss_Click(object? sender, RoutedEventArgs e)
+    {
+        SlowLinkBanner.IsVisible = false;
         ScreenHost.Focus();
     }
 
@@ -220,6 +315,11 @@ public partial class DesktopWindow : ChromeWindow
     {
         if (!_ready) return;
         bool fit = FitCheck.IsChecked == true;
+        if (!fit)
+        {
+            CancelZoomSelection();
+            ResetZoom(quiet: true);
+        }
         FitHost.IsVisible = fit;
         Scroller.IsVisible = !fit;
         ActiveImage.InvalidateVisual();
@@ -228,7 +328,7 @@ public partial class DesktopWindow : ChromeWindow
 
     private void CtrlAltDel_Click(object? sender, RoutedEventArgs e)
     {
-        _session.SendCtrlAltDel();
+        SendCtrlAltDel();
         ScreenHost.Focus();
     }
 
@@ -269,6 +369,7 @@ public partial class DesktopWindow : ChromeWindow
         var item = new MenuItem { Header = $"{shortcut.Label}  —  {shortcut.Description}" };
         item.Click += (_, _) =>
         {
+            if (RejectedByViewOnly()) return;
             if (shortcut.Modifiers is [Vk.Ctrl, Vk.Alt] && shortcut.Key == Vk.Delete && _node.OsFamily != OSFamily.Linux)
                 _session.SendCtrlAltDel();
             else
@@ -389,6 +490,8 @@ public partial class DesktopWindow : ChromeWindow
         var overflow = level >= ToolbarCompactness.Overflow;
         CopyFromRemoteButton.IsVisible = !overflow;
         ScreenshotButton.IsVisible = !overflow;
+        ZoomButton.IsVisible = !overflow;
+        OverflowZoomItem.IsVisible = overflow;
         ReleaseModifiersButton.IsVisible = !overflow;
         OverflowCopyItem.IsVisible = overflow;
         OverflowScreenshotItem.IsVisible = overflow;
@@ -408,88 +511,6 @@ public partial class DesktopWindow : ChromeWindow
         {
             button.Content = label;
             button.ClearValue(PaddingProperty);
-        }
-    }
-
-    // MARK: - Presse-papiers
-
-    private CancellationTokenSource? _typingCts;
-
-    private async Task<string?> LocalClipboardTextAsync()
-        => Clipboard is { } clipboard ? await clipboard.TryGetTextAsync() : null;
-
-    /// <summary>
-    /// Coller : le presse-papiers local devient celui de la machine, puis
-    /// Ctrl+V. Si le serveur refuse l'écriture, repli sur la frappe.
-    /// </summary>
-    private async void Paste_Click(object? sender, RoutedEventArgs e)
-    {
-        ScreenHost.Focus();
-        var text = await LocalClipboardTextAsync();
-        if (string.IsNullOrEmpty(text))
-        {
-            ShowStatus("Presse-papiers vide");
-            return;
-        }
-        try
-        {
-            await _connection.SetRemoteClipboardAsync(_node.Id, text);
-            await Task.Delay(150);
-            _session.SendChord([Vk.Ctrl], Vk.Letter('V'));
-        }
-        catch
-        {
-            await TypeAsync(text);
-        }
-    }
-
-    private async void PasteAsTyping_Click(object? sender, RoutedEventArgs e)
-    {
-        ScreenHost.Focus();
-        if (_typingCts is not null)
-        {
-            _typingCts.Cancel();
-            return;
-        }
-        var text = await LocalClipboardTextAsync();
-        if (string.IsNullOrEmpty(text))
-        {
-            ShowStatus("Presse-papiers vide");
-            return;
-        }
-        await TypeAsync(text);
-    }
-
-    private async Task TypeAsync(string text)
-    {
-        _typingCts = new CancellationTokenSource();
-        PasteTypingLabel.Text = BarTypingLabel.Text = "Arrêter";
-        try { await _session.SendTextAsync(text, _typingCts.Token); }
-        catch (OperationCanceledException) { }
-        finally
-        {
-            _typingCts = null;
-            PasteTypingLabel.Text = BarTypingLabel.Text = "Taper";
-        }
-    }
-
-    private async void CopyFromRemote_Click(object? sender, RoutedEventArgs e)
-    {
-        ScreenHost.Focus();
-        try
-        {
-            var text = await _connection.GetRemoteClipboardAsync(_node.Id);
-            if (string.IsNullOrEmpty(text))
-            {
-                ShowStatus("Presse-papiers distant vide");
-                return;
-            }
-            if (Clipboard is { } clipboard) await clipboard.SetTextAsync(text);
-            ShowStatus("Presse-papiers récupéré");
-        }
-        catch (Exception ex)
-        {
-            ShowStatus($"Copie impossible : {ex.Message}");
         }
     }
 
@@ -518,7 +539,7 @@ public partial class DesktopWindow : ChromeWindow
 
     private void ToggleFullscreen()
     {
-        WindowState = WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
+        Host.WindowState = Host.WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
         ScreenHost.Focus();
     }
 
@@ -528,12 +549,11 @@ public partial class DesktopWindow : ChromeWindow
     /// autrement (bouton vert sous macOS, raccourci du système), et les barres
     /// restaient alors masquées.
     /// </summary>
-    protected override void OnPropertyChanged(Avalonia.AvaloniaPropertyChangedEventArgs change)
+    protected override void OnHostWindowStateChanged()
     {
-        base.OnPropertyChanged(change);
-        if (change.Property != WindowStateProperty || WindowTitleBar is null) return;
+        if (WindowTitleBar is null) return;
 
-        bool full = WindowState == WindowState.FullScreen;
+        bool full = Host.WindowState == WindowState.FullScreen;
         WindowTitleBar.IsVisible = !full;
         StatusBar.IsVisible = !full;
         ToolTip.SetTip(FullscreenButton, full ? "Quitter le plein écran (Ctrl+Maj+F)" : "Plein écran (Ctrl+Maj+F)");
@@ -587,7 +607,7 @@ public partial class DesktopWindow : ChromeWindow
 
     private void ScreenHost_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (WindowState != WindowState.FullScreen || FullscreenBar.IsVisible) return;
+        if (Host.WindowState != WindowState.FullScreen || FullscreenBar.IsVisible) return;
         // Pas pendant un glisser : la barre s'ouvrirait sous une sélection qui remonte.
         if (_buttonsDown.Count > 0) return;
         if (e.GetPosition(ScreenHost).Y <= FullscreenBarTriggerHeight) ShowFullscreenBar();
@@ -653,7 +673,7 @@ public partial class DesktopWindow : ChromeWindow
             _ => ($"Éteindre « {_node.Name} » ?",
                 "La machine sera arrêtée. Il faudra un réveil Wake-on-LAN ou une action physique pour la rallumer."),
         };
-        if (!await Dialogs.ConfirmAsync(this, title, detail)) return;
+        if (!await Dialogs.ConfirmAsync(Host, title, detail)) return;
         try
         {
             await _connection.PowerActionAsync(_node.Id, action);
@@ -687,12 +707,14 @@ public partial class DesktopWindow : ChromeWindow
 
     private void Screen_PointerMoved(object? sender, PointerEventArgs e)
     {
+        if (_viewOnly) return;
         if (TryMapToRemote(e, out int x, out int y)) _session.SendMouseMove(x, y);
     }
 
     private void Screen_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         ScreenHost.Focus();
+        if (_viewOnly) return;
         var kind = e.GetCurrentPoint(ActiveImage).Properties.PointerUpdateKind;
 
         // Boutons latéraux : traduits en Précédent / Suivant, comme sous Windows.
@@ -760,7 +782,7 @@ public partial class DesktopWindow : ChromeWindow
     private void Screen_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
         e.Handled = true;
-        if (!TryMapToRemote(e, out int x, out int y)) return;
+        if (_viewOnly || !TryMapToRemote(e, out int x, out int y)) return;
         _wheelAccumulator += e.Delta.Y * 120;
         int notches = (int)(_wheelAccumulator / 120);
         if (notches == 0) return;
@@ -791,7 +813,7 @@ public partial class DesktopWindow : ChromeWindow
             case Key.C: CopyFromRemote_Click(this, e); break;
             case Key.S: Screenshot_Click(this, e); break;
             case Key.F: ToggleFullscreen(); break;
-            case Key.R: _session.RequestRefresh(); break;
+            case Key.R: Refresh_Click(this, e); break;
             case Key.D: ReleaseModifiers_Click(this, e); break;
             case Key.A: FitCheck.IsChecked = FitCheck.IsChecked != true; break;
             case Key.B: Reboot_Click(this, e); break;
@@ -799,7 +821,9 @@ public partial class DesktopWindow : ChromeWindow
             case Key.T: OpenTerminal?.Invoke(); break;
             case Key.E: OpenFiles?.Invoke(); break;
             case Key.P: OpenProcesses?.Invoke(); break;
-            case Key.Delete: _session.SendCtrlAltDel(); break;
+            case Key.Z: ToggleZoom(); break;
+            case Key.O: SetViewOnly(!_viewOnly); break;
+            case Key.Delete: SendCtrlAltDel(); break;
             default: return false;
         }
         return true;
@@ -811,10 +835,27 @@ public partial class DesktopWindow : ChromeWindow
         if (e.Source is TextBox) return;
         var key = e.Key;
 
+        if (_zoomSelecting && key == Key.Escape)
+        {
+            CancelZoomSelection();
+            ShowStatus("Zoom annulé.");
+            e.Handled = true;
+            return;
+        }
+
         if (HandleLocalShortcut(e))
         {
             e.Handled = true;
             ReleaseAllKeys();
+            return;
+        }
+
+        // Vue seule : rien ne part. La touche n'est pas marquée traitée, pour
+        // que les raccourcis du système fonctionnent. Les modificateurs restent
+        // suivis : Ctrl+Maj+O doit pouvoir rendre la main.
+        if (_viewOnly)
+        {
+            if (KeyMapping.IsModifier(key)) _heldModifiers.Add(key);
             return;
         }
 
@@ -859,7 +900,7 @@ public partial class DesktopWindow : ChromeWindow
 
     private void Screen_TextInput(object? sender, TextInputEventArgs e)
     {
-        if (string.IsNullOrEmpty(e.Text)) return;
+        if (_viewOnly || string.IsNullOrEmpty(e.Text)) return;
         foreach (var rune in e.Text.EnumerateRunes())
         {
             // Chemin Unicode limité à 16 bits : émojis ignorés.

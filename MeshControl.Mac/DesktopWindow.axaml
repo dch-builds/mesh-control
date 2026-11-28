@@ -8,7 +8,32 @@
   <!-- Portage de Desktop/DesktopWindow.xaml (version Windows), en fenêtre
        autonome : la barre d'outils se loge dans la barre de titre, une seule
        bande au lieu de deux (MergeToolbarIntoTitleBar). -->
-  <DockPanel x:Name="RootPanel">
+  <local:ChromeWindow.Styles>
+    <!-- Pastille posée sur l'image distante (zoom, vue seule) : cliquable,
+         elle rappelle un état et permet d'en sortir. -->
+    <Style Selector="Button.overlayChip">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Foreground" Value="#E4E6EA" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="Chip" Background="#D9000000" CornerRadius="8" Padding="12,6">
+            <StackPanel Orientation="Horizontal">
+              <ContentPresenter Name="Presenter" Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}" VerticalAlignment="Center" />
+              <local:Icon Kind="Close" Size="10" Foreground="#E4E6EA" VerticalAlignment="Center" Margin="10,1,0,0" />
+            </StackPanel>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.overlayChip:pointerover /template/ Border#Chip">
+      <Setter Property="Background" Value="#F2000000" />
+    </Style>
+  </local:ChromeWindow.Styles>
+
+  <DockPanel x:Name="RootPanel" Background="{DynamicResource WindowBackgroundBrush}">
     <local:TitleBar x:Name="WindowTitleBar" DockPanel.Dock="Top">
       <local:TitleBar.Content>
         <Grid x:Name="Toolbar" ColumnDefinitions="*,Auto">
@@ -99,6 +124,13 @@
                     <TextBlock x:Name="PasteTypingLabel" Text="Taper" VerticalAlignment="Center" />
                   </StackPanel>
                 </Button>
+                <Border Width="1" Margin="0,6" Background="{DynamicResource SeparatorBrush}" />
+                <!-- Interrupteur : synchronisation automatique du presse-papiers
+                     dans les deux sens. Mis en évidence (bleu) quand il est actif. -->
+                <Button x:Name="ClipboardSyncButton" Classes="tool" Focusable="False" Background="Transparent"
+                        Click="ClipboardSync_Click" Padding="9,5">
+                  <local:Icon Kind="Sync" Size="13" />
+                </Button>
               </StackPanel>
             </Border>
 
@@ -110,6 +142,19 @@
                     Click="Screenshot_Click" Padding="9,5" Margin="0,0,6,0"
                     ToolTip.Tip="Capturer l'écran distant (Ctrl+Maj+S)">
               <local:Icon Kind="Camera" Size="13" />
+            </Button>
+
+            <!-- Loupe : on trace un rectangle sur l'écran pour l'agrandir.
+                 Un second clic revient à la vue entière. -->
+            <Button x:Name="ZoomButton" Classes="tool" Focusable="False" Click="Zoom_Click" Padding="9,5"
+                    Margin="0,0,6,0" ToolTip.Tip="Agrandir une zone : tracer un rectangle sur l'écran (Ctrl+Maj+Z)">
+              <local:Icon x:Name="ZoomButtonGlyph" Kind="ZoomIn" Size="13" />
+            </Button>
+
+            <!-- Vue seule : la souris et le clavier ne partent plus vers la machine. -->
+            <Button x:Name="ViewOnlyButton" Classes="tool" Focusable="False" Click="ViewOnly_Click" Padding="9,5"
+                    Margin="0,0,6,0" ToolTip.Tip="Vue seule : observer sans envoyer souris ni clavier (Ctrl+Maj+O)">
+              <local:Icon Kind="View" Size="13" />
             </Button>
 
             <Button x:Name="ReleaseModifiersButton" Classes="tool" Focusable="False"
@@ -146,6 +191,7 @@
                             Click="CopyFromRemote_Click" />
                   <MenuItem x:Name="OverflowScreenshotItem" IsVisible="False" Header="Capturer l'écran"
                             Click="Screenshot_Click" />
+                  <MenuItem x:Name="OverflowZoomItem" IsVisible="False" Header="Loupe" Click="Zoom_Click" />
                   <MenuItem x:Name="OverflowReleaseItem" IsVisible="False" Header="Débloquer le clavier distant"
                             Click="ReleaseModifiers_Click" />
                   <Separator x:Name="OverflowSeparator" IsVisible="False" />
@@ -186,6 +232,15 @@
           <Border Width="1" Background="{DynamicResource SeparatorBrush}" Margin="10,1,10,1" />
           <TextBlock x:Name="StatusResolution" Classes="caption" VerticalAlignment="Center"
                      ToolTip.Tip="Résolution de l'écran distant" />
+
+          <!-- Envoi de fichiers déposés sur l'écran : visible le temps du transfert. -->
+          <StackPanel x:Name="TransferPanel" Orientation="Horizontal" IsVisible="False">
+            <Border Width="1" Background="{DynamicResource SeparatorBrush}" Margin="10,1,10,1" />
+            <TextBlock x:Name="StatusTransfer" Classes="caption" Foreground="{DynamicResource InfoTextBrush}"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="420" />
+            <Button Content="Annuler" Classes="tool" Focusable="False" Click="CancelDrop_Click" Padding="7,1"
+                    FontSize="11" Margin="8,0,0,0" ToolTip.Tip="Interrompre l'envoi des fichiers déposés" />
+          </StackPanel>
         </StackPanel>
         <TextBlock x:Name="StatusTotal" Classes="caption" HorizontalAlignment="Right" VerticalAlignment="Center"
                    Foreground="{DynamicResource PlaceholderBrush}" ToolTip.Tip="Volume total reçu depuis le début de la session" />
@@ -196,8 +251,9 @@
          conteneurs exclusifs : ajusté à la fenêtre, ou taille réelle défilante. -->
     <Panel x:Name="ScreenHost" Background="#1B1D21" Focusable="True">
       <Panel x:Name="FitHost" ClipToBounds="True">
+        <!-- Origine en haut à gauche : la loupe compose sa propre matrice. -->
         <Image x:Name="ScreenImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
-               RenderOptions.BitmapInterpolationMode="HighQuality" />
+               RenderOptions.BitmapInterpolationMode="HighQuality" RenderTransformOrigin="0,0" />
       </Panel>
       <ScrollViewer x:Name="Scroller" IsVisible="False" HorizontalScrollBarVisibility="Auto"
                     VerticalScrollBarVisibility="Auto" Focusable="False">
@@ -231,19 +287,22 @@
                      Margin="0,0,10,0" />
           <Border Width="1" Background="#33FFFFFF" Margin="2,5" />
 
-          <Button Classes="overlay" Click="Paste_Click" Margin="4,0,0,0"
+          <Button x:Name="BarPasteButton" Classes="overlay" Click="Paste_Click" Margin="4,0,0,0"
                   ToolTip.Tip="Coller le presse-papiers local (Ctrl+Maj+V)">
             <StackPanel Orientation="Horizontal">
               <local:Icon Kind="Paste" Size="13" VerticalAlignment="Center" Margin="0,1,6,0" />
               <TextBlock Text="Coller" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
-          <Button Classes="overlay" Click="PasteAsTyping_Click"
+          <Button x:Name="BarTypingButton" Classes="overlay" Click="PasteAsTyping_Click"
                   ToolTip.Tip="Coller en simulant la frappe">
             <StackPanel Orientation="Horizontal">
-              <local:Icon Kind="Keyboard" Size="13" VerticalAlignment="Center" Margin="0,1,6,0" />
+              <local:Icon x:Name="BarTypingGlyph" Kind="Keyboard" Size="13" VerticalAlignment="Center" Margin="0,1,6,0" />
               <TextBlock x:Name="BarTypingLabel" Text="Taper" VerticalAlignment="Center" />
             </StackPanel>
+          </Button>
+          <Button x:Name="BarSyncButton" Classes="overlay" Click="ClipboardSync_Click" Padding="9,6">
+            <local:Icon Kind="Sync" Size="13" />
           </Button>
 
           <Border Width="1" Background="#33FFFFFF" Margin="4,5" />
@@ -254,8 +313,12 @@
               <MenuFlyout Placement="BottomEdgeAlignedLeft" />
             </Button.Flyout>
           </Button>
-          <Button Classes="overlay" Content="Ctrl+Alt+Suppr" Click="CtrlAltDel_Click"
+          <Button x:Name="BarCtrlAltDelButton" Classes="overlay" Content="Ctrl+Alt+Suppr" Click="CtrlAltDel_Click"
                   ToolTip.Tip="Envoyer Ctrl+Alt+Suppr (Ctrl+Maj+Suppr)" />
+          <Button x:Name="BarViewOnlyButton" Classes="overlay" Click="ViewOnly_Click" Padding="9,6"
+                  ToolTip.Tip="Vue seule (Ctrl+Maj+O)">
+            <local:Icon Kind="View" Size="13" />
+          </Button>
           <Button Classes="overlay" Click="Screenshot_Click" Padding="9,6"
                   ToolTip.Tip="Capturer l'écran distant (Ctrl+Maj+S)">
             <local:Icon Kind="Camera" Size="13" />
@@ -271,6 +334,64 @@
           </Button>
         </StackPanel>
       </Border>
+
+      <!-- Tracé de la zone à agrandir. Fond transparent mais présent : c'est
+           lui qui reçoit la souris, qui ne part donc pas vers la machine. -->
+      <Canvas x:Name="ZoomOverlay" IsVisible="False" Background="Transparent" Cursor="Cross">
+        <Rectangle x:Name="ZoomBand" IsVisible="False" Stroke="{DynamicResource AccentBrush}"
+                   StrokeThickness="1.5" Fill="#260A84FF" />
+      </Canvas>
+
+      <Border x:Name="ZoomHint" IsVisible="False" IsHitTestVisible="False" Background="#D9000000"
+              CornerRadius="8" Padding="14,8" VerticalAlignment="Top" HorizontalAlignment="Center"
+              Margin="0,18,0,0">
+        <TextBlock Text="Tracez la zone à agrandir — Échap ou clic droit pour annuler"
+                   Foreground="#E4E6EA" FontSize="12" />
+      </Border>
+
+      <!-- Rappel du zoom en cours, cliquable pour revenir à la vue entière. -->
+      <Button x:Name="ZoomBadge" Classes="overlayChip" IsVisible="False" Click="ZoomBadge_Click"
+              VerticalAlignment="Top" HorizontalAlignment="Right" Margin="0,14,14,0"
+              ToolTip.Tip="Revenir à la vue entière (Ctrl+Maj+Z)" />
+
+      <!-- Liaison lente repérée : propose le mode dépannage, sans l'imposer. -->
+      <Border x:Name="SlowLinkBanner" IsVisible="False" Background="{DynamicResource CardBrush}"
+              BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="1" CornerRadius="10"
+              Padding="14,8,8,8" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="16,0,16,18"
+              BoxShadow="0 2 18 0 #59000000">
+        <StackPanel Orientation="Horizontal">
+          <local:Icon Kind="Warning" Size="13" Foreground="{DynamicResource TextSecondaryBrush}"
+                      VerticalAlignment="Center" Margin="0,1,10,0" />
+          <TextBlock Text="Connexion lente : l'image arrive en retard." Foreground="{DynamicResource TextPrimaryBrush}"
+                     FontSize="12" VerticalAlignment="Center" Margin="0,0,14,0" TextTrimming="CharacterEllipsis" />
+          <Button Content="Passer en mode dépannage" Classes="accentTool" Focusable="False"
+                  Click="SlowLinkSwitch_Click" Margin="0,0,6,0" />
+          <Button Content="Ignorer" Classes="tool" Focusable="False" Click="SlowLinkDismiss_Click" />
+        </StackPanel>
+      </Border>
+
+      <!-- Rappel permanent de la vue seule : sans lui, on croirait la session
+           figée. Cliquable pour reprendre la main. -->
+      <Button x:Name="ViewOnlyBadge" Classes="overlayChip" IsVisible="False" Click="ViewOnly_Click"
+              VerticalAlignment="Top" HorizontalAlignment="Left" Margin="14,14,0,0"
+              ToolTip.Tip="Reprendre le contrôle (Ctrl+Maj+O)">
+        <StackPanel Orientation="Horizontal">
+          <local:Icon Kind="View" Size="12" Foreground="#E4E6EA" VerticalAlignment="Center" Margin="0,1,8,0" />
+          <TextBlock Text="Vue seule" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+
+      <!-- Fichiers glissés au-dessus de l'écran : rappelle où ils iront. -->
+      <Panel x:Name="DropOverlay" IsVisible="False" IsHitTestVisible="False" Background="#B3101215">
+        <Rectangle Margin="18" RadiusX="12" RadiusY="12" Stroke="{DynamicResource AccentBrush}"
+                   StrokeThickness="2" StrokeDashArray="6,4" />
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+          <local:Icon Kind="Upload" Size="34" Foreground="#E4E6EA" HorizontalAlignment="Center" />
+          <TextBlock Text="Déposer pour envoyer à la machine" FontSize="16" FontWeight="SemiBold"
+                     Foreground="#E4E6EA" HorizontalAlignment="Center" Margin="0,12,0,4" />
+          <TextBlock x:Name="DropDestinationText" FontSize="12" Foreground="#A0A4AB" HorizontalAlignment="Center" />
+        </StackPanel>
+      </Panel>
 
       <TextBlock x:Name="OverlayText" Foreground="#C8FFFFFF" FontSize="15" HorizontalAlignment="Center"
                  VerticalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" Margin="24"

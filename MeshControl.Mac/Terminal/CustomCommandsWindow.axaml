@@ -1,0 +1,102 @@
+<local:ChromeWindow xmlns="https://github.com/avaloniaui"
+                   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                   xmlns:local="using:MeshControl.Mac"
+                   x:Class="MeshControl.Mac.CustomCommandsWindow"
+                   Width="780" Height="520" MinWidth="640" MinHeight="420"
+                   WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+
+  <!-- Portage de SSH/CustomCommandsWindow.xaml (version Windows). -->
+  <DockPanel>
+    <local:TitleBar DockPanel.Dock="Top" Title="Mes commandes — Mesh Control" ShowMinMax="False" />
+
+    <DockPanel Margin="20,16,20,18">
+      <!-- Valider / annuler -->
+      <Grid DockPanel.Dock="Bottom" Margin="0,16,0,0" ColumnDefinitions="*,Auto">
+        <TextBlock Classes="caption" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,16,0"
+                   Text="Enregistrées dans vos réglages, sur ce poste. Les commandes vides sont ignorées." />
+        <StackPanel Grid.Column="1" Orientation="Horizontal">
+          <Button Content="Annuler" Classes="tool" Click="Cancel_Click" Padding="16,8" Margin="0,0,8,0" />
+          <Button Content="Enregistrer" Classes="primary" Click="Save_Click" Padding="18,8" />
+        </StackPanel>
+      </Grid>
+
+      <Grid ColumnDefinitions="250,18,*">
+        <!-- Liste, dans l'ordre du menu -->
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,10,0,0">
+            <Button Classes="tool" Click="Add_Click" Margin="0,0,6,0" ToolTip.Tip="Nouvelle commande">
+              <StackPanel Orientation="Horizontal">
+                <local:Icon Kind="Add" Size="11" VerticalAlignment="Center" Margin="0,1,6,0" />
+                <TextBlock Text="Nouvelle" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <Button x:Name="DeleteButton" Classes="tool" Click="Delete_Click" Padding="9,6" Margin="0,0,6,0"
+                    ToolTip.Tip="Supprimer la commande">
+              <local:Icon Kind="Close" Size="11" />
+            </Button>
+            <Button x:Name="UpButton" Classes="tool" Click="Up_Click" Padding="9,6" Margin="0,0,6,0"
+                    ToolTip.Tip="Monter dans le menu">
+              <local:Icon Kind="ChevronUp" Size="11" />
+            </Button>
+            <Button x:Name="DownButton" Classes="tool" Click="Down_Click" Padding="9,6"
+                    ToolTip.Tip="Descendre dans le menu">
+              <local:Icon Kind="ChevronDown" Size="11" />
+            </Button>
+          </StackPanel>
+
+          <Border Background="{DynamicResource CardBrush}" CornerRadius="8" Padding="4">
+            <Panel>
+              <ListBox x:Name="CommandList" Classes="devices" SelectionChanged="CommandList_SelectionChanged">
+                <ListBox.Resources>
+                  <Thickness x:Key="DeviceRowPadding">10,6,10,6</Thickness>
+                </ListBox.Resources>
+                <ListBox.ItemTemplate>
+                  <DataTemplate DataType="local:CommandEntry">
+                    <StackPanel Margin="2,0">
+                      <TextBlock Text="{Binding DisplayLabel}" FontSize="12" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding ShellLabel}" Classes="caption" FontSize="11" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <TextBlock x:Name="EmptyText" Classes="caption" TextWrapping="Wrap" TextAlignment="Center"
+                         VerticalAlignment="Center" Margin="16"
+                         Text="Aucune commande. « Nouvelle » pour en ajouter une." />
+            </Panel>
+          </Border>
+        </DockPanel>
+
+        <!-- Édition de la commande sélectionnée -->
+        <DockPanel x:Name="Editor" Grid.Column="2" x:DataType="local:CommandEntry">
+          <StackPanel DockPanel.Dock="Top">
+            <TextBlock Text="Libellé" Classes="caption" Margin="0,0,0,4" />
+            <TextBox x:Name="LabelBox" FontSize="12" Text="{Binding Label}" />
+
+            <TextBlock Text="Shell" Classes="caption" Margin="0,12,0,4" />
+            <ComboBox x:Name="ShellCombo" Width="260" HorizontalAlignment="Left" FontSize="12"
+                      SelectedIndex="{Binding ShellIndex}">
+              <ComboBoxItem Content="Tous les shells" />
+              <ComboBoxItem Content="Windows — invite de commandes (cmd)" />
+              <ComboBoxItem Content="Windows — PowerShell" />
+              <ComboBoxItem Content="Linux / macOS" />
+            </ComboBox>
+
+            <TextBlock Text="Commande" Classes="caption" Margin="0,12,0,4" />
+          </StackPanel>
+
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
+            <CheckBox x:Name="RunCheck" IsChecked="{Binding Run}" FontSize="12"
+                      Content="Exécuter directement (sinon la commande est seulement tapée, à valider par Entrée)" />
+            <TextBlock Classes="caption" TextWrapping="Wrap" Margin="24,4,0,0"
+                       Text="Laissez décoché pour tout ce qui modifie la machine. Une commande sur plusieurs lignes envoie chaque ligne avec Entrée, sauf la dernière si elle n'est que tapée." />
+          </StackPanel>
+
+          <TextBox x:Name="CommandBox" AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap"
+                   VerticalContentAlignment="Top" FontSize="13"
+                   FontFamily="Cascadia Mono, Consolas, Menlo, monospace" Text="{Binding CommandValue}" />
+        </DockPanel>
+      </Grid>
+    </DockPanel>
+  </DockPanel>
+</local:ChromeWindow>

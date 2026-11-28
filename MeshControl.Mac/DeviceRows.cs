@@ -84,6 +84,8 @@ public sealed class DeviceRow : INotifyPropertyChanged
             Notify(nameof(IsOffline));
             Notify(nameof(RemoteActionsVisible));
             Notify(nameof(WakeActionVisible));
+            Notify(nameof(WatchIndicatorVisible));
+            Notify(nameof(StatusDotVisible));
             Notify(nameof(IconOpacity));
             Notify(nameof(NameBrush));
             Notify(nameof(OsGlyphColor));
@@ -244,6 +246,49 @@ public sealed class DeviceRow : INotifyPropertyChanged
 
     public bool RemoteActionsVisible => Node is { IsOnline: true, HasAgent: true };
     public bool WakeActionVisible => !IsOnline;
+
+    // MARK: - Recherche rapide
+
+    /// <summary>Copie affichée en tête de la recherche rapide, parmi les dernières connexions.</summary>
+    public bool IsRecent { get; init; }
+
+    public string GroupLabel => $"📁 {RealGroupName}";
+
+    /// <summary>Légende de la recherche rapide : dossier, précédé de « Récente ».</summary>
+    public string PaletteCaption => IsRecent ? $"🕘 Récente  ·  {GroupLabel}" : GroupLabel;
+
+    public IBrush StatusBrush => Palette.Brush(IsOnline ? "#34C759" : "#C7C7CC");
+    public string StatusLabel => IsOnline ? "En ligne" : "Hors ligne";
+    public IBrush BadgeForeground => Palette.Brush(IsOnline ? "#248A3D" : "#8A8A8E");
+
+    // MARK: - Alerte de retour en ligne
+
+    private bool _isWatched;
+    /// <summary>Une notification est attendue au retour en ligne de la machine.</summary>
+    public bool IsWatched
+    {
+        get => _isWatched;
+        set
+        {
+            if (_isWatched == value) return;
+            _isWatched = value;
+            Notify(nameof(IsWatched));
+            Notify(nameof(WatchGlyph));
+            Notify(nameof(WatchTooltip));
+            Notify(nameof(WatchIndicatorVisible));
+            Notify(nameof(StatusDotVisible));
+        }
+    }
+
+    /// <summary>Cloche pour poser l'alerte, cloche barrée pour la retirer.</summary>
+    public IconKind WatchGlyph => IsWatched ? IconKind.BellOff : IconKind.Bell;
+
+    public string WatchTooltip => IsWatched ? "Ne plus me prévenir de son retour" : "Me prévenir à son retour en ligne";
+
+    public bool WatchIndicatorVisible => IsWatched && !IsOnline;
+
+    /// <summary>Le point d'état cède la place à la cloche quand une alerte est posée.</summary>
+    public bool StatusDotVisible => !WatchIndicatorVisible;
 
     // MARK: - État et présence
 
