@@ -38,6 +38,12 @@ public partial class TerminalWindow : ChromeWindow, ISessionWindow
     /// <summary>Ouvre le bureau à distance de la machine (fourni par la fenêtre principale).</summary>
     public Action? OpenDesktop { get; init; }
 
+    /// <summary>Crée un bureau pour la machine (fourni par la fenêtre principale), pour la vignette.</summary>
+    public Func<DesktopWindow>? CreateDesktop { get; init; }
+
+    /// <summary>Ouvre un bureau en onglet ou en fenêtre, selon la préférence (fourni par la fenêtre principale).</summary>
+    public Action<DesktopWindow>? ShowDesktop { get; init; }
+
     public string NodeId => _node.Id;
     public Mode SessionMode => _mode;
 
@@ -84,6 +90,11 @@ public partial class TerminalWindow : ChromeWindow, ISessionWindow
         TerminalHost.Child = _terminal;
         SearchBar.Attach(_terminal);
 
+        // Vignette du bureau : les fonctions de la fenêtre principale sont lues
+        // à l'usage, elles ne sont pas encore posées à ce stade.
+        DockedDesktop.Attach(node, this, () => CreateDesktop!(), window => ShowDesktop?.Invoke(window));
+        DockedDesktop.KeyboardReturned += () => _terminal.Focus();
+
         // Sur le contenu : en onglet, la fenêtre porteuse n'est jamais affichée.
         RootPanel.AddHandler(KeyDownEvent, Window_KeyDown, RoutingStrategies.Tunnel);
         Toolbar.SizeChanged += (_, _) => Dispatcher.UIThread.Post(FitToolbar, DispatcherPriority.Loaded);
@@ -129,7 +140,7 @@ public partial class TerminalWindow : ChromeWindow, ISessionWindow
         await StartSessionAsync();
     }
 
-    void ISessionWindow.ReleaseKeyboard() { }
+    void ISessionWindow.ReleaseKeyboard() => DockedDesktop.ReleaseKeyboard();
     public TitleBar SessionTitleBar => WindowTitleBar;
     public Control FocusTarget => _terminal;
 
@@ -491,7 +502,19 @@ public partial class TerminalWindow : ChromeWindow, ISessionWindow
 
     // MARK: - Barre d'outils
 
-    private void Desktop_Click(object? sender, RoutedEventArgs e) => OpenDesktop?.Invoke();
+    private void Desktop_Click(object? sender, RoutedEventArgs e)
+    {
+        if (CreateDesktop is null)
+        {
+            OpenDesktop?.Invoke();
+            return;
+        }
+        DockedDesktop.ShowMenu(DesktopButton, () =>
+        {
+            // Le clavier revient au shell, sauf s'il vient d'être donné au bureau.
+            if (!DockedDesktop.HasKeyboard) _terminal.Focus();
+        });
+    }
 
     private void Search_Click(object? sender, RoutedEventArgs e) => SearchBar.Toggle();
 
@@ -608,6 +631,9 @@ public partial class TerminalWindow : ChromeWindow, ISessionWindow
 
     private void Window_KeyDown(object? sender, KeyEventArgs e)
     {
+        // Le bureau ancré a le clavier : ses frappes traversent ce panneau et
+        // lui reviennent, pas au shell.
+        if (DockedDesktop.HasKeyboard) return;
         if (InputFieldHasFocus) return;
         var mods = e.KeyModifiers;
         var ctrl = mods.HasFlag(KeyModifiers.Control);
@@ -656,7 +682,8 @@ public partial class TerminalWindow : ChromeWindow, ISessionWindow
         }
         if (ctrl && shift && e.Key == Key.D)
         {
-            OpenDesktop?.Invoke();
+            if (CreateDesktop is null) OpenDesktop?.Invoke();
+            else DockedDesktop.Toggle();
             e.Handled = true;
             return;
         }

@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:MeshControl.Mac"
+             x:Class="MeshControl.Mac.DesktopDock"
+             HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,22,14" IsVisible="False">
+
+  <!-- Portage de Desktop/DesktopDock.xaml (version Windows) : vignette du
+       bureau à distance, ancrée en bas à droite d'un terminal. Marge à droite :
+       la glissière de l'historique du terminal reste accessible. -->
+  <UserControl.Styles>
+    <!-- Bouton d'en-tête, discret : icône seule, sans fond au repos. Non
+         focalisable : le clavier reste au terminal ou au bureau. -->
+    <Style Selector="Button.dock">
+      <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+      <Setter Property="Width" Value="26" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="Margin" Value="2,0,0,0" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Name="Bd" Background="Transparent" CornerRadius="5">
+            <ContentPresenter Name="Presenter" Content="{TemplateBinding Content}"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter>
+    </Style>
+    <Style Selector="Button.dock:pointerover /template/ Border#Bd">
+      <Setter Property="Background" Value="{DynamicResource ControlHoverBrush}" />
+    </Style>
+    <Style Selector="Button.dock:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+
+    <!-- Cadre : accentué quand le bureau a le clavier, pour savoir sans
+         hésiter où partira la prochaine frappe. -->
+    <Style Selector="Border#Frame">
+      <Setter Property="BorderBrush" Value="{DynamicResource SeparatorBrush}" />
+    </Style>
+    <Style Selector="Border#Frame:focus-within">
+      <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <Border x:Name="Frame" CornerRadius="8" BorderThickness="1" Background="{DynamicResource CardBrush}"
+          BoxShadow="0 2 16 0 #73000000">
+    <Panel>
+      <DockPanel>
+        <!-- En-tête : machine, état, actions. Un clic sur sa partie vide donne
+             le clavier au bureau ; un double-clic réduit ou rétablit. -->
+        <Border x:Name="Header" DockPanel.Dock="Top" Background="Transparent" Padding="18,4,5,4">
+          <Grid ColumnDefinitions="*,Auto">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+              <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="{DynamicResource OfflineBrush}"
+                       VerticalAlignment="Center" Margin="0,0,7,0" />
+              <local:Icon Kind="Desktop" Size="11" Foreground="{DynamicResource TextSecondaryBrush}"
+                          VerticalAlignment="Center" Margin="0,1,6,0" />
+              <TextBlock x:Name="TitleText" FontSize="12" FontWeight="SemiBold"
+                         Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="StateText" Classes="caption" FontSize="11" VerticalAlignment="Center"
+                         Margin="8,0,0,0" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+              <Button x:Name="ReconnectButton" Classes="dock" IsVisible="False" Click="Reconnect_Click"
+                      ToolTip.Tip="Rouvrir la session du bureau à distance">
+                <local:Icon Kind="Refresh" Size="10" />
+              </Button>
+              <Button x:Name="CollapseButton" Classes="dock" Click="Collapse_Click"
+                      ToolTip.Tip="Réduire la vignette (Ctrl+Maj+D depuis le terminal)">
+                <local:Icon x:Name="CollapseGlyph" Kind="ChevronDown" Size="10" />
+              </Button>
+              <Button x:Name="UndockButton" Classes="dock" Click="Undock_Click">
+                <local:Icon Kind="FullScreen" Size="10" />
+              </Button>
+              <Button Classes="dock" Click="Close_Click" ToolTip.Tip="Fermer le bureau à distance">
+                <local:Icon Kind="Close" Size="10" />
+              </Button>
+            </StackPanel>
+          </Grid>
+        </Border>
+
+        <!-- Contenu du bureau à distance, repris de sa fenêtre porteuse.
+             ClipToBounds : agrandie par la loupe, l'image déborderait. -->
+        <Border x:Name="ContentHost" Background="#1B1D21" ClipToBounds="True" Margin="1,0,1,1" />
+      </DockPanel>
+
+      <!-- Poignée de redimensionnement : la vignette est ancrée en bas à
+           droite, c'est donc son coin supérieur gauche qui bouge. -->
+      <Thumb x:Name="ResizeGrip" Width="16" Height="16" HorizontalAlignment="Left" VerticalAlignment="Top"
+             Cursor="TopLeftCorner" Focusable="False" ToolTip.Tip="Redimensionner">
+        <Thumb.Template>
+          <ControlTemplate>
+            <Panel Background="Transparent">
+              <Path Data="M 4,12 L 12,4 M 4,8 L 8,4" StrokeThickness="1.2"
+                    Stroke="{DynamicResource TextSecondaryBrush}" StrokeLineCap="Round" />
+            </Panel>
+          </ControlTemplate>
+        </Thumb.Template>
+      </Thumb>
+    </Panel>
+  </Border>
+</UserControl>

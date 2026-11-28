@@ -78,6 +78,10 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
         var fps = DesktopSession.NearestFrameRate(App.Settings.DesktopFrameRate);
         FrameRateCombo.SelectedIndex = Math.Max(0, Array.IndexOf(FrameRates, fps));
         _session.FrameRate = fps;
+        _session.ScalePercent = App.Settings.DefaultDesktopScale;
+        FitCheck.IsChecked = App.Settings.DefaultDesktopFit;
+        FitHost.IsVisible = FitCheck.IsChecked == true;
+        Scroller.IsVisible = FitCheck.IsChecked != true;
         _ready = true;
 
         _session.StateChanged += UpdateState;
@@ -132,12 +136,35 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
     {
         if (_started) return;
         _started = true;
+        ApplyOpenMode();
         ScreenHost.Focus();
         _statsTimer.Start();
         await _session.StartAsync();
     }
 
     public void ReleaseKeyboard() => ReleaseAllKeys();
+
+    /// <summary>
+    /// Ouverture agrandie ou en plein écran, selon le réglage. Appliquée une
+    /// seule fois, au premier affichage : c'est alors seulement que l'on sait
+    /// quelle fenêtre héberge la session (la sienne, ou celle des onglets).
+    /// </summary>
+    private void ApplyOpenMode()
+    {
+        // Vignette : la fenêtre hôte est celle du terminal, qui n'a rien demandé.
+        if (_docked) return;
+        var host = Host;
+        switch (App.Settings.DesktopOpenMode)
+        {
+            case 1 when host.WindowState == WindowState.Normal:
+                host.WindowState = WindowState.Maximized;
+                break;
+            // Une autre session a peut-être déjà mis la fenêtre des onglets en plein écran.
+            case 2 when host.WindowState != WindowState.FullScreen:
+                host.WindowState = WindowState.FullScreen;
+                break;
+        }
+    }
     public TitleBar SessionTitleBar => WindowTitleBar;
     public Control FocusTarget => ScreenHost;
 
@@ -539,6 +566,12 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
 
     private void ToggleFullscreen()
     {
+        // En vignette, le plein écran n'a pas de sens : la vignette passe en grand.
+        if (_docked)
+        {
+            UndockRequested?.Invoke();
+            return;
+        }
         Host.WindowState = Host.WindowState == WindowState.FullScreen ? WindowState.Normal : WindowState.FullScreen;
         ScreenHost.Focus();
     }
@@ -551,7 +584,8 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
     /// </summary>
     protected override void OnHostWindowStateChanged()
     {
-        if (WindowTitleBar is null) return;
+        // En vignette, les barres restent masquées, quoi que fasse le terminal.
+        if (WindowTitleBar is null || _docked) return;
 
         bool full = Host.WindowState == WindowState.FullScreen;
         WindowTitleBar.IsVisible = !full;
@@ -607,7 +641,7 @@ public partial class DesktopWindow : ChromeWindow, ISessionWindow
 
     private void ScreenHost_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (Host.WindowState != WindowState.FullScreen || FullscreenBar.IsVisible) return;
+        if (_docked || Host.WindowState != WindowState.FullScreen || FullscreenBar.IsVisible) return;
         // Pas pendant un glisser : la barre s'ouvrirait sous une sélection qui remonte.
         if (_buttonsDown.Count > 0) return;
         if (e.GetPosition(ScreenHost).Y <= FullscreenBarTriggerHeight) ShowFullscreenBar();

@@ -649,6 +649,29 @@
                   <TextBlock Classes="fieldHint"
                              Text="Au-delà de 30 img/s, l'agent et le réseau deviennent souvent le facteur limitant." />
 
+                  <TextBlock Text="Échelle de l'image" Classes="caption" Margin="0,14,0,5" />
+                  <ComboBox x:Name="DefaultScaleCombo" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="100 % — taille réelle" Tag="100" />
+                    <ComboBoxItem Content="75 %" Tag="75" />
+                    <ComboBoxItem Content="50 %" Tag="50" />
+                    <ComboBoxItem Content="33 %" Tag="33" />
+                  </ComboBox>
+                  <TextBlock Classes="fieldHint"
+                             Text="L'agent encode moins de pixels : c'est le réglage le plus efficace sur les liaisons lentes. Modifiable par session dans le menu « ⋯ »." />
+
+                  <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
+
+                  <CheckBox x:Name="DefaultFitCheck" Content="Ajuster l'écran à la fenêtre" />
+
+                  <TextBlock Text="Ouverture des sessions" Classes="caption" Margin="0,14,0,5" />
+                  <ComboBox x:Name="DesktopOpenModeCombo" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="Fenêtre habituelle" />
+                    <ComboBoxItem Content="Plein écran fenêtré (agrandie)" />
+                    <ComboBoxItem Content="Plein écran" />
+                  </ComboBox>
+                  <TextBlock Classes="fieldHint"
+                             Text="En plein écran : souris en haut de l'écran pour la barre d'outils, Ctrl+Maj+F pour revenir." />
+
                   <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
 
                   <CheckBox x:Name="TabbedSessionsCheck" Content="Regrouper les sessions en onglets" />
@@ -671,6 +694,26 @@
                   <CheckBox x:Name="DarkModeCheck" Content="Thème sombre" IsCheckedChanged="DarkMode_Changed" />
                   <TextBlock x:Name="DarkModeHint" Classes="fieldHint" Margin="24,4,0,0"
                              Text="Pour toutes les fenêtres de l'application. S'applique au prochain démarrage." />
+                  <Button x:Name="RestartForThemeButton" Classes="subtle" Content="Redémarrer maintenant"
+                          HorizontalAlignment="Left" Margin="18,4,0,0" IsVisible="False"
+                          Click="RestartForTheme_Click" />
+                </StackPanel>
+              </Border>
+
+              <TextBlock Text="Recherche rapide" Classes="panelSectionTitle" />
+              <TextBlock Text="Ouvre une palette de recherche par-dessus vos autres applications."
+                         Classes="caption" TextWrapping="Wrap" Margin="0,0,0,8" />
+              <Border Classes="panelSection">
+                <StackPanel>
+                  <CheckBox x:Name="QuickSearchCheck" Content="Activer le raccourci global"
+                            IsCheckedChanged="QuickSearch_Changed" Margin="0,0,0,14" />
+                  <TextBlock Text="Raccourci clavier" Classes="fieldLabel" />
+                  <TextBox x:Name="HotkeyBox" IsReadOnly="True" Cursor="Hand" FontSize="12" TextAlignment="Center"
+                           KeyDown="HotkeyBox_KeyDown" GotFocus="HotkeyBox_GotFocus" LostFocus="HotkeyBox_LostFocus" />
+                  <TextBlock x:Name="HotkeyHint" Classes="fieldHint"
+                             Text="Cliquez puis pressez la combinaison voulue (avec Ctrl, Alt, Maj ou Win)." />
+                  <TextBlock x:Name="HotkeyWarning" Classes="fieldHint" Foreground="{DynamicResource DangerBrush}"
+                             TextWrapping="Wrap" IsVisible="False" />
                 </StackPanel>
               </Border>
 
@@ -706,6 +749,20 @@
                   <CheckBox x:Name="RememberSettingCheck" Content="Mémoriser les identifiants" />
                   <TextBlock x:Name="RememberSettingHint" Classes="fieldHint" Margin="24,4,0,0"
                              Text="Le mot de passe est conservé dans le Trousseau de votre session." />
+
+                  <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
+
+                  <!-- Second facteur : état de l'autorisation de ce poste -->
+                  <TextBlock Text="Code à deux facteurs" Classes="fieldLabel" Margin="0,0,0,6" />
+                  <TextBlock x:Name="TrustStateText" Classes="caption" TextWrapping="Wrap" Margin="0,0,0,10" />
+                  <StackPanel Orientation="Horizontal">
+                    <Button x:Name="TrustDeviceButton" Content="Autoriser ce poste sans limite" Classes="tool"
+                            Click="TrustDevice_Click" Padding="14,7" Margin="0,0,8,0" />
+                    <Button x:Name="ForgetDeviceButton" Content="Oublier ce poste" Classes="tool"
+                            Click="ForgetDevice_Click" Padding="14,7" />
+                  </StackPanel>
+                  <TextBlock Classes="fieldHint" Margin="0,6,0,0" TextWrapping="Wrap"
+                             Text="Un jeton de connexion propre à ce poste remplace le code à deux facteurs et n'expire pas. Il se révoque ici, ou depuis « Mon compte » sur le serveur." />
                   <Border Height="1" Background="{DynamicResource SeparatorBrush}" Margin="0,14,0,14" />
                   <Button x:Name="LogoutButton" Content="Se déconnecter" Classes="tool" Click="Logout_Click"
                           Padding="14,7" HorizontalAlignment="Left" Foreground="{DynamicResource DangerBrush}" />
@@ -726,6 +783,9 @@
               <TextBlock Text="Diagnostic" Classes="panelSectionTitle" />
               <Border Classes="panelSection" Margin="0,8,0,14">
                 <StackPanel>
+                  <CheckBox x:Name="VerboseLogCheck" Content="Journal détaillé" />
+                  <TextBlock Classes="fieldHint" Margin="24,4,0,14"
+                             Text="Enregistre aussi les échanges de protocole. Plus volumineux." />
                   <Button Content="Ouvrir le dossier des journaux" Classes="tool" Click="OpenLogs_Click"
                           Padding="12,7" HorizontalAlignment="Left" />
                 </StackPanel>

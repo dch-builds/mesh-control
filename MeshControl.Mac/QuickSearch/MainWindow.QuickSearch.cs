@@ -16,12 +16,11 @@ public partial class MainWindow
 
     private void SetupHotkey()
     {
-        _hotkey ??= new GlobalHotkey();
+        _hotkey ??= new GlobalHotkey(this);
         _hotkey.Pressed -= ShowQuickSearch;
         _hotkey.Pressed += ShowQuickSearch;
 
-        HotkeyHintBadge.IsVisible = _hotkey.IsRegistered;
-        HotkeyHintText.Text = GlobalHotkey.Label;
+        ApplyHotkey();
         Closed += (_, _) => _hotkey?.Dispose();
     }
 

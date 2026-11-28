@@ -24,6 +24,7 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         CertificateTrust.Initialize(Settings);
+        Log.MinimumLevel = Settings.VerboseLogging ? LogLevel.Debug : LogLevel.Info;
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

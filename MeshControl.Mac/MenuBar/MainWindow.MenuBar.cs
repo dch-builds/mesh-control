@@ -15,6 +15,14 @@ namespace MeshControl.Mac;
 public partial class MainWindow
 {
     private TrayIcon? _tray;
+    private NativeMenuItem? _traySearchItem;
+
+    /// <summary>Le libellé du menu suit le raccourci choisi dans les réglages.</summary>
+    private void UpdateTrayMenu()
+    {
+        if (_traySearchItem is not null)
+            _traySearchItem.Header = _hotkey?.IsRegistered == true ? $"Recherche rapide…  {HotkeyLabel}" : "Recherche rapide…";
+    }
 
     /// <summary>Vrai quand l'utilisateur quitte vraiment l'application.</summary>
     private bool _exiting;
@@ -28,7 +36,7 @@ public partial class MainWindow
 
         var open = new NativeMenuItem("Ouvrir Mesh Control");
         open.Click += (_, _) => RestoreMainWindow();
-        var search = new NativeMenuItem($"Recherche rapide…  {GlobalHotkey.Label}");
+        var search = _traySearchItem = new NativeMenuItem($"Recherche rapide…  {HotkeyLabel}");
         search.Click += (_, _) => ShowQuickSearch();
         var quit = new NativeMenuItem("Quitter");
         quit.Click += (_, _) => Quit();
@@ -77,7 +85,7 @@ public partial class MainWindow
         if (_trayHintShown) return;
         _trayHintShown = true;
         SystemNotification.Show("Mesh Control reste actif",
-            $"L'application continue de tourner dans la barre des menus. Raccourci : {GlobalHotkey.Label}");
+            $"L'application continue de tourner dans la barre des menus. Raccourci : {HotkeyLabel}");
     }
 
     private void Quit()

@@ -99,10 +99,14 @@ public partial class MainWindow : ChromeWindow
         var saved = Settings.RememberPassword
             ? Keychain.Read(PasswordAccount(Settings.Host, Settings.Username))
             : null;
-        if (!string.IsNullOrEmpty(saved) && !string.IsNullOrEmpty(Settings.Username))
+        // Un jeton de connexion suffit à ouvrir la session, même sans mot de passe mémorisé.
+        var hasToken = !string.IsNullOrEmpty(Settings.Username)
+                       && StoredLoginToken(Settings.Host, Settings.Username) is not null;
+        if (hasToken && string.IsNullOrEmpty(saved)) saved = "";
+        if ((!string.IsNullOrEmpty(saved) || hasToken) && !string.IsNullOrEmpty(Settings.Username))
         {
             // Identifiants mémorisés : connexion directe, comme sous Windows.
-            _ = ConnectAsync(Settings.Username, saved, token: null, automatic: true);
+            _ = ConnectAsync(Settings.Username, saved ?? "", token: null, automatic: true);
         }
         else
         {
@@ -301,12 +305,7 @@ public partial class MainWindow : ChromeWindow
 
         try
         {
-            await connection.ConnectAsync(new MeshLogin
-            {
-                Password = password,
-                TwoFactorToken = token,
-                TwoFactorCookie = Keychain.Read(CookieAccount(host, user)),
-            });
+            await ConnectWithLoginAsync(connection, host, user, password, token, manual: !automatic);
         }
         catch (MeshTwoFactorRequiredException request)
         {
@@ -327,7 +326,7 @@ public partial class MainWindow : ChromeWindow
         Settings.Username = user;
         Settings.RememberPassword = remember;
         Settings.Save();
-        if (remember) Keychain.Write(PasswordAccount(host, user), password);
+        if (remember && !string.IsNullOrEmpty(password)) Keychain.Write(PasswordAccount(host, user), password);
         else Keychain.Delete(PasswordAccount(host, user));
 
         // Code saisi : on demande un cookie « appareil de confiance ».
@@ -426,11 +425,7 @@ public partial class MainWindow : ChromeWindow
             });
             try
             {
-                await connection.ConnectAsync(new MeshLogin
-                {
-                    Password = _password,
-                    TwoFactorCookie = Keychain.Read(CookieAccount(host, user)),
-                });
+                await ConnectWithLoginAsync(connection, host, user, _password ?? "", token: null, manual: false);
             }
             catch (MeshTwoFactorRequiredException)
             {
@@ -1437,18 +1432,26 @@ public partial class MainWindow : ChromeWindow
             SessionsWindow.Activate(existing);
             return;
         }
-        var window = new DesktopWindow(_connection, node)
-        {
-            OpenTerminal = () => OpenTerminal(node, TerminalWindow.Mode.Agent),
-            OpenFiles = () => OpenFiles(node),
-            OpenProcesses = () => OpenProcesses(node),
-            OpenSystemInfo = () => OpenSystemInfo(node),
-        };
-        window.Closed += (_, _) => _desktops.Remove(window);
-        _desktops.Add(window);
-        OpenSession(window, node.Name, "🖥");
+        ShowDesktopWindow(CreateDesktopWindow(node));
 
         if (Settings.FolderView) RebuildFolderPanel();
+    }
+
+    /// <summary>Bureau d'une machine, avec les accès aux autres outils.</summary>
+    private DesktopWindow CreateDesktopWindow(MeshNode node) => new(_connection!, node)
+    {
+        OpenTerminal = () => OpenTerminal(node, TerminalWindow.Mode.Agent),
+        OpenFiles = () => OpenFiles(node),
+        OpenProcesses = () => OpenProcesses(node),
+        OpenSystemInfo = () => OpenSystemInfo(node),
+    };
+
+    /// <summary>Affiche un bureau (nouveau, ou sorti d'une vignette) en onglet ou en fenêtre.</summary>
+    private void ShowDesktopWindow(DesktopWindow window)
+    {
+        window.Closed += (_, _) => _desktops.Remove(window);
+        _desktops.Add(window);
+        OpenSession(window, window.DeviceName, "🖥");
     }
 
     /// <summary>
@@ -1477,6 +1480,8 @@ public partial class MainWindow : ChromeWindow
         var window = new TerminalWindow(_connection, node, mode)
         {
             OpenDesktop = () => { if (row is not null) OpenDesktop(row); },
+            CreateDesktop = () => CreateDesktopWindow(node),
+            ShowDesktop = ShowDesktopWindow,
         };
         window.Closed += (_, _) => _terminals.Remove(window);
         _terminals.Add(window);
@@ -1905,6 +1910,7 @@ public partial class MainWindow : ChromeWindow
         _densityLoading = false;
         DarkModeCheck.IsChecked = Settings.DarkMode;
         TabbedSessionsCheck.IsChecked = Settings.UseTabbedSessions;
+        LoadMoreSettings();
         TrayCheck.IsChecked = Settings.KeepInMenuBar;
         AutoStartCheck.IsVisible = StartupManager.IsSupported;
         AutoStartCheck.IsChecked = StartupManager.IsEnabled();
@@ -1965,9 +1971,10 @@ public partial class MainWindow : ChromeWindow
     }
 
     private void DarkMode_Changed(object? sender, RoutedEventArgs e)
-        => DarkModeHint.Text = DarkModeCheck.IsChecked == Settings.DarkMode
-            ? "Pour toutes les fenêtres de l'application. S'applique au prochain démarrage."
-            : "Le thème changera au prochain démarrage de l'application.";
+    {
+        if (RestartForThemeButton is null) return;   // pendant InitializeComponent
+        UpdateThemeRestartHint();
+    }
 
     private void SaveSettings_Click(object? sender, RoutedEventArgs e)
     {
@@ -1976,6 +1983,7 @@ public partial class MainWindow : ChromeWindow
         if (DensityCombo.SelectedIndex >= 0) Settings.ListDensity = DensityCombo.SelectedIndex;
         Settings.DarkMode = DarkModeCheck.IsChecked == true;
         Settings.UseTabbedSessions = TabbedSessionsCheck.IsChecked == true;
+        SaveMoreSettings();
         Settings.KeepInMenuBar = TrayCheck.IsChecked == true;
         Settings.StartMinimized = StartMinimizedCheck.IsChecked == true;
         Settings.CheckForUpdates = CheckUpdatesCheck.IsChecked == true;

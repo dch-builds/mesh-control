@@ -67,6 +67,29 @@ public sealed class MacSettings : ICertificatePinStore
     /// <summary>Sessions (bureau, terminal, fichiers) regroupées en onglets dans une seule fenêtre.</summary>
     public bool UseTabbedSessions { get; set; } = true;
 
+    /// <summary>Bureau à distance : échelle de l'image à l'ouverture (100, 75, 50 ou 33 %).</summary>
+    public int DefaultDesktopScale { get; set; } = 100;
+
+    /// <summary>Bureau à distance : écran ajusté à la fenêtre à l'ouverture.</summary>
+    public bool DefaultDesktopFit { get; set; } = true;
+
+    /// <summary>Ouverture des sessions : 0 fenêtre habituelle, 1 agrandie, 2 plein écran.</summary>
+    public int DesktopOpenMode { get; set; }
+
+    /// <summary>Raccourci global de la recherche rapide.</summary>
+    public bool QuickSearchEnabled { get; set; } = true;
+    public string QuickSearchHotkey { get; set; } = "Ctrl+Alt+W";
+
+    /// <summary>Journal détaillé : échanges de protocole compris.</summary>
+    public bool VerboseLogging { get; set; }
+
+    /// <summary>Nom du jeton de connexion de ce poste (le jeton lui-même est dans le Trousseau).</summary>
+    public string? LoginTokenName { get; set; }
+
+    /// <summary>Taille de la vignette du bureau ancré dans un terminal.</summary>
+    public double DesktopDockWidth { get; set; } = 520;
+    public double DesktopDockHeight { get; set; } = 330;
+
     /// <summary>La fermeture de la fenêtre garde l'application active dans la barre des menus.</summary>
     public bool KeepInMenuBar { get; set; } = true;
 
