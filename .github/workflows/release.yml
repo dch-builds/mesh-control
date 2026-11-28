@@ -1,0 +1,166 @@
+# Publication de Mesh Control, Windows et macOS, dans le dépôt des releases.
+#
+# Lancement : onglet Actions › Release › Run workflow (ou
+# « gh workflow run release.yml »). La version publiée est celle de
+# Directory.Build.props, la même pour les deux plateformes : les paquets
+# Windows (canal win) et macOS (canaux osx-arm64, osx-x64) arrivent dans UNE
+# release, nommée « Mesh Control <version> ».
+#
+# La release part en brouillon : les installations ne la voient qu'une fois
+# publiée depuis GitHub, après vérification.
+#
+# Prérequis : un secret RELEASES_TOKEN dans ce dépôt — jeton GitHub à accès
+# fin, limité au dépôt mesh-control-releases, permission « Contents » en
+# lecture et écriture. Le GITHUB_TOKEN fourni par Actions ne peut pas écrire
+# dans un autre dépôt.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Plateformes à publier
+        type: choice
+        options:
+          - windows et macos
+          - windows
+          - macos
+        default: windows et macos
+      first_mac_release:
+        description: Premier paquet macOS (aucune version Mac publiée à comparer)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Jamais deux publications à la fois : elles écriraient dans la même release.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  RELEASES_REPO: dch-builds/mesh-control-releases
+  VPK_VERSION: 1.2.161
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  # Contrôles avant de compiler quoi que ce soit : jeton présent, et version
+  # pas déjà publiée pour les plateformes demandées (oubli d'augmenter
+  # Directory.Build.props).
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version et release existante
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Secret RELEASES_TOKEN absent (Settings › Secrets and variables › Actions)."
+            exit 1
+          fi
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -n 1)"
+          [ -n "$version" ] || { echo "::error::Version introuvable dans Directory.Build.props"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          # La liste complète, brouillons compris (« gh release view » ne voit
+          # pas les brouillons).
+          assets="$(gh api "repos/$RELEASES_REPO/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$version\") | .assets[].name")"
+          case "$PLATFORMS" in *windows*)
+            if echo "$assets" | grep -qx 'releases.win.json'; then
+              echo "::error::Mesh Control $version contient déjà les paquets Windows. Augmentez la version dans Directory.Build.props."
+              exit 1
+            fi ;;
+          esac
+          case "$PLATFORMS" in *macos*)
+            if echo "$assets" | grep -qx 'releases.osx-arm64.json'; then
+              echo "::error::Mesh Control $version contient déjà les paquets macOS. Augmentez la version dans Directory.Build.props."
+              exit 1
+            fi ;;
+          esac
+          echo "### Mesh Control $version" >> "$GITHUB_STEP_SUMMARY"
+          echo "Plateformes : $PLATFORMS" >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    needs: check
+    if: inputs.platforms != 'macos'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Outil Velopack
+        run: dotnet tool install -g vpk --version $env:VPK_VERSION
+
+      - name: Publier, empaqueter et envoyer
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: ./publish.ps1 -Upload -RepoUrl "https://github.com/$env:RELEASES_REPO"
+
+  # Après Windows, jamais en même temps : le premier envoi crée la release,
+  # le second y ajoute ses fichiers (--merge).
+  macos:
+    needs: [check, windows]
+    if: >-
+      always() && inputs.platforms != 'windows'
+      && needs.check.result == 'success'
+      && (needs.windows.result == 'success' || needs.windows.result == 'skipped')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Outil Velopack
+        run: |
+          dotnet tool install -g vpk --version "$VPK_VERSION"
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Publier, empaqueter et envoyer
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          FIRST: ${{ inputs.first_mac_release }}
+          REPO_URL: https://github.com/${{ env.RELEASES_REPO }}
+          # Signature Developer ID : laisser vide tant qu'il n'y a pas de
+          # certificat Apple ; l'application est alors signée « ad hoc ».
+          SIGN_IDENTITY: ""
+        run: |
+          chmod +x MeshControl.Mac/publish-macos.sh
+          if [ "$FIRST" = "true" ]; then
+            ./MeshControl.Mac/publish-macos.sh --upload --first-release
+          else
+            ./MeshControl.Mac/publish-macos.sh --upload
+          fi
+
+  summary:
+    needs: [check, windows, macos]
+    if: always() && needs.check.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récapitulatif
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+          WIN: ${{ needs.windows.result }}
+          MAC: ${{ needs.macos.result }}
+        run: |
+          {
+            echo "| Plateforme | Résultat |"
+            echo "|---|---|"
+            echo "| Windows | $WIN |"
+            echo "| macOS | $MAC |"
+            echo ""
+            echo "Brouillon à vérifier puis publier : https://github.com/$RELEASES_REPO/releases"
+          } >> "$GITHUB_STEP_SUMMARY"

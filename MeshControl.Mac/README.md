@@ -79,6 +79,57 @@ sur le Mac qui l'a construit. Pour le diffuser :
 Remplacer auparavant `CFBundleIdentifier` dans `Info.plist`, et ajouter une
 icône `AppIcon.icns`.
 
+## Publier une version et tester les mises à jour
+
+Les mises à jour automatiques reposent sur Velopack, comme la version Windows.
+Windows et macOS partagent **un seul numéro de version**, dans
+`../Directory.Build.props`, et **une seule release** par version dans
+`dch-builds/mesh-control-releases` : les paquets Windows (canal `win`) et
+macOS (canaux `osx-arm64`, `osx-x64`) y sont déposés côte à côte.
+
+### Depuis GitHub (sans Mac)
+
+Le workflow `.github/workflows/release.yml` compile Windows sur un runner
+Windows, puis macOS sur un runner Mac, et envoie le tout dans la même release,
+en **brouillon**.
+
+1. Une seule fois : créer un jeton GitHub à accès fin, limité au dépôt
+   `mesh-control-releases`, permission *Contents* en lecture et écriture, et
+   l'enregistrer comme secret `RELEASES_TOKEN` du dépôt du code
+   (Settings › Secrets and variables › Actions).
+2. Augmenter `<Version>` dans `Directory.Build.props`, commiter, pousser.
+3. Actions › Release › Run workflow. Cocher « Premier paquet macOS » la toute
+   première fois (aucune version Mac publiée à comparer). Le choix
+   « macos » seul ajoute les paquets Mac à une release Windows déjà publiée.
+4. Vérifier le brouillon dans `mesh-control-releases`, puis le publier.
+
+Le workflow refuse de partir si la version contient déjà les paquets d'une
+des plateformes demandées : c'est le signe d'un oubli à l'étape 2.
+
+### En local
+
+`publish.ps1` (Windows) et `publish-macos.sh` (sur un Mac) font la même chose
+à la main ; prérequis : SDK .NET 10, `dotnet tool install -g vpk --version
+1.2.161`, et `gh auth login` pour l'envoi.
+
+```sh
+cd MeshControl.Mac
+./publish-macos.sh --first-release   # tout premier paquet de chaque canal
+./publish-macos.sh --upload          # versions suivantes : delta + envoi en brouillon
+```
+
+### Tester les mises à jour
+
+1. publier une version et installer son `MeshControl-osx-arm64-Setup.pkg` —
+   seule une installation Velopack sait se mettre à jour ;
+2. augmenter la version, publier à nouveau ;
+3. relancer l'application installée, ou Réglages › Mises à jour › Rechercher
+   maintenant : elle propose la nouvelle version, la télécharge et redémarre.
+
+Tant que l'application n'est pas signée avec un certificat Developer ID et
+notarisée, macOS bloque l'installateur téléchargé : clic droit › Ouvrir, ou
+Réglages Système › Confidentialité et sécurité › Ouvrir quand même.
+
 ## Non testé à ce stade
 
 Le prototype a été compilé et lancé sous Windows uniquement. À vérifier en

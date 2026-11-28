@@ -228,6 +228,12 @@ Releases are published on
 public repository the application updates itself from. Installing requires no
 administrator rights: it goes into the user's profile.
 
+The version, shared by Windows and macOS, is set in `Directory.Build.props`.
+The **Release** GitHub workflow (Actions › Release › Run workflow) builds both
+platforms and uploads them to the same release, as a draft; it needs a
+`RELEASES_TOKEN` secret (a token scoped to `mesh-control-releases`, *Contents*
+write). Details in `MeshControl.Mac/README.md`.
+
 > Windows shows a SmartScreen warning on first launch, as the executable is not
 > digitally signed. Click "More info", then "Run anyway".
 

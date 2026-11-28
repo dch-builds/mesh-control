@@ -16,6 +16,12 @@
 #   .\publish.ps1                  → publie et empaquette
 #   .\publish.ps1 -Upload          → envoie aussi la release, en brouillon
 #   .\publish.ps1 -FirstRelease    → tout premier paquet (dépôt encore vide)
+#
+# La version, commune à Windows et macOS, fait foi dans Directory.Build.props.
+# Les deux plateformes partagent la même release GitHub : l'envoi fusionne ses
+# fichiers avec ceux que publish-macos.sh y dépose (canaux distincts).
+# Le workflow .github/workflows/release.yml lance ce script sur GitHub ; le
+# jeton y vient du secret RELEASES_TOKEN.
 
 param(
     [string]$Output   = "$PSScriptRoot\dist",
@@ -66,11 +72,11 @@ if ($LASTEXITCODE -ne 0) { throw "La publication a échoué." }
 $exe = Join-Path $Output $mainExe
 if (-not (Test-Path $exe)) { throw "Exécutable introuvable dans $Output" }
 
-# La version fait foi dans le .csproj : la relire sur l'exécutable publié
-# donnerait « 1.1.14.0 », alors que Velopack attend une version sémantique.
-$version = ([xml](Get-Content $project)).Project.PropertyGroup.Version |
-           Where-Object { $_ } | Select-Object -First 1
-if (-not $version) { throw "Version introuvable dans $project" }
+# La version fait foi dans Directory.Build.props, commune à Windows et macOS.
+# MSBuild la résout comme pour la compilation ; la relire sur l'exécutable
+# publié donnerait « 1.1.14.0 », alors que Velopack attend une version sémantique.
+$version = (dotnet msbuild $project -getProperty:Version -nologo | Select-Object -Last 1).Trim()
+if (-not $version) { throw "Version introuvable (Directory.Build.props)" }
 
 $files   = Get-ChildItem $Output -Recurse -File
 $totalMb = [math]::Round(($files | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
@@ -85,6 +91,17 @@ Write-Host ""
 
 New-Item -ItemType Directory -Force $Releases | Out-Null
 
+# Jeton GitHub : secret RELEASES_TOKEN sur GitHub Actions, sinon celui de gh.
+# Il reste sur le poste de compilation et n'entre jamais dans un binaire.
+function Get-ReleaseToken {
+    if ($env:RELEASES_TOKEN) { return $env:RELEASES_TOKEN }
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return $null }
+    $t = gh auth token 2>$null
+    if ($LASTEXITCODE -eq 0) { return $t }
+    return $null
+}
+$token = Get-ReleaseToken
+
 # Récupération de la version déjà publiée. Sans elle, vpk n'a rien à quoi
 # comparer et produit un paquet complet — 44 Mo à télécharger pour une correction
 # d'une ligne, ce que la migration vise précisément à supprimer.
@@ -97,7 +114,9 @@ if ($FirstRelease) {
     Write-Host "Premier paquet (-FirstRelease) : aucun delta à calculer." -ForegroundColor Yellow
 } else {
     Write-Host "Récupération de la version publiée (pour le delta)..." -ForegroundColor Cyan
-    vpk download github --repoUrl $RepoUrl --outputDir $Releases --channel $channel
+    # Le jeton, facultatif ici (dépôt public), évite la limite des requêtes anonymes.
+    $tokenArgs = if ($token) { @('--token', $token) } else { @() }
+    vpk download github --repoUrl $RepoUrl --outputDir $Releases --channel $channel @tokenArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Téléchargement de la release publiée impossible. Si le dépôt est " +
               "encore vide, relancez avec -FirstRelease."
@@ -149,17 +168,18 @@ if (-not $Upload) {
     return
 }
 
-# Le jeton d'envoi est lu auprès de gh : il reste sur le poste de compilation et
-# n'entre jamais dans un binaire. Sans --publish, la release part en brouillon —
-# elle ne devient visible des clients qu'une fois publiée depuis GitHub.
-$token = gh auth token
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
-    throw "Jeton GitHub indisponible. Connectez-vous avec « gh auth login »."
+# Sans --publish, la release part en brouillon — elle ne devient visible des
+# clients qu'une fois publiée depuis GitHub. --merge : la release de cette
+# version peut déjà exister, créée par l'envoi macOS ; les fichiers s'y ajoutent.
+if ([string]::IsNullOrWhiteSpace($token)) {
+    throw "Jeton GitHub indisponible. Connectez-vous avec « gh auth login » " +
+          "(ou définissez RELEASES_TOKEN)."
 }
 
 Write-Host "Envoi de la release (brouillon)..." -ForegroundColor Cyan
 vpk upload github --repoUrl $RepoUrl --token $token `
-                  --outputDir $Releases --channel $channel
+                  --outputDir $Releases --channel $channel `
+                  --merge --tag $version --releaseName "$packTitle $version"
 if ($LASTEXITCODE -ne 0) { throw "L'envoi a échoué." }
 
 Write-Host ""

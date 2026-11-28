@@ -33,8 +33,9 @@ Add-Type -AssemblyName System.Drawing
 $here = $PSScriptRoot
 $project = Join-Path $here 'MeshControl.Mac.csproj'
 $dist = Join-Path $here 'dist'
-$version = ([xml](Get-Content $project -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-if (-not $version) { $version = '0.1.0' }
+# Version commune à Windows et macOS : ../Directory.Build.props, résolue par MSBuild.
+$version = (dotnet msbuild $project -getProperty:Version -nologo | Select-Object -Last 1).Trim()
+if (-not $version) { throw "Version introuvable (Directory.Build.props)" }
 
 # ---------------------------------------------------------------------------
 # Icône : AppIcon.icns, assemblée à partir de Assets/app.png. Le format icns

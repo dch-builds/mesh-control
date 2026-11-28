@@ -17,7 +17,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
 
-    <Version>0.1.0</Version>
+    <!-- Version : dans ../Directory.Build.props, commune à Windows et macOS. -->
     <Company>David CHIESA</Company>
     <Product>Mesh Control</Product>
     <Description>Contrôle à distance des postes via MeshCentral (macOS)</Description>

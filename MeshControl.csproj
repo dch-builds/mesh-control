@@ -23,9 +23,7 @@
     <StartupObject>MeshControl.App</StartupObject>
 
     <!-- Métadonnées visibles dans les propriétés du fichier .exe -->
-    <Version>1.2.21</Version>
-    <FileVersion>1.2.21.0</FileVersion>
-    <AssemblyVersion>1.2.21.0</AssemblyVersion>
+    <!-- Version : dans Directory.Build.props, commune à Windows et macOS. -->
     <Company>David CHIESA</Company>
     <Product>Mesh Control</Product>
     <Description>Contrôle à distance des postes via MeshCentral</Description>

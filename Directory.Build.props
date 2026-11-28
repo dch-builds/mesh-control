@@ -1,0 +1,12 @@
+<Project>
+  <!-- Version unique de Mesh Control, pour Windows (WPF) comme pour macOS
+       (Avalonia) : MSBuild lit ce fichier pour chaque projet du dossier.
+       C'est la seule à modifier avant une release ; publish.ps1,
+       publish-macos.sh et le workflow GitHub la relisent ici.
+       Format : version sémantique à trois nombres (Velopack l'exige). -->
+  <PropertyGroup>
+    <Version>1.2.21</Version>
+    <FileVersion>$(Version).0</FileVersion>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+  </PropertyGroup>
+</Project>
